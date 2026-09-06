@@ -9,6 +9,9 @@
             "entrypoint": "app.main:app"	
         }
     },
+    "functions": {
+    "backend/app/main.py": { "maxDuration": 60 }
+},
     "rewrites": [
         {
             "source": "/api/backend(/.*)?",
