@@ -41,6 +41,18 @@ class AgeBand(str, Enum):
     ABOVE_70 = "Above 70"
 
 
+# Bands in threshold order. band_for() indexes this, NOT list(AgeBand): relying on the
+# enum's declaration order means reordering the enum would silently shift every worker
+# into the wrong band. BAND_ORDER is asserted against AGE_THRESHOLDS in the test suite.
+AGE_THRESHOLDS = (55, 60, 65, 70)
+BAND_ORDER = (
+    AgeBand.UP_TO_55,
+    AgeBand.ABOVE_55_TO_60,
+    AgeBand.ABOVE_60_TO_65,
+    AgeBand.ABOVE_65_TO_70,
+    AgeBand.ABOVE_70,
+)
+
 # CPF Board table, from 1 Jan 2026, monthly wages > $750, SC / PR 3rd year+.
 # (employer %, employee %, total %)
 RATES_2026: dict[AgeBand, tuple[Decimal, Decimal, Decimal]] = {
@@ -69,7 +81,7 @@ def band_for(dob: date, contribution_month: date) -> AgeBand:
     """
     month_start = contribution_month.replace(day=1)
     passed = 0
-    for threshold in (55, 60, 65, 70):
+    for threshold in AGE_THRESHOLDS:
         try:
             birthday = dob.replace(year=dob.year + threshold)
         except ValueError:  # 29 Feb
@@ -81,7 +93,7 @@ def band_for(dob: date, contribution_month: date) -> AgeBand:
             step_up = date(birthday.year, birthday.month + 1, 1)
         if month_start >= step_up:
             passed += 1
-    return list(AgeBand)[passed]
+    return BAND_ORDER[passed]
 
 
 @dataclass(frozen=True)
@@ -177,3 +189,50 @@ def cpf_shortfall(
     d = cpf_contribution(declared_ow, band, residency)
     e = cpf_contribution(expected_ow, band, residency)
     return CpfDelta(d, e, e.total - d.total, e.employee - d.employee, e.employer - d.employer)
+
+
+@dataclass(frozen=True)
+class ShortfallSplit:
+    """What a gross wage shortfall actually cost the worker, without double-counting.
+
+    Naively adding the gross shortfall to the CPF shortfall counts the employee's CPF
+    share twice: it is part of the gross the worker never received AND part of the CPF
+    that never reached the account. This splits it into two non-overlapping amounts.
+
+        gross_shortfall           the wage that was not paid
+        employee_cpf_on_shortfall the part of it that would have gone to CPF, not cash
+        cash_shortfall            gross - employee share: what the bank account is missing
+        cpf_shortfall             employee + employer share: what the CPF account is missing
+        total_withheld            cash + cpf, which is also gross + employer share
+    """
+
+    gross_shortfall: Decimal
+    employee_cpf_on_shortfall: Decimal
+    cash_shortfall: Decimal
+    cpf_shortfall: Decimal
+    employer_cpf_on_shortfall: Decimal
+    total_withheld: Decimal
+    delta: CpfDelta
+
+
+def shortfall_split(
+    declared_ow: Decimal, expected_ow: Decimal, band: AgeBand, residency: Residency
+) -> ShortfallSplit:
+    """Decompose a wage shortfall into the cash and the CPF the worker did not receive.
+
+    All CPF figures use CPF's month-level rounding, so they are what CPF Board would
+    compute - not a percentage of the difference.
+    """
+    d = cpf_shortfall(declared_ow, expected_ow, band, residency)
+    gross = Decimal(expected_ow) - Decimal(declared_ow)
+    cash = gross - d.employee
+    total = cash + d.total
+    return ShortfallSplit(
+        gross_shortfall=gross,
+        employee_cpf_on_shortfall=d.employee,
+        cash_shortfall=cash,
+        cpf_shortfall=d.total,
+        employer_cpf_on_shortfall=d.employer,
+        total_withheld=total,
+        delta=d,
+    )

@@ -122,3 +122,90 @@ def test_band_december_birthday_rolls_into_january():
     dob = date(1966, 12, 20)  # turns 60 in Dec 2026
     assert cpf.band_for(dob, date(2026, 12, 1)) == cpf.AgeBand.ABOVE_55_TO_60
     assert cpf.band_for(dob, date(2027, 1, 1)) == cpf.AgeBand.ABOVE_60_TO_65
+
+
+# --- the shortfall split: no double-counting the employee CPF share ---------
+
+
+def test_shortfall_split_for_mei_ling():
+    s = cpf.shortfall_split(D("1400.00"), D("1462.24"), A, SC)
+    assert s.gross_shortfall == D("62.24")
+    assert s.employee_cpf_on_shortfall == D("12")
+    assert s.cash_shortfall == D("50.24")
+    assert s.cpf_shortfall == D("23")
+    assert s.employer_cpf_on_shortfall == D("11")
+    assert s.total_withheld == D("73.24")
+
+
+def test_naive_addition_would_double_count_by_the_employee_share():
+    s = cpf.shortfall_split(D("1400.00"), D("1462.24"), A, SC)
+    naive = s.gross_shortfall + s.cpf_shortfall  # 62.24 + 23 = 85.24
+    assert naive == D("85.24")
+    assert naive - s.total_withheld == s.employee_cpf_on_shortfall  # the $12 counted twice
+
+
+def test_split_is_internally_consistent_two_ways():
+    s = cpf.shortfall_split(D("1400.00"), D("1462.24"), A, SC)
+    assert s.cash_shortfall + s.cpf_shortfall == s.total_withheld
+    assert s.gross_shortfall + s.employer_cpf_on_shortfall == s.total_withheld
+
+
+def test_split_matches_the_fixture_net_paid():
+    # Mei Ling's payslip shows $1,120.00 reaching the bank. Expected cash is
+    # 1462.24 - 292 = 1170.24. The difference must equal cash_shortfall.
+    expected_cash = D("1462.24") - cpf.cpf_contribution(D("1462.24"), A, SC).employee
+    s = cpf.shortfall_split(D("1400.00"), D("1462.24"), A, SC)
+    assert expected_cash - D("1120.00") == s.cash_shortfall
+
+
+def test_split_is_zero_when_nothing_is_short():
+    s = cpf.shortfall_split(D("1462.24"), D("1462.24"), A, SC)
+    assert (s.gross_shortfall, s.cash_shortfall, s.cpf_shortfall, s.total_withheld) == (
+        D("0"),
+        D("0"),
+        D("0"),
+        D("0"),
+    )
+
+
+def test_split_for_a_work_permit_holder_is_all_cash():
+    # No CPF liability, so the entire gross shortfall is cash and none of it is CPF.
+    s = cpf.shortfall_split(D("1400.00"), D("1462.24"), A, cpf.Residency.WORK_PERMIT)
+    assert s.cash_shortfall == D("62.24")
+    assert s.cpf_shortfall == D("0")
+    assert s.total_withheld == D("62.24")
+
+
+# --- band ordering must not depend on enum declaration order ----------------
+
+
+def test_band_order_matches_the_age_thresholds():
+    # BAND_ORDER[i] is the band you are in after passing i thresholds.
+    assert len(cpf.BAND_ORDER) == len(cpf.AGE_THRESHOLDS) + 1
+    assert cpf.AGE_THRESHOLDS == (55, 60, 65, 70)
+    assert cpf.BAND_ORDER == (
+        cpf.AgeBand.UP_TO_55,
+        cpf.AgeBand.ABOVE_55_TO_60,
+        cpf.AgeBand.ABOVE_60_TO_65,
+        cpf.AgeBand.ABOVE_65_TO_70,
+        cpf.AgeBand.ABOVE_70,
+    )
+
+
+def test_every_band_in_the_order_has_a_rate_row():
+    for b in cpf.BAND_ORDER:
+        assert b in cpf.RATES_2026
+
+
+@pytest.mark.parametrize(
+    "dob,expected",
+    [
+        (date(1990, 1, 1), cpf.AgeBand.UP_TO_55),
+        (date(1969, 1, 1), cpf.AgeBand.ABOVE_55_TO_60),
+        (date(1964, 1, 1), cpf.AgeBand.ABOVE_60_TO_65),
+        (date(1959, 1, 1), cpf.AgeBand.ABOVE_65_TO_70),
+        (date(1950, 1, 1), cpf.AgeBand.ABOVE_70),
+    ],
+)
+def test_band_for_covers_every_band(dob, expected):
+    assert cpf.band_for(dob, date(2026, 9, 1)) == expected

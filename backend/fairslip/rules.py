@@ -107,6 +107,11 @@ def rest_day_pay(
         At employee's request:  up to half day -> half day's salary
                                 more than half -> 1 day's salary
     """
+    if Decimal(hours_worked) <= 0:
+        # MOM's table prices work DONE on a rest day. Zero hours is not "up to half a
+        # day"; it means the rest day was not worked, and there is no component at all.
+        # compute_expected() omits the component rather than calling this with 0.
+        raise ValueError("rest_day_pay called with no hours worked; omit the component instead")
     d = daily_rate(monthly_basic, days_per_week)
     half = Decimal(normal_daily_hours) / 2
     more_than_half = Decimal(hours_worked) > half
@@ -207,6 +212,11 @@ def compute_expected(inp: PayInputs) -> PayBreakdown:
     if inp.rest_day_hours is not None and inp.rest_day_requested_by is not None:
         rdh = Decimal(_require(inp.rest_day_hours, "rest_day_hours"))
         who = str(_require(inp.rest_day_requested_by, "rest_day_requested_by"))
+    else:
+        rdh = None
+        who = None
+
+    if rdh is not None and rdh > 0:
         rd = rest_day_pay(basic, dpw, rdh, ndh, who)  # type: ignore[arg-type]
         comps.append(
             Component(

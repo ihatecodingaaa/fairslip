@@ -34,7 +34,7 @@ Never write "owed", "underpaid", "breach", "entitled", or "resolved" (unless ari
 
 ## Commands
 
-- Backend: `cd backend && python -m pytest -q` / `ruff check .` / `uvicorn app.main:app --reload`
+- Backend: `cd backend && python -m pytest -q` / `ruff check --no-cache .` / `uvicorn app.main:app --reload`
 - Frontend: `cd frontend && npm run dev` / `npm run build` / `npm run typecheck`
 - Gate runs backend tests + frontend typecheck on Stop.
 

@@ -174,3 +174,26 @@ def test_human_confirmed_counts_as_established():
 def test_days_of_pay_translation():
     # $92.31 at $46.15/day is about 2 days
     assert cents(rules.days_of_pay(D("92.31"), D("1200"), 6)) == D("2.00")
+
+
+# --- rest day not worked is not a rest day worked ---------------------------
+
+
+def test_rest_day_pay_refuses_zero_hours():
+    # MOM's table prices work DONE on a rest day. Zero hours is not "up to half a day".
+    with pytest.raises(ValueError):
+        rules.rest_day_pay(D("1200"), 6, D("0"), D("8"), "employer")
+
+
+def test_compute_omits_the_rest_day_component_when_no_rest_day_was_worked():
+    inp = worked_example(6)
+    inp = rules.PayInputs(**{**inp.__dict__, "rest_day_hours": fact(D("0"))})
+    b = rules.compute_expected(inp)
+    assert [c.label for c in b.components] == ["basic", "overtime"]
+    # gross is basic + OT only, with no phantom day's salary
+    assert cents(b.expected_gross) == D("1369.93")
+
+
+def test_a_rest_day_actually_worked_still_produces_the_component():
+    b = rules.compute_expected(worked_example(6))
+    assert "rest_day" in [c.label for c in b.components]

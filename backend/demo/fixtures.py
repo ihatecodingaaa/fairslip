@@ -16,6 +16,10 @@ from fairslip.rules import Fact, PayInputs, Status
 
 D = Decimal
 
+# The salary period the demo computes. CPF age bands are month-sensitive, so the month
+# is demo data like everything else here, not a call to date.today().
+DEMO_MONTH = date(2026, 9, 1)
+
 
 def _base(net_paid: str, residency_note: str) -> dict:
     return {
@@ -51,7 +55,12 @@ def rahim_month1_before_confirmation() -> PayInputs:
     return PayInputs(**base)
 
 
+RAHIM_DOB = date(1990, 4, 12)
 RAHIM_RESIDENCY = Residency.WORK_PERMIT  # CPF pack returns NO_CPF for Rahim, correctly
+# The CPF pack needs a band even on the NO_CPF path: the band selects a row in the rate
+# table before residency is checked. It is never used for Rahim, but it must be supplied.
+RAHIM_BAND = AgeBand.UP_TO_55
+RAHIM_DECLARED_OW = D("1400.00")  # what the employer paid on
 
 
 def rahim_month2_corrected() -> PayInputs:

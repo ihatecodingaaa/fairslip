@@ -26,7 +26,7 @@ Mei Ling and $62.24 + NO_CPF for Rahim; gate green; both apps deployed and reach
 ## Stage 2 - Monday: two readers, reconciliation, confirmation
 
     /plan-stage Stage 2. Implement backend/fairslip/extract.py: two independent vision readers
-    (Claude via the Anthropic API as primary; a second vision model via the OpenAI API as auditor) that
+    (Claude via the Anthropic API as primary; a second vision model via OpenRouter as auditor) that
     each return the field schema in .claude/rules/fairslip-domain.md from an image, plus a pure-code
     reconciler that normalises values to Decimal and produces a Fact per field with status AGREED /
     DISAGREED / MISSING. Add POST /extract taking two images. Cache results by image content hash.
@@ -38,7 +38,7 @@ Mei Ling and $62.24 + NO_CPF for Rahim; gate green; both apps deployed and reach
 Before the session (20 min): make the fictional handwritten payslip by hand from MOM's blank
 template with the OT hours written so 18 could read as 13; photograph it; make a WhatsApp-style
 roster screenshot; make a payslip #2 in two versions (with and without an "OT adjustment 62.24"
-line). Save under backend/demo/. Test two OpenAI vision models on the handwriting and pick one.
+line). Save under backend/demo/. Test two OpenRouter vision models on the handwriting and pick one.
 
 Done when: /extract-check shows the OT field DISAGREED on the handwritten slip; confirming it lets
 /compute run; gate green.

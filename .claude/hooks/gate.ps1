@@ -47,11 +47,23 @@ foreach ($r in $roots) {
   }
 
   if ((Test-Path (Join-Path $r 'pyproject.toml')) -or (Test-Path (Join-Path $r 'pytest.ini'))) {
+    # Resolve the interpreter, most specific first. Two failure modes this avoids:
+    #  - pip's pytest.exe shim is unsigned and low-reputation; Windows Smart App Control
+    #    blocks it with "Access is denied" while the signed python.exe runs fine.
+    #  - a bare `python` on PATH is the system interpreter when the shell has no venv
+    #    activated, so `-m pytest` fails with "No module named pytest".
+    # Preferring the project's own venv interpreter sidesteps both.
     $exe = $null; $pre = @()
-    if (Get-Command pytest -ErrorAction SilentlyContinue)      { $exe = 'pytest' }
+    $venvWin  = Join-Path $r '.venv\Scripts\python.exe'
+    $venvUnix = Join-Path $r '.venv/bin/python'
+    if     (Test-Path $venvWin)  { $exe = $venvWin;  $pre = @('-m', 'pytest') }
+    elseif (Test-Path $venvUnix) { $exe = $venvUnix; $pre = @('-m', 'pytest') }
     elseif (Get-Command python -ErrorAction SilentlyContinue)  { $exe = 'python'; $pre = @('-m', 'pytest') }
+    elseif (Get-Command python3 -ErrorAction SilentlyContinue) { $exe = 'python3'; $pre = @('-m', 'pytest') }
+    elseif (Get-Command pytest -ErrorAction SilentlyContinue)  { $exe = 'pytest' }
     if ($exe) {
       $ran += "pytest:$name"
+      $interp = $exe
       $log = Join-Path $logDir "pytest-$name.log"
       Push-Location $r
       & $exe @pre -q *> $log
@@ -73,6 +85,7 @@ if ($ran.Count -eq 0) {
 if ($fail.Count -gt 0) {
   [Console]::Error.WriteLine("Gate failed: $($fail -join ', ')")
   [Console]::Error.WriteLine("Ran: $($ran -join ', ')")
+  if ($interp) { [Console]::Error.WriteLine("pytest interpreter: $interp") }
   foreach ($l in $logs) {
     [Console]::Error.WriteLine("--- $(Split-Path $l -Leaf) (last 20 lines) ---")
     Get-Content $l -Tail 20 | ForEach-Object { [Console]::Error.WriteLine($_) }

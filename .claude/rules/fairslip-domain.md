@@ -73,7 +73,9 @@ Allowed: possible unreconciled difference; we read this as; our two readers disa
 not yet confirmed; based on MOM's / CPF Board's published rule; check with MOM, TADM or CPF Board.
 
 Forbidden: owed; underpaid; breach; illegal; entitled to; your employer must pay; resolved
-(unless arithmetic closes); any number not returned by an engine; any confidence percentage.
+(unless arithmetic closes); any number not returned by an engine; any confidence percentage;
+and any sum of the gross shortfall and the CPF shortfall (they overlap - use
+shortfall_split().total_withheld, see .claude/rules/cpf-rules.md).
 
 ## What v2 does not do, and says so on screen
 

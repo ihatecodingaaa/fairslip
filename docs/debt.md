@@ -15,6 +15,10 @@ Format: `YYYY-MM-DD | class | where it appeared | structural prevention`
 
 2026-09-06 | contested-secondary-source | PR Year-2 employer CPF rate: 9% in two sources, 8% in a third | a rate enters an engine only from the primary table; contested rates are OutOfScopeError until verified
 
+2026-09-06 | check-red-for-the-wrong-reason | gate.ps1 preferred pip's pytest.exe shim, which Windows Smart App Control blocks; the gate reported pytest FAILED while all tests passed | resolve the project's own venv interpreter first and report which interpreter ran, so a wrong one is visible
+2026-09-06 | overlapping-figures-summed | gross shortfall $62.24 and CPF shortfall $23 share the $12 employee CPF on the missing wage; adding them double-counts | the engine returns a non-overlapping split with two independent identities tested; the UI may only display its fields
+2026-09-06 | duplicate-config-scope | project hooks and permissions copied into ~/.claude/settings.json, firing twice here and erroring in every other project | project-scoped config lives only in the repo; check /hooks source labels after any session that edits settings
+
 ## Carried from Keepsake / Orkestr
 
 | equal-objects-different-canonical-forms | float vs Decimal, "18" vs "18.0", naive vs aware datetimes | compare Decimals after normalisation; never compare strings for numeric fields

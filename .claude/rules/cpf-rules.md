@@ -46,6 +46,26 @@ rounded down (CPF worked example: $3,000 paid 19 days late -> $28). Roadmap, not
 
 Headline: "$62.24 of unpaid OT is not a $62.24 problem. It is also $23 of missing CPF."
 
+## The shortfall split - do not add the two figures
+
+$62.24 gross and $23 CPF OVERLAP by $12: the employee's CPF share on the missing wage is
+part of the gross she never received AND part of the CPF that never reached her account.
+Adding them gives $85.24, which double-counts that $12. shortfall_split() returns the
+non-overlapping decomposition, and every figure below is one of its fields:
+
+    gross shortfall            $62.24   the wage that was not paid
+      of which employee CPF    $12      would have gone to CPF, not to cash
+    cash missing from her bank $50.24   gross - employee share
+    CPF missing from account   $23      $12 hers + $11 the employer's
+    TOTAL WITHHELD             $73.24   cash + CPF, which also equals gross + employer share
+
+Two independent identities hold, and both are tested:
+    cash + cpf              == total
+    gross + employer share  == total
+
+UI copy must use these labels. Never show a combined figure that is not total_withheld,
+and never compute any of them in the frontend.
+
 ## Not encoded in v1 - the engine refuses rather than approximates
 
 - Wages at or below $750: graduated formulas (e.g. 17%(TW) + 0.6 x (TW - 500) for the

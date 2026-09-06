@@ -14,9 +14,13 @@ fallback video on a hidden slide and on your phone.
       Tap the handwriting. "It's 18." Confirm. Field turns green: HUMAN CONFIRMED.
 
 0:35  POSSIBLE UNRECONCILED DIFFERENCE  $62.24  - about 1.35 days of her basic pay.
-      Beneath it, second line: CPF short by $23 - $12 hers, $11 the employer's.
-      "$62.24 of missing overtime isn't a $62.24 problem. Overtime is CPF-liable wage.
-      Her employer computed CPF on $1,400. The rules say $1,462.24."
+      Then the split, three lines, all from shortfall_split():
+        $50.24 never reached her bank
+        $23 never reached her CPF   ($12 hers, $11 the employer's)
+        $73.24 withheld in total
+      "Overtime is CPF-liable wage. Her employer computed CPF on $1,400; the rules say
+      $1,462.24. And note we don't add $62.24 and $23 - they overlap by the $12 of CPF
+      she'd have paid on that overtime. The honest total is $73.24."
       Tap the $62.24: the component tree opens - hourly rate, 1.5x, 18 hours, rest-day table -
       every line linking to a photo region, a roster row, a confirmation, or the MOM rule.
 
