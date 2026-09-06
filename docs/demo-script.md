@@ -2,7 +2,7 @@
 
 Rehearse until both of you can run it half asleep. Time every run. Five clean runs before Wednesday.
 
-Setup: laptop on hotspot; backend and frontend up; extraction cache warm; printed handwritten
+Setup: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with network disabled; printed handwritten
 payslip in Jaydon's hand; phone camera tested under the room's lighting; Bengali audio cached;
 fallback video on a hidden slide and on your phone.
 
