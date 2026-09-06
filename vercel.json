@@ -1,20 +1,31 @@
 {
-    "services": {
-        "frontend": {
-            "root": "frontend",
-            "framework": "nextjs"
-        },
-        "backend": {
-            "root": "backend",
-            "entrypoint": "app.main:app"	
-        }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "frontend": {
+      "root": "frontend/",
+      "framework": "nextjs"
     },
-    "functions": {
-    "backend/app/main.py": { "maxDuration": 60 }
-},
-"rewrites": [
-    { "source": "/(health|compute|cpf|extract)", "destination": { "type": "service", "service": "backend" } },
-    { "source": "/demo/(.*)", "destination": { "type": "service", "service": "backend" } },
-    { "source": "/(.*)", "destination": { "type": "service", "service": "frontend" } }
-]
+    "backend": {
+      "root": "backend/",
+      "framework": "fastapi",
+      "entrypoint": "app.main:app",
+      "functions": {
+        "app/main.py": { "maxDuration": 60 }
+      }
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(health|compute|cpf|extract|openapi.json)(/.*)?",
+      "destination": { "service": "backend" }
+    },
+    {
+      "source": "/demo(/.*)?",
+      "destination": { "service": "backend" }
+    },
+    {
+      "source": "/(.*)",
+      "destination": { "service": "frontend" }
+    }
+  ]
 }
