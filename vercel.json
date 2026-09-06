@@ -12,20 +12,9 @@
     "functions": {
     "backend/app/main.py": { "maxDuration": 60 }
 },
-    "rewrites": [
-        {
-            "source": "/api/backend(/.*)?",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/(.*)",
-            "destination": {
-                "type": "service",
-                "service": "frontend"
-            }
-        }
-    ]
+"rewrites": [
+    { "source": "/(health|compute|cpf|extract)", "destination": { "type": "service", "service": "backend" } },
+    { "source": "/demo/(.*)", "destination": { "type": "service", "service": "backend" } },
+    { "source": "/(.*)", "destination": { "type": "service", "service": "frontend" } }
+]
 }
