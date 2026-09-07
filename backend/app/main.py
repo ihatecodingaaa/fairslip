@@ -23,12 +23,15 @@ import demo.fixtures as fx
 from app.schemas import (
     BlockedFieldOut,
     ChoiceOut,
+    CitedFigureOut,
     ComponentOut,
     CpfDeltaOut,
     CpfFixtureOut,
     CpfOut,
     CpfRequest,
     CpfResultOut,
+    DraftIn,
+    DraftOut,
     ExtractOut,
     ExtractRequest,
     FactIn,
@@ -36,6 +39,7 @@ from app.schemas import (
     MandateLevelOut,
     MandateOut,
     Money,
+    NgoOptionOut,
     PayBreakdownOut,
     PayInputsIn,
     PersonaOut,
@@ -50,12 +54,17 @@ from app.schemas import (
     WorkerFieldOut,
 )
 from fairslip.agent import (
+    DEFAULT_DRAFT_CACHE_DIR,
+    DRAFT_CACHE_HIT,
     MANDATE_LABELS,
     MANDATE_TABLE,
     NO_AUTHENTICATION_NOTICE,
     REFERENCE_LINKS,
     Action,
     ActionNotBuiltError,
+    AgentState,
+    DraftCacheMissError,
+    DraftError,
     Mandate,
     MandateError,
     MandateExceededError,
@@ -162,6 +171,14 @@ async def _not_built(_: Request, exc: ActionNotBuiltError) -> JSONResponse:
 @app.exception_handler(MandateError)
 async def _mandate(_: Request, exc: MandateError) -> JSONResponse:
     return _refusal("INVALID_INPUT", str(exc))
+
+
+@app.exception_handler(DraftError)
+async def _draft_error(_: Request, exc: DraftError) -> JSONResponse:
+    """A cache miss, a model failure, or a draft rejected for breaking the copy
+    contract. All three are refusals: none of them produces a partial draft."""
+    code = "DRAFT_UNAVAILABLE" if isinstance(exc, DraftCacheMissError) else "DRAFT_REJECTED"
+    return _refusal(code, str(exc))
 
 
 @app.exception_handler(InvalidInputError)
@@ -714,4 +731,62 @@ def agent_verify(body: VerifyIn) -> VerifyOut:
             f"{_money(result.adjustment_found).display} "
             f"= {_money(result.remaining_gap).display} remaining"
         ),
+    )
+
+
+# Live drafting is OFF by default, including in production. The demo path is the
+# committed cache, and a spec with no entry is refused by name rather than
+# quietly costing a model call at demo time. Set FAIRSLIP_DRAFT_ALLOW_LIVE=1 on a
+# machine with a key to draft something new.
+DRAFT_ALLOW_LIVE = os.getenv("FAIRSLIP_DRAFT_ALLOW_LIVE", "").strip() in {"1", "true", "TRUE"}
+
+
+@app.post("/agent/draft", response_model=DraftOut)
+def agent_draft(body: DraftIn) -> DraftOut:
+    """Draft a message to the employer. Sends nothing, and says so.
+
+    The one endpoint on which a model speaks. Every figure in the returned text
+    was checked against the engines' own output before this function saw it: a
+    draft citing a number no engine produced is rejected in fairslip.agent, not
+    filtered here."""
+    declared = dict(fx.draft_specs())
+    if body.spec_name not in declared:
+        raise InvalidInputError(
+            f"unknown draft spec {body.spec_name!r}; declared: {sorted(declared)}"
+        )
+    spec = declared[body.spec_name]
+
+    draft = Mandate(body.level).act(
+        Action.DRAFT,
+        spec=spec,
+        cache_dir=DEFAULT_DRAFT_CACHE_DIR,
+        allow_live=DRAFT_ALLOW_LIVE,
+    )
+
+    hit = draft.cache == DRAFT_CACHE_HIT
+    return DraftOut(
+        state=AgentState.MESSAGE_DRAFTED.value,
+        english=draft.english,
+        translated=draft.translated,
+        language=draft.language,
+        figures_cited=[
+            CitedFigureOut(
+                label=f.label, amount=_money(f.amount), formula=f.formula, source=f.source
+            )
+            for f in draft.figures_cited
+        ],
+        alternative_heading=draft.alternative.heading,
+        alternative=[
+            NgoOptionOut(name=o.name, what_they_do=o.what_they_do, link=o.link)
+            for o in draft.alternative.options
+        ],
+        model=draft.model,
+        cache_state=draft.cache,
+        cache_note=(
+            f"Replayed from a draft committed to this build on {draft.generated_on}. "
+            f"No model was called for this request."
+            if hit
+            else f"Written just now by {draft.model}."
+        ),
+        generated_on=draft.generated_on,
     )

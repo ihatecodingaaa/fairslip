@@ -10,9 +10,13 @@ Two personas so the demo can show both rule packs honestly:
 
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fairslip.agent import DraftSpec
 
 from fairslip.cpf import AgeBand, Residency
-from fairslip.rules import Fact, PayInputs, Status
+from fairslip.rules import Fact, PayInputs, Status, compute_expected
 
 D = Decimal
 
@@ -94,3 +98,75 @@ def mei_ling_month1_established() -> PayInputs:
 
 MEI_LING_DECLARED_OW = D("1400.00")  # what the employer computed CPF on
 MEI_LING_CPF_EMPLOYEE_ON_PAYSLIP = D("280")  # what the payslip shows
+
+
+# ---------------------------------------------------------------- draft specs
+
+# The draft cache is keyed by everything a draft may cite, so the specs the demo
+# needs are declared HERE, in one place, and the generator script and the
+# populated-precondition test both derive from this tuple. A spec added without
+# a committed entry fails the test the moment it is added
+# (docs/debt.md, precondition-untested-mechanism-tested).
+
+DEMO_SALARY_PERIOD = "September 2026"
+DEMO_LANGUAGE = "Bengali"
+
+
+def rahim_draft_spec() -> "DraftSpec":
+    """Rahim month 1: the $62.24 difference, in English and Bengali.
+
+    Every figure comes from compute_expected() - this function selects which
+    engine outputs the draft may mention, and computes none of them."""
+    from fairslip.agent import CitedFigure, DraftSpec
+
+    bd = compute_expected(rahim_month1_established())
+    return DraftSpec(
+        figures=tuple(
+            CitedFigure(
+                label=c.label,
+                amount=c.amount,
+                formula=c.formula,
+                source="; ".join(c.inputs),
+            )
+            for c in bd.components
+        ),
+        expected_net=bd.expected_net,
+        net_paid=bd.net_paid,
+        difference=bd.difference,
+        flags=bd.flags,
+        salary_period=DEMO_SALARY_PERIOD,
+        language=DEMO_LANGUAGE,
+    )
+
+
+def mei_ling_draft_spec() -> "DraftSpec":
+    """Mei Ling month 1 - the persona the 90-second script runs at 0:55."""
+    from fairslip.agent import CitedFigure, DraftSpec
+
+    bd = compute_expected(mei_ling_month1_established())
+    return DraftSpec(
+        figures=tuple(
+            CitedFigure(
+                label=c.label,
+                amount=c.amount,
+                formula=c.formula,
+                source="; ".join(c.inputs),
+            )
+            for c in bd.components
+        ),
+        expected_net=bd.expected_net,
+        net_paid=bd.net_paid,
+        difference=bd.difference,
+        flags=bd.flags,
+        salary_period=DEMO_SALARY_PERIOD,
+        language=DEMO_LANGUAGE,
+    )
+
+
+def draft_specs() -> tuple[tuple[str, "DraftSpec"], ...]:
+    """(name, spec) for every draft the demo needs cached. The generator script
+    and the precondition test both read this - neither keeps its own list."""
+    return (
+        ("mei_ling_month1", mei_ling_draft_spec()),
+        ("rahim_month1", rahim_draft_spec()),
+    )

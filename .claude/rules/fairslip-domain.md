@@ -78,7 +78,17 @@ Enforcement is in code, not prose: the set of actions available is a function of
 
 There is no MOM rule that an employer must reply within N days. The tracking window is the
 next salary period. The real deadlines the agent surfaces are TADM's filing limits
-(1 year while employed, 6 months after leaving) and CPF's 1-year refund/adjustment limit.
+(1 year while employed, 6 months after leaving), verified 7 Sept 2026 on MOM's
+managing-employment-disputes page (last updated 26 March 2026).
+
+CPF HAS NO EQUIVALENT DEADLINE, and this file previously said it did. CPF Board's page says
+only, verbatim: "Please note the likelihood of recovery for any non/underpayment of CPF
+contributions beyond one year is low." That is a statement about ODDS, not a limitation
+period, and CPF's enforcement page states no limitation period at all. Never render it as a
+deadline; if it is shown, quote it. See docs/debt.md, contested-secondary-source.
+
+TADM claim value caps are UNESTABLISHED and must not appear on any screen - see the same
+docs/debt.md entry.
 
 ## UI copy contract
 

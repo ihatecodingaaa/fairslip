@@ -24,7 +24,7 @@
       "destination": { "service": "backend" }
     },
     {
-      "source": "/agent/(mandate|send|verify)",
+      "source": "/agent/(mandate|draft|send|verify)",
       "destination": { "service": "backend" }
     },
     {

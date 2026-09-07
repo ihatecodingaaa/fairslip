@@ -131,6 +131,10 @@ class RefusalOut(BaseModel):
         # Within the mandate, but not built in this cut. Deliberately distinct:
         # raising the mandate level would NOT enable it.
         "ACTION_NOT_BUILT",
+        # No committed draft entry for this spec, and live calls are off.
+        "DRAFT_UNAVAILABLE",
+        # A draft was produced and then refused for breaking the copy contract.
+        "DRAFT_REJECTED",
     ]
     detail: str
     required_level: int | None = None
@@ -318,3 +322,40 @@ class VerifyOut(BaseModel):
     month2_net_paid: Money | None = None
     blocked_by: list[BlockedFieldOut] = []
     arithmetic: str  # the sum, in words, so the screen quotes rather than composes
+
+
+class DraftIn(BaseModel):
+    level: int
+    spec_name: str  # a spec declared in demo.fixtures.draft_specs()
+
+
+class CitedFigureOut(BaseModel):
+    label: str
+    amount: Money
+    formula: str
+    source: str
+
+
+class NgoOptionOut(BaseModel):
+    name: str
+    what_they_do: str
+    link: str
+
+
+class DraftOut(BaseModel):
+    """A drafted message is NOT a sent one. `state` says MESSAGE_DRAFTED and the
+    response carries no send of any kind: sending needs level 2 and a tap."""
+
+    state: str
+    english: str
+    translated: str
+    language: str
+    figures_cited: list[CitedFigureOut]
+    alternative_heading: str
+    alternative: list[NgoOptionOut]
+    model: str
+    # Provenance, at the top level, in words a screen can show. Never a timing:
+    # a stored duration beside a cache status reads as timing this request.
+    cache_state: str  # "HIT" | "MISS"
+    cache_note: str
+    generated_on: str

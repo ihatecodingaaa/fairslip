@@ -61,10 +61,15 @@ docs/debt.md, contested-secondary-source.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
+import os
+import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
+from pathlib import Path
 
 from fairslip.rules import (
     Fact,
@@ -72,6 +77,7 @@ from fairslip.rules import (
     PayInputs,
     UnverifiedInputError,
     compute_expected,
+    to_cents,
 )
 
 # --------------------------------------------------------------------------
@@ -89,11 +95,17 @@ NO_AUTHENTICATION_NOTICE = (
 # These are DISPLAY ONLY. Nothing in this module fetches a URL, and
 # tests/test_agent_never_files.py asserts that every URL literal appearing in
 # this file is a member of this mapping.
+# TADM moved from tadm.sg to tal.sg: every tadm.sg URL now 301s, and the old
+# user-guide PDF path 404s outright. These are the destinations verified by
+# fetching them on 7 Sept 2026, not the redirect sources.
 REFERENCE_LINKS: dict[str, str] = {
     "mom_salary": "https://www.mom.gov.sg/employment-practices/salary",
     "mom_hours": "https://www.mom.gov.sg/employment-practices/hours-of-work-overtime-and-rest-days",
-    "tadm": "https://www.tadm.sg/",
+    "mom_disputes": "https://www.mom.gov.sg/employment-practices/managing-employment-disputes",
+    "tadm": "https://www.tal.sg/tadm",
+    "tadm_file_claim": "https://www.tal.sg/tadm/eservices/employees-file-employment-claim",
     "cpf_employer_obligations": "https://www.cpf.gov.sg/employer/employer-obligations",
+    "cpf_report_underpayment": "https://www.cpf.gov.sg/service/article/how-can-i-lodge-a-report-for-non-payment-or-underpayment-of-cpf-contributions",
     "mwc": "https://www.mwc.org.sg/",
 }
 
@@ -554,4 +566,527 @@ class Mandate:
             return _send(**kwargs)  # type: ignore[arg-type]
         if action is Action.VERIFY:
             return verify(**kwargs)  # type: ignore[arg-type]
+        if action is Action.DRAFT:
+            return read_draft_with_cache(**kwargs)  # type: ignore[arg-type]
         raise _not_built(action)
+
+
+# --------------------------------------------------------------------------
+# draft(): the ONE place a model speaks
+#
+# Everything above this line is arithmetic and refusals. Below it, a model
+# writes prose - and every constraint that matters is enforced in code AFTER
+# the model has spoken, not merely requested of it in the prompt:
+#
+#   - Every dollar figure in the text must be one an engine produced. A figure
+#     the model invented fails the check and the draft is REJECTED, not returned
+#     with a warning.
+#   - The forbidden words from the UI copy contract are checked against the
+#     output. A draft containing "owed" never reaches a worker.
+#   - The NGO / MWC alternative is a field with no default, so a Draft cannot be
+#     constructed without it. It is shown alongside every draft, not buried.
+#
+# A prompt is a request. A check is a guarantee. These are checks.
+# --------------------------------------------------------------------------
+
+# Bump when the template, the constraints, or the figure set changes. Part of
+# the cache key, so a cached draft can never be replayed as though a different
+# template produced it.
+DRAFT_TEMPLATE_VERSION = "2026-09-07.1"
+
+# The same Haiku tier as reader A. The reason is cost and latency on a path a
+# worker waits on, and it is defensible ONLY because nothing about the draft's
+# correctness rests on the model: the figures are the engines', the arithmetic
+# is checked after the fact, and a draft citing a number no engine produced is
+# rejected rather than shown. If the model writes clumsy Bengali that is a
+# quality problem a human reviewer catches before the demo; if it invents a
+# number, the code catches it every time.
+DRAFT_MODEL_ENV = "FAIRSLIP_DRAFT_MODEL"
+DEFAULT_DRAFT_MODEL = "claude-haiku-4-5"
+
+DEFAULT_DRAFT_CACHE_DIR = Path(__file__).resolve().parent.parent / "demo" / "draft_cache"
+
+DRAFT_CACHE_HIT = "HIT"
+DRAFT_CACHE_MISS = "MISS"
+
+DRAFT_MAX_TOKENS = 2048
+
+# From .claude/rules/fairslip-domain.md, "UI copy contract".
+FORBIDDEN_WORDS: tuple[str, ...] = (
+    "owed",
+    "underpaid",
+    "breach",
+    "illegal",
+    "entitled",
+    "resolved",
+    "must pay",
+    "you must",
+)
+
+
+class DraftError(RuntimeError):
+    """The draft could not be produced, or was produced and rejected."""
+
+
+class DraftRejectedError(DraftError):
+    """The model wrote something the copy contract forbids, or cited a figure no
+    engine produced. The draft is discarded. It is never returned with the
+    offending part stripped: a message that had to be censored to be shown is
+    not a message this system should put in a worker's hands."""
+
+
+class DraftCacheMissError(DraftError):
+    """No committed entry, and live calls were not permitted."""
+
+
+@dataclass(frozen=True)
+class CitedFigure:
+    """One number the draft may use, and where it came from.
+
+    `amount` is an engine's own Decimal. `formula` and `source` are the engine's
+    own strings - this module never composes an explanation of a number."""
+
+    label: str
+    amount: Decimal
+    formula: str
+    source: str
+
+    @property
+    def display(self) -> str:
+        return f"{to_cents(self.amount) + Decimal(0):,.2f}"
+
+
+@dataclass(frozen=True)
+class NgoOption:
+    name: str
+    what_they_do: str
+    link: str
+
+
+@dataclass(frozen=True)
+class NgoAlternative:
+    """Shown ALONGSIDE every draft. `Draft.alternative` has no default, so a
+    draft cannot be constructed without it - the structural form of "not
+    buried"."""
+
+    heading: str
+    options: tuple[NgoOption, ...]
+
+
+def ngo_alternative() -> NgoAlternative:
+    """The worker does not have to send anything. These are the people who help
+    for free, named every time a draft is shown."""
+    return NgoAlternative(
+        heading="You do not have to send this. You can ask someone to help instead:",
+        options=(
+            NgoOption(
+                name="Migrant Workers Centre (MWC)",
+                what_they_do=(
+                    "Free help for migrant workers with salary problems, in your own "
+                    "language. They can talk to your employer for you."
+                ),
+                link=REFERENCE_LINKS["mwc"],
+            ),
+            NgoOption(
+                name="Tripartite Alliance for Dispute Management (TADM)",
+                what_they_do=(
+                    "The official body for salary disputes. Mediation is free for "
+                    "employees, and they check the figures themselves."
+                ),
+                link=REFERENCE_LINKS["tadm_file_claim"],
+            ),
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class DraftSpec:
+    """Everything a draft may cite, and nothing else.
+
+    THE KEY RULE: if a value can change a word of the draft, it is in here, and
+    therefore in the cache key. A spec that omitted the salary period would let a
+    cached September draft be replayed for October with the wrong month in its
+    first sentence."""
+
+    figures: tuple[CitedFigure, ...]
+    expected_net: Decimal
+    net_paid: Decimal
+    difference: Decimal
+    flags: tuple[str, ...]
+    salary_period: str
+    language: str  # the worker's language, named in English, e.g. "Bengali"
+    employer_name: str = ""
+
+    def canonical(self) -> str:
+        """ONE canonical form, named here so the tests can cite it: JSON, keys
+        sorted, every Decimal rendered by str() on the engine's own Decimal - not
+        rounded, not floated, never via repr. docs/debt.md,
+        equal-objects-different-canonical-forms."""
+        return json.dumps(
+            {
+                "figures": [
+                    {
+                        "label": f.label,
+                        "amount": str(f.amount),
+                        "formula": f.formula,
+                        "source": f.source,
+                    }
+                    for f in self.figures
+                ],
+                "expected_net": str(self.expected_net),
+                "net_paid": str(self.net_paid),
+                "difference": str(self.difference),
+                "flags": list(self.flags),
+                "salary_period": self.salary_period,
+                "language": self.language,
+                "employer_name": self.employer_name,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+
+def draft_model() -> str:
+    return os.getenv(DRAFT_MODEL_ENV, DEFAULT_DRAFT_MODEL)
+
+
+def draft_cache_key(spec: DraftSpec, model: str | None = None) -> str:
+    """Covers the template version, the model, and every figure and label the
+    draft may cite. Change any one and the key changes and the cache misses.
+
+    Deliberately NOT a refactor of extract.cache_key(). Their inputs have nothing
+    in common - one hashes image bytes, the other engine output - and unifying
+    them would mean touching the byte layout that six committed extraction
+    entries are already keyed by. The saving is a few lines; the risk is silently
+    orphaning the offline demo."""
+    h = hashlib.sha256()
+    h.update(DRAFT_TEMPLATE_VERSION.encode())
+    h.update(b"\0")
+    h.update((model or draft_model()).encode())
+    h.update(b"\0")
+    h.update(spec.canonical().encode())
+    return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class Draft:
+    """A message to the employer, in English and the worker's language.
+
+    `alternative` has no default: every draft carries the NGO route beside it.
+    `figures_cited` is what the text was checked against - not decoration, but
+    the evidence the check ran."""
+
+    english: str
+    translated: str
+    language: str
+    figures_cited: tuple[CitedFigure, ...]
+    alternative: NgoAlternative
+    model: str
+    cache: str
+    cache_key: str
+    # The DATE a cached draft was generated. Deliberately not a latency: a stored
+    # duration rendered beside a cache status reads as timing the request in
+    # front of the viewer (docs/debt.md, cached-path-wearing-a-live-timing).
+    generated_on: str = ""
+
+    @property
+    def from_cache(self) -> bool:
+        return self.cache == DRAFT_CACHE_HIT
+
+
+_MONEY_IN_TEXT = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)")
+
+
+def _figures_in_text(text: str) -> set[str]:
+    """Every dollar amount the model wrote, normalised to a bare number string."""
+    return {m.group(1).replace(",", "") for m in _MONEY_IN_TEXT.finditer(text)}
+
+
+def _allowed_figure_strings(spec: DraftSpec) -> set[str]:
+    """Exactly the amounts an engine produced, in the two spellings a model might
+    write them: bare cents, and with thousands separators stripped back off."""
+    amounts = [f.amount for f in spec.figures]
+    amounts += [spec.expected_net, spec.net_paid, spec.difference]
+    allowed: set[str] = set()
+    for a in amounts:
+        cents = to_cents(a) + Decimal(0)
+        allowed.add(f"{cents:.2f}")
+        allowed.add(f"{cents:,.2f}".replace(",", ""))
+    return allowed
+
+
+def _check_draft_text(text: str, spec: DraftSpec, where: str) -> None:
+    """The guarantee. Runs on the model's output, in both languages.
+
+    Two checks, both refusals rather than warnings:
+      1. No forbidden word from the UI copy contract.
+      2. Every dollar figure in the text is one an engine produced."""
+    lowered = text.lower()
+    hits = [w for w in FORBIDDEN_WORDS if w in lowered]
+    if hits:
+        raise DraftRejectedError(
+            f"{where}: the draft used {hits}, which the copy contract forbids. "
+            f"Rejected rather than edited."
+        )
+
+    allowed = _allowed_figure_strings(spec)
+    invented = sorted(_figures_in_text(text) - allowed)
+    if invented:
+        raise DraftRejectedError(
+            f"{where}: the draft cites {invented}, which no engine produced. "
+            f"The figures it may use are {sorted(allowed)}."
+        )
+
+
+def draft_prompt(spec: DraftSpec) -> str:
+    """The instruction. Note what it does NOT ask for: it never asks the model to
+    calculate. It supplies finished figures and asks for sentences around them."""
+    lines = "\n".join(
+        f"- {f.label}: ${f.display}  (worked out as: {f.formula}; read from: {f.source})"
+        for f in spec.figures
+    )
+    expected = f"{to_cents(spec.expected_net) + Decimal(0):,.2f}"
+    paid = f"{to_cents(spec.net_paid) + Decimal(0):,.2f}"
+    diff = f"{to_cents(spec.difference) + Decimal(0):,.2f}"
+    return f"""Write a short, factual, NON-ACCUSATORY message from an employee to their
+employer about a possible difference in one month of pay.
+
+Salary period: {spec.salary_period}
+
+These figures were computed by a rules engine from the Singapore Ministry of
+Manpower published rules. They are the ONLY figures you may use:
+
+{lines}
+- What the documents imply the month should have paid, after deductions: ${expected}
+- What the employee says reached their bank account: ${paid}
+- The difference between those two: ${diff}
+
+HARD RULES. A message that breaks any of these is discarded:
+
+1. Do not calculate anything. Every dollar figure you write must be one of the
+   figures above, copied exactly. Do not add them up, do not convert them, do
+   not round them differently, do not introduce a total.
+2. Do not assert that the employer did anything wrong. This is a request to
+   check a difference together, not an allegation. The employee does not know
+   why the figures differ, and neither do you.
+3. Never use the words: owed, underpaid, breach, illegal, entitled, resolved,
+   "must pay", "you must". Do not use synonyms that make the same accusation.
+4. Say where the expectation comes from: the Ministry of Manpower published
+   rules on overtime and rest-day pay. Do not cite a section number, and do not
+   claim any legal consequence.
+5. Ask the employer to check and explain, and say plainly that the employee may
+   have misunderstood something and would welcome being corrected.
+
+Write it twice.
+
+FIRST, in plain English, at roughly a primary-school reading level. Short
+sentences, no jargon.
+
+SECOND, the same message in {spec.language}, written naturally in that language -
+a translation a native speaker would find normal, not word-for-word. Keep the
+dollar figures in the same "$1,234.56" form in both versions.
+
+Return ONLY a JSON object: {{"english": "...", "translated": "..."}}"""
+
+
+def _parse_draft_json(raw: str) -> tuple[str, str]:
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise DraftError(f"the model did not return JSON: {e}") from e
+    if not isinstance(parsed, dict):
+        raise DraftError(f"the model returned {type(parsed).__name__}, not a JSON object")
+    english = parsed.get("english")
+    translated = parsed.get("translated")
+    if not isinstance(english, str) or not english.strip():
+        raise DraftError("the model returned no English text")
+    if not isinstance(translated, str) or not translated.strip():
+        raise DraftError("the model returned no translated text")
+    return english, translated
+
+
+def _build_draft(
+    spec: DraftSpec,
+    english: str,
+    translated: str,
+    model: str,
+    cache: str,
+    key: str,
+    generated_on: str = "",
+) -> Draft:
+    """The single construction point, so the checks cannot be bypassed by a
+    caller who builds a Draft straight from a cache file. A committed entry gets
+    exactly the same scrutiny as a live answer: an entry generated before a rule
+    tightened must not sail through on the strength of having been committed."""
+    _check_draft_text(english, spec, "english")
+    _check_draft_text(translated, spec, spec.language.lower())
+    return Draft(
+        english=english,
+        translated=translated,
+        language=spec.language,
+        figures_cited=spec.figures,
+        alternative=ngo_alternative(),
+        model=model,
+        cache=cache,
+        cache_key=key,
+        generated_on=generated_on,
+    )
+
+
+def call_draft_model(spec: DraftSpec, model: str, api_key: str | None = None) -> tuple[str, str]:
+    """The one network call in this module, and the only one there will be.
+
+    Imported inside the function, exactly as fairslip/extract.py does it, so the
+    module's import surface stays free of anything that opens a socket - which is
+    what tests/test_agent_never_files.py asserts."""
+    try:
+        import anthropic
+    except ImportError as e:  # pragma: no cover - dependency is declared
+        raise DraftError(f"anthropic SDK not installed: {e}") from e
+
+    key = api_key or os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        raise DraftError("ANTHROPIC_API_KEY is not set")
+
+    client = anthropic.Anthropic(api_key=key)
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=DRAFT_MAX_TOKENS,
+            messages=[{"role": "user", "content": draft_prompt(spec)}],
+        )
+    except Exception as e:
+        raise DraftError(f"{type(e).__name__}: {e}") from e
+
+    if resp.stop_reason == "refusal":
+        raise DraftError("the model declined to write this message")
+    text = next((b.text for b in resp.content if b.type == "text"), None)
+    if text is None:
+        raise DraftError(f"no text block in the response (stop_reason={resp.stop_reason})")
+    return _parse_draft_json(text.strip().removeprefix("```json").removesuffix("```").strip())
+
+
+# --------------------------------------------------------------------------
+# The draft cache. Same contract as the extraction cache, word for word:
+# GENERATED OFFLINE, COMMITTED TO THE REPO, READ-ONLY AT RUNTIME.
+#
+#     backend/scripts/make_draft_entry.py   the only writer, run by hand
+#               |  (entry committed to git)
+#               v
+#     backend/demo/draft_cache/*.json
+#               |
+#     load_draft_entry()  <-  read_draft_with_cache()
+#
+# Nothing in the request path writes. A write path here would be unreachable on
+# a read-only serverless filesystem and would fail silently there, which is the
+# defect this contract exists to prevent (docs/debt.md,
+# write-path-contradicts-its-own-contract).
+# --------------------------------------------------------------------------
+
+
+def draft_entry_path(spec: DraftSpec, cache_dir: Path, model: str | None = None) -> Path:
+    return cache_dir / f"{draft_cache_key(spec, model)}.json"
+
+
+def load_draft_entry(
+    spec: DraftSpec, cache_dir: Path | None, model: str | None = None
+) -> Draft | None:
+    """Read a committed entry, or return None. Never calls a model, never writes.
+
+    A corrupt or truncated entry is a MISS, not a draft: returning half a parsed
+    file would be handing a worker a message nobody wrote."""
+    if cache_dir is None:
+        return None
+    used = model or draft_model()
+    key = draft_cache_key(spec, used)
+    path = cache_dir / f"{key}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        english = payload["english"]
+        translated = payload["translated"]
+        if not isinstance(english, str) or not isinstance(translated, str):
+            return None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    # Re-checked on the way out, not trusted for having been committed.
+    return _build_draft(
+        spec,
+        english,
+        translated,
+        used,
+        DRAFT_CACHE_HIT,
+        key,
+        generated_on=str(payload.get("generated_on", "")),
+    )
+
+
+def read_draft_with_cache(
+    spec: DraftSpec,
+    cache_dir: Path | None = DEFAULT_DRAFT_CACHE_DIR,
+    *,
+    allow_live: bool = True,
+    model: str | None = None,
+) -> Draft:
+    """Replay a committed entry if one exists; otherwise call the model.
+
+    THIS FUNCTION NEVER WRITES. With allow_live=False a miss raises
+    DraftCacheMissError rather than reaching the network - the setting the
+    offline control run uses to prove the demo path is genuinely cached and not
+    merely fast (docs/debt.md, fast-is-not-cached)."""
+    used = model or draft_model()
+    cached = load_draft_entry(spec, cache_dir, used)
+    if cached is not None:
+        return cached
+
+    key = draft_cache_key(spec, used)
+    if not allow_live:
+        raise DraftCacheMissError(
+            f"no committed draft entry for {used} at {key}; live calls are "
+            f"disabled, so nothing was written"
+        )
+
+    english, translated = call_draft_model(spec, used)
+    return _build_draft(spec, english, translated, used, DRAFT_CACHE_MISS, key)
+
+
+def write_draft_entry(
+    spec: DraftSpec,
+    cache_dir: Path = DEFAULT_DRAFT_CACHE_DIR,
+    model: str | None = None,
+) -> tuple[Path, Draft]:
+    """Call the model for real and commit the answer to disk.
+
+    The ONLY thing in the codebase that writes a draft entry, and nothing in the
+    request path calls it. Invoked by hand from backend/scripts/make_draft_entry.py.
+
+    A rejected draft is never written: committing one would ship a message that
+    breaks the copy contract and make it permanent."""
+    used = model or draft_model()
+    english, translated = call_draft_model(spec, used)
+    generated_on = datetime.now(UTC).date().isoformat()
+    # Built (and therefore checked) BEFORE anything touches the disk.
+    draft = _build_draft(spec, english, translated, used, DRAFT_CACHE_MISS, "", generated_on)
+
+    key = draft_cache_key(spec, used)
+    path = cache_dir / f"{key}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "template_version": DRAFT_TEMPLATE_VERSION,
+                "model": used,
+                "language": spec.language,
+                "generated_on": generated_on,
+                "spec_canonical": spec.canonical(),
+                "english": draft.english,
+                "translated": draft.translated,
+            },
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return path, draft

@@ -37,6 +37,24 @@ So an OT shortfall compounds into a CPF shortfall. cpf_shortfall() computes exac
 
 Late payment interest: 1.5% per month from the first day after the due date, minimum $5,
 rounded down (CPF worked example: $3,000 paid 19 days late -> $28). Roadmap, not v1.
+Re-verified 7 Sept 2026 on the enforcement page (last updated 05 Aug 2026): "1.5% per month,
+starting from the day after the due date", minimum "$5".
+
+Time limit for recovering under-paid CPF - THERE IS NO PUBLISHED DEADLINE:
+> "Please note the likelihood of recovery for any non/underpayment of CPF contributions
+> beyond one year is low."
+https://www.cpf.gov.sg/service/article/how-can-i-lodge-a-report-for-non-payment-or-underpayment-of-cpf-contributions
+Page "Last updated 12 Mar 2026". Verified 7 Sept 2026.
+That sentence is about LIKELIHOOD, not entitlement. An earlier version of the project brief
+described it as "CPF's 1-year refund/adjustment limit"; that is not what the page says and
+the enforcement page states no limitation period at all. Quote the sentence or say nothing.
+
+What a member is told to attach when reporting (same page, verbatim):
+> "all available supporting documents to support your claim (e.g. pay slips and employment
+> contract)."
+> "Claims made without any supporting documents would require a longer time to investigate."
+The report form itself is behind go.gov.sg/lodge-a-report, which returned HTTP 403 and has
+NOT been read. Its fields are unknown; do not pre-fill fields nobody has seen.
 
 ## Calibration example (backend/tests/test_cpf_calibration.py)
 

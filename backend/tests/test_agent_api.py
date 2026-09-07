@@ -8,6 +8,7 @@ checking the round trip, and last time that gap shipped.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 
 import demo.fixtures as fx
 from app.main import app
+from fairslip import agent
 from fairslip.agent import MANDATE_TABLE, Action, Verdict, required_level
 
 client = TestClient(app)
@@ -244,3 +246,62 @@ def test_a_sub_cent_negative_residue_displays_as_zero_not_minus_zero() -> None:
     assert gap["display"] == "0.00"
     assert not gap["display"].startswith("-")
     assert gap["exact"].startswith("-")  # the engine's signed value survives
+
+
+# --------------------------------------------------------------------------
+# /agent/draft
+# --------------------------------------------------------------------------
+
+
+def test_draft_at_level_0_is_refused_and_names_level_1() -> None:
+    r = client.post("/agent/draft", json={"level": 0, "spec_name": "rahim_month1"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "MANDATE_EXCEEDED"
+    assert r.json()["required_level"] == 1
+
+
+def test_draft_at_level_1_returns_the_committed_draft_from_cache() -> None:
+    r = client.post("/agent/draft", json={"level": 1, "spec_name": "rahim_month1"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cache_state"] == "HIT"
+    assert "No model was called" in body["cache_note"]
+    assert body["language"] == "Bengali"
+    assert body["english"].strip() and body["translated"].strip()
+
+
+def test_the_draft_response_says_drafted_and_never_sent() -> None:
+    """A drafted message is not a sent one. docs/debt.md, missing-narrated-as-settled
+    applied to state: the screen must not be able to read SENT off this."""
+    body = client.post("/agent/draft", json={"level": 1, "spec_name": "rahim_month1"}).json()
+    assert body["state"] == "MESSAGE_DRAFTED"
+    assert "SENT" not in json.dumps(body)
+
+
+def test_the_ngo_alternative_is_returned_beside_every_draft() -> None:
+    body = client.post("/agent/draft", json={"level": 1, "spec_name": "rahim_month1"}).json()
+    assert body["alternative"], "no NGO alternative beside the draft"
+    assert body["alternative_heading"]
+    names = " ".join(o["name"] for o in body["alternative"])
+    assert "MWC" in names or "Migrant" in names
+    assert "TADM" in names
+
+
+def test_every_dollar_figure_in_the_returned_draft_is_a_figure_the_engine_produced() -> None:
+    """The traceability guard, over the wire and over BOTH languages. Every $
+    amount in the text must be one of the cited figures or one of the three
+    totals the spec carries."""
+    body = client.post("/agent/draft", json={"level": 1, "spec_name": "rahim_month1"}).json()
+    spec = fx.rahim_draft_spec()
+    allowed = agent._allowed_figure_strings(spec)
+    for where in ("english", "translated"):
+        found = agent._figures_in_text(body[where])
+        assert found, f"{where}: no figures at all - the guard would be vacuous"
+        assert found <= allowed, f"{where} cites {sorted(found - allowed)}, which no engine produced"
+
+
+def test_an_unknown_spec_name_is_refused_by_name() -> None:
+    r = client.post("/agent/draft", json={"level": 1, "spec_name": "nope"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "INVALID_INPUT"
+    assert "nope" in r.json()["detail"]
