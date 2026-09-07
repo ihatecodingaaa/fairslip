@@ -52,6 +52,7 @@ from fairslip.cpf import (
     shortfall_split,
 )
 from fairslip.extract import (
+    CACHE_HIT,
     DOCUMENT_ROLES,
     ImageInput,
     default_readers,
@@ -477,6 +478,37 @@ def _worker_fields_out() -> list[WorkerFieldOut]:
     ]
 
 
+def _cache_state(readings: tuple) -> tuple[str, str]:
+    """Say which path this response came down, in words the screen can show.
+
+    A miss is stated, not left to be inferred from a response time. The cache
+    is demo infrastructure for a room with bad wifi, and "it felt fast" is not
+    evidence that it was used. See docs/debt.md,
+    write-path-contradicts-its-own-contract.
+    """
+    hits = [r for r in readings if r.cache == CACHE_HIT]
+    misses = [r for r in readings if r.cache != CACHE_HIT]
+
+    if not misses:
+        return "HIT", (
+            "Both readings were replayed from entries committed to the repo. "
+            "No model was called, so this works with the network down."
+        )
+    if not hits:
+        keys = ", ".join(sorted({r.cache_key for r in misses if r.cache_key}))
+        return "MISS", (
+            "No committed cache entry matched these images, so both readers were "
+            f"called live just now. Expected entries: {keys}. Generate them with "
+            "backend/scripts/make_cache_entry.py and commit them before relying on "
+            "this offline."
+        )
+    return "PARTIAL", (
+        f"{len(hits)} of {len(readings)} readings were replayed from the committed "
+        f"cache; {len(misses)} had no entry and were called live. A partial cache "
+        "will not survive the network going down."
+    )
+
+
 @app.post("/extract", response_model=ExtractOut)
 def extract(body: ExtractRequest) -> ExtractOut:
     """Run both readers on the same images and reconcile in pure code.
@@ -492,6 +524,7 @@ def extract(body: ExtractRequest) -> ExtractOut:
     with ThreadPoolExecutor(max_workers=len(readers)) as pool:
         readings = tuple(pool.map(lambda r: read_with_cache(r, images), readers))
 
+    cache_state, cache_note = _cache_state(readings)
     reconciled = reconcile(readings)
     read_fields = [
         ReadFieldOut(
@@ -515,6 +548,8 @@ def extract(body: ExtractRequest) -> ExtractOut:
                 error=r.error,
                 latency_ms=r.latency_ms,
                 from_cache=r.from_cache,
+                cache=r.cache,
+                cache_key=r.cache_key,
             )
             for r in readings
         ],
@@ -522,4 +557,6 @@ def extract(body: ExtractRequest) -> ExtractOut:
         worker_fields=_worker_fields_out(),
         agreed_count=sum(1 for f in read_fields if f.fact.status == "AGREED"),
         read_field_count=len(read_fields),
+        cache_state=cache_state,
+        cache_note=cache_note,
     )

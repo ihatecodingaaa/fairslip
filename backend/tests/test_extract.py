@@ -12,6 +12,7 @@ being offered a field it must never see.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from decimal import Decimal
@@ -20,8 +21,11 @@ from pathlib import Path
 import pytest
 
 from fairslip.extract import (
+    CACHE_HIT,
+    CACHE_MISS,
     DOCUMENT_ROLES,
     PROMPT_VERSION,
+    CacheMissError,
     ExtractionError,
     ImageInput,
     ReaderReading,
@@ -33,6 +37,7 @@ from fairslip.extract import (
     reader_json_schema,
     reader_prompt,
     reconcile,
+    write_cache_entry,
 )
 from fairslip.extract_schema import READER_FIELDS, WORKER_ONLY_FIELDS
 from fairslip.rules import ESTABLISHED, Status
@@ -275,7 +280,11 @@ def test_a_reader_returning_something_that_is_not_json_is_an_error() -> None:
 
 
 # --------------------------------------------------------------------------
-# Cache: replay is only ever of the identical call
+# Cache: generated offline, committed, read-only at runtime
+#
+# The contract these guard (see the extract.py docstring and docs/debt.md,
+# write-path-contradicts-its-own-contract): make_cache_entry.py is the only
+# writer; the request path only ever reads; and a miss is never silent.
 # --------------------------------------------------------------------------
 
 
@@ -294,43 +303,166 @@ class _StubReader:
         return {**dict.fromkeys(reader_field_order()), "ot_hours": self.answer}
 
 
+class _FailingReader(_StubReader):
+    def read(self, images: tuple[ImageInput, ...]) -> dict[str, str | None]:
+        self.calls += 1
+        raise ExtractionError("APIConnectionError: connection refused")
+
+
 def _images(data: bytes = b"payslip-bytes") -> tuple[ImageInput, ...]:
     return (ImageInput(role="payslip", media_type="image/png", data=data),)
 
 
-def test_a_second_read_of_the_same_images_replays_the_cache(tmp_path: Path) -> None:
+# ---- the request path never writes -------------------------------------------
+
+
+def test_reading_does_not_create_a_cache_entry(tmp_path: Path) -> None:
+    """THE REGRESSION THIS BLOCK EXISTS FOR. read_with_cache used to write, which
+    on a read-only serverless filesystem raised OSError, was swallowed, and
+    cached nothing while appearing to work locally. The request path must not
+    write at all, so that what happens in production is what happens here."""
+    r = _StubReader()
+    read_with_cache(r, _images(), tmp_path)
+    assert list(tmp_path.glob("*.json")) == [], "the request path wrote a cache entry"
+    assert r.calls == 1
+
+
+def test_two_identical_reads_both_go_live_when_no_entry_is_committed(tmp_path: Path) -> None:
+    """Without a committed entry there is no cache, however many times you ask.
+
+    The old test passed because the first call populated the cache for the
+    second - behaviour production could never have reproduced."""
     r = _StubReader()
     first = read_with_cache(r, _images(), tmp_path)
     second = read_with_cache(r, _images(), tmp_path)
 
-    assert r.calls == 1
-    assert first.from_cache is False
-    assert second.from_cache is True
-    assert second.values == first.values
+    assert r.calls == 2
+    assert first.cache == CACHE_MISS and second.cache == CACHE_MISS
+    assert first.from_cache is False and second.from_cache is False
+
+
+# ---- the deliberate writer ---------------------------------------------------
+
+
+def test_write_cache_entry_commits_an_entry_that_a_later_read_replays(tmp_path: Path) -> None:
+    """The whole loop: generate offline, then serve from the entry."""
+    r = _StubReader()
+    path, written = write_cache_entry(r, _images(), tmp_path)
+
+    assert path.is_file()
+    assert written.cache == CACHE_MISS, "the generating call itself was live"
+
+    r2 = _StubReader()  # fresh, so any call would be visible
+    replayed = read_with_cache(r2, _images(), tmp_path)
+    assert r2.calls == 0, "a committed entry was ignored and the reader was called"
+    assert replayed.cache == CACHE_HIT
+    assert replayed.from_cache is True
+    assert replayed.values == written.values
+
+
+def test_a_committed_entry_records_what_it_was_made_from(tmp_path: Path) -> None:
+    """An entry that does not say which model, prompt and image produced it
+    cannot be audited later, and a stale one cannot be spotted."""
+    r = _StubReader()
+    path, _ = write_cache_entry(r, _images(b"specific-bytes"), tmp_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["model"] == r.model
+    assert payload["provider"] == r.provider
+    assert payload["prompt_version"] == PROMPT_VERSION
+    assert payload["images"][0]["role"] == "payslip"
+    assert payload["images"][0]["sha256"] == hashlib.sha256(b"specific-bytes").hexdigest()
+    assert payload["images"][0]["bytes"] == len(b"specific-bytes")
+    assert set(payload["values"]) == set(READER_FIELDS)
+
+
+def test_a_failed_reading_is_never_committed(tmp_path: Path) -> None:
+    """Committing a failure would ship a permanent "the document does not show
+    it" manufactured by one bad minute."""
+    with pytest.raises(ExtractionError, match="connection refused"):
+        write_cache_entry(_FailingReader(), _images(), tmp_path)
+    assert list(tmp_path.glob("*.json")) == []
+
+
+# ---- a miss is never silent --------------------------------------------------
+
+
+def test_a_miss_carries_the_key_it_looked_for(tmp_path: Path) -> None:
+    """`from_cache=False` alone says a miss happened but not which entry is
+    absent, so it cannot be acted on."""
+    r = _StubReader()
+    out = read_with_cache(r, _images(), tmp_path)
+    assert out.cache == CACHE_MISS
+    assert out.cache_key == cache_key(r, _images())
+    assert out.cache_key
+
+
+def test_a_hit_carries_the_key_too(tmp_path: Path) -> None:
+    r = _StubReader()
+    write_cache_entry(r, _images(), tmp_path)
+    out = read_with_cache(_StubReader(), _images(), tmp_path)
+    assert out.cache == CACHE_HIT
+    assert out.cache_key == cache_key(r, _images())
+
+
+def test_from_cache_is_derived_from_cache_and_cannot_disagree_with_it() -> None:
+    """Two stored fields describing one fact drift apart. `from_cache` is a
+    property over `cache`, so there is only one fact to get wrong."""
+    from dataclasses import fields as dataclass_fields
+
+    stored = {f.name for f in dataclass_fields(ReaderReading)}
+    assert "from_cache" not in stored
+    assert "cache" in stored
+
+    hit = ReaderReading("k", "l", "m", "p", {}, cache=CACHE_HIT)
+    miss = ReaderReading("k", "l", "m", "p", {}, cache=CACHE_MISS)
+    assert hit.from_cache is True
+    assert miss.from_cache is False
+
+
+# ---- the offline path, provable without a network ---------------------------
+
+
+def test_allow_live_false_refuses_rather_than_calling_a_reader(tmp_path: Path) -> None:
+    """The setting that proves the demo survives the network going down: with no
+    entry it must raise, rather than quietly reach for the network."""
+    r = _StubReader()
+    with pytest.raises(CacheMissError, match="no committed cache entry"):
+        read_with_cache(r, _images(), tmp_path, allow_live=False)
+    assert r.calls == 0
+
+
+def test_allow_live_false_still_serves_a_committed_entry(tmp_path: Path) -> None:
+    r = _StubReader()
+    write_cache_entry(r, _images(), tmp_path)
+
+    r2 = _StubReader()
+    out = read_with_cache(r2, _images(), tmp_path, allow_live=False)
+    assert out.cache == CACHE_HIT
+    assert out.values["ot_hours"] == "18"
+    assert r2.calls == 0
+
+
+# ---- the key is specific to model, prompt and bytes -------------------------
 
 
 def test_different_image_bytes_are_a_different_cache_entry(tmp_path: Path) -> None:
-    r = _StubReader()
-    read_with_cache(r, _images(b"one"), tmp_path)
-    read_with_cache(r, _images(b"two"), tmp_path)
-    assert r.calls == 2
+    write_cache_entry(_StubReader(), _images(b"one"), tmp_path)
+    assert read_with_cache(_StubReader(), _images(b"one"), tmp_path).cache == CACHE_HIT
+    assert read_with_cache(_StubReader(), _images(b"two"), tmp_path).cache == CACHE_MISS
 
 
 def test_a_different_model_never_replays_another_models_answer(tmp_path: Path) -> None:
     """The cache key carries the model id, so switching readers cannot silently
     attribute one model's reading to another."""
-    first = _StubReader(model="stub-1", answer="18")
-    second = _StubReader(model="stub-2", answer="13")
-    read_with_cache(first, _images(), tmp_path)
-    out = read_with_cache(second, _images(), tmp_path)
-
-    assert second.calls == 1
-    assert out.from_cache is False
+    write_cache_entry(_StubReader(model="stub-1", answer="18"), _images(), tmp_path)
+    out = read_with_cache(_StubReader(model="stub-2", answer="13"), _images(), tmp_path)
+    assert out.cache == CACHE_MISS
     assert out.values["ot_hours"] == "13"
 
 
 def test_the_prompt_version_is_part_of_the_cache_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Change the prompt and every cached answer is a miss, because it was an
+    """Change the prompt and every committed entry is a miss, because it was an
     answer to a different question. The key is a hash, so this is checked by
     moving the version and watching the key move, not by looking inside it."""
     r = _StubReader()
@@ -346,43 +478,21 @@ def test_the_model_id_is_part_of_the_cache_key() -> None:
     assert cache_key(r, _images()) != before
 
 
-def test_a_cached_answer_is_not_replayed_after_the_prompt_changes(
+def test_a_committed_entry_is_not_replayed_after_the_prompt_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The end-to-end consequence of the key: a prompt edit re-reads rather than
-    replaying an answer given to the previous prompt."""
-    r = _StubReader()
-    read_with_cache(r, _images(), tmp_path)
+    replaying an answer given to a different question."""
+    write_cache_entry(_StubReader(), _images(), tmp_path)
     monkeypatch.setattr("fairslip.extract.PROMPT_VERSION", PROMPT_VERSION + "-changed")
+
+    r = _StubReader()
     out = read_with_cache(r, _images(), tmp_path)
-    assert r.calls == 2
-    assert out.from_cache is False
+    assert r.calls == 1
+    assert out.cache == CACHE_MISS
 
 
-class _FailingReader(_StubReader):
-    def read(self, images: tuple[ImageInput, ...]) -> dict[str, str | None]:
-        self.calls += 1
-        raise ExtractionError("APIConnectionError: connection refused")
-
-
-def test_a_failed_read_is_never_cached(tmp_path: Path) -> None:
-    """Caching a failure would turn one bad minute into a permanent "the document
-    does not show this"."""
-    r = _FailingReader()
-    first = read_with_cache(r, _images(), tmp_path)
-    second = read_with_cache(r, _images(), tmp_path)
-
-    assert first.ok is False and second.ok is False
-    assert first.error is not None and "connection refused" in first.error
-    assert r.calls == 2, "the failure was replayed from cache"
-    assert list(tmp_path.glob("*.json")) == []
-
-
-def test_a_failed_read_reports_no_values_rather_than_empty_ones(tmp_path: Path) -> None:
-    """An empty reading and a failed reading are different claims."""
-    out = read_with_cache(_FailingReader(), _images(), tmp_path)
-    assert out.values == {}
-    assert out.ok is False
+# ---- a bad entry is a miss, not a reading -----------------------------------
 
 
 def test_a_corrupt_cache_entry_is_a_miss_not_a_reading(tmp_path: Path) -> None:
@@ -390,16 +500,33 @@ def test_a_corrupt_cache_entry_is_a_miss_not_a_reading(tmp_path: Path) -> None:
     (tmp_path / f"{cache_key(r, _images())}.json").write_text("{not json", encoding="utf-8")
     out = read_with_cache(r, _images(), tmp_path)
     assert r.calls == 1
-    assert out.from_cache is False
+    assert out.cache == CACHE_MISS
     assert out.values["ot_hours"] == "18"
 
 
-def test_a_cache_hit_says_it_is_one(tmp_path: Path) -> None:
-    """The screen may want to say the reading was replayed. It can only say that
-    if the reading carries it."""
+def test_an_entry_whose_values_are_not_an_object_is_a_miss(tmp_path: Path) -> None:
+    """Half a parsed file is a guess wearing a transcription's clothes."""
     r = _StubReader()
-    read_with_cache(r, _images(), tmp_path)
-    assert read_with_cache(r, _images(), tmp_path).from_cache is True
+    (tmp_path / f"{cache_key(r, _images())}.json").write_text(
+        json.dumps({"values": "not-an-object"}), encoding="utf-8"
+    )
+    assert read_with_cache(r, _images(), tmp_path).cache == CACHE_MISS
+
+
+def test_a_missing_cache_dir_is_a_miss_not_a_crash(tmp_path: Path) -> None:
+    out = read_with_cache(_StubReader(), _images(), tmp_path / "does-not-exist")
+    assert out.cache == CACHE_MISS
+    assert out.ok is True
+
+
+def test_a_failed_read_reports_no_values_rather_than_empty_ones(tmp_path: Path) -> None:
+    """An empty reading and a failed reading are different claims."""
+    out = read_with_cache(_FailingReader(), _images(), tmp_path)
+    assert out.values == {}
+    assert out.ok is False
+    assert out.cache == CACHE_MISS
+    assert out.cache_key, "even a failed reading says which entry was missing"
+
 
 
 def test_an_image_with_no_data_is_refused() -> None:

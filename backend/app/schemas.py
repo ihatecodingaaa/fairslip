@@ -174,6 +174,11 @@ class ReaderInfoOut(BaseModel):
     error: str | None = None
     latency_ms: int | None = None
     from_cache: bool
+    # "HIT" - replayed from an entry committed to the repo; "MISS" - no entry
+    # existed and this reading was made live. `cache_key` names the entry that
+    # was looked for either way, so a miss can be acted on, not merely noticed.
+    cache: str
+    cache_key: str
 
 
 class ReadFieldOut(BaseModel):
@@ -218,3 +223,8 @@ class ExtractOut(BaseModel):
     # disagree about what "all agreed" means.
     agreed_count: int
     read_field_count: int
+    # Which path this response came down. Aggregated once in the backend so the
+    # screen cannot decide for itself what "cached" means. A miss is reported,
+    # never inferred from a timing.
+    cache_state: str  # "HIT" | "PARTIAL" | "MISS"
+    cache_note: str

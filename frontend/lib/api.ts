@@ -165,6 +165,10 @@ export type ReaderInfo = {
   error: string | null;
   latency_ms: number | null;
   from_cache: boolean;
+  /** "HIT" - replayed from an entry committed to the repo; "MISS" - read live. */
+  cache: "HIT" | "MISS";
+  /** The entry that was looked for, hit or miss. A miss you can act on. */
+  cache_key: string;
 };
 
 export type ReadField = {
@@ -196,6 +200,13 @@ export type ExtractOut = {
   worker_fields: WorkerField[];
   agreed_count: number;
   read_field_count: number;
+  /**
+   * Which path this response came down. Decided once in the backend so the
+   * screen cannot invent its own definition of "cached" - and so a fast
+   * response is never mistaken for a cached one.
+   */
+  cache_state: "HIT" | "PARTIAL" | "MISS";
+  cache_note: string;
 };
 
 export function postExtract(images: ImageIn[]): Promise<Outcome<ExtractOut>> {

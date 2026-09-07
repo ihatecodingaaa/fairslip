@@ -168,6 +168,7 @@ export default function CheckPage() {
 
         {extract && phase === "reconciled" && (
           <>
+            <CachePath state={extract.cache_state} note={extract.cache_note} />
             <Readers readers={extract.readers} />
             <ReadGroup
               fields={extract.read_fields}
@@ -275,12 +276,17 @@ function Readers({ readers }: { readers: ReaderInfo[] }) {
             </span>
             <span className="font-medium">{r.provider}</span>
             <span className="font-mono text-xs text-zinc-600">{r.model}</span>
-            {r.from_cache ? (
-              <span className="text-xs text-zinc-500">replayed from cache</span>
-            ) : (
-              r.latency_ms !== null && (
-                <span className="text-xs text-zinc-500">{r.latency_ms} ms</span>
-              )
+            <span
+              className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
+                r.cache === "HIT"
+                  ? "bg-emerald-100 text-emerald-900"
+                  : "bg-sky-100 text-sky-900"
+              }`}
+            >
+              {r.cache === "HIT" ? "from cache" : "called live"}
+            </span>
+            {r.latency_ms !== null && (
+              <span className="text-xs text-zinc-500">{r.latency_ms} ms</span>
             )}
             {r.error && <span className="w-full text-xs text-red-800">{r.error}</span>}
           </li>
@@ -290,6 +296,33 @@ function Readers({ readers }: { readers: ReaderInfo[] }) {
         Neither reader saw the other&rsquo;s answer. They were given the same images and the same
         list of fields.
       </p>
+    </section>
+  );
+}
+
+/**
+ * Which path the readings came down. This is shown, not inferred: a fast
+ * response is not evidence the cache was used, and the cache is the fallback
+ * for a room with bad wifi. See docs/debt.md,
+ * write-path-contradicts-its-own-contract.
+ */
+function CachePath({ state, note }: { state: ExtractOut["cache_state"]; note: string }) {
+  const tone =
+    state === "HIT"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+      : state === "PARTIAL"
+        ? "border-amber-300 bg-amber-50 text-amber-900"
+        : "border-sky-300 bg-sky-50 text-sky-900";
+  const heading =
+    state === "HIT"
+      ? "Replayed from the committed cache - no model was called"
+      : state === "PARTIAL"
+        ? "Partly cached, partly live"
+        : "Read live just now - not from the cache";
+  return (
+    <section className={`mb-6 rounded-md border px-4 py-3 text-sm ${tone}`}>
+      <p className="font-semibold">{heading}</p>
+      <p className="mt-1">{note}</p>
     </section>
   );
 }

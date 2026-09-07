@@ -76,6 +76,23 @@ def post(**kwargs) -> dict:
     return r.json()
 
 
+def _one_image():
+    """The exact image tuple `body()` posts, so cache keys line up."""
+    return (
+        extract.ImageInput(
+            role="payslip", media_type="image/png", data=base64.b64decode(PNG)
+        ),
+    )
+
+
+def _use_cache_dir(path):
+    """Point the endpoint's cache reads at a temp directory. The `readers`
+    fixture defaults to no cache at all; this opts a test back in."""
+    import app.main as m
+
+    m.read_with_cache = lambda r, images: extract.read_with_cache(r, images, path)
+
+
 # --------------------------------------------------------------------------
 # The two groups arrive separately
 # --------------------------------------------------------------------------
@@ -387,3 +404,85 @@ def test_a_word_this_server_never_published_is_still_refused(readers) -> None:
     r = client.post("/compute", json=payload)
     assert r.status_code == 400
     assert r.json()["error"] == "INVALID_INPUT"
+
+
+# --------------------------------------------------------------------------
+# The response says which path it came down.
+#
+# Before this, `from_cache` per reader was the only signal and nothing
+# aggregated it, so a response that silently went live looked exactly like one
+# served from the committed cache - and did, in production, for every request.
+# See docs/debt.md, write-path-contradicts-its-own-contract.
+# --------------------------------------------------------------------------
+
+
+def test_a_live_response_says_it_was_live_and_names_the_missing_entries(readers) -> None:
+    readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+    out = post()
+
+    assert out["cache_state"] == "MISS"
+    note = out["cache_note"]
+    assert "called live" in note
+    assert "make_cache_entry.py" in note, "the note must say how to fix it"
+
+    for r in out["readers"]:
+        assert r["cache"] == "MISS"
+        assert r["from_cache"] is False
+        assert r["cache_key"], "a miss must name the entry it looked for"
+
+
+def test_a_fully_cached_response_says_so(readers, tmp_path) -> None:
+    """Both entries committed: no reader is called and the response says the
+    network was not needed."""
+    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+    for r in pair:
+        extract.write_cache_entry(r, _one_image(), tmp_path)
+    for r in pair:
+        r.calls = 0
+    _use_cache_dir(tmp_path)
+
+    out = post()
+    assert out["cache_state"] == "HIT"
+    assert "network down" in out["cache_note"]
+    for r in out["readers"]:
+        assert r["cache"] == "HIT"
+        assert r["from_cache"] is True
+
+
+def test_a_half_cached_response_is_reported_as_partial(readers, tmp_path) -> None:
+    """One entry is not enough - /extract calls both readers, so a partial cache
+    still reaches the network. Saying HIT here would be the same class of lie."""
+    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+    extract.write_cache_entry(pair[0], _one_image(), tmp_path)
+    _use_cache_dir(tmp_path)
+
+    out = post()
+    assert out["cache_state"] == "PARTIAL"
+    assert "will not survive" in out["cache_note"]
+    states = {r["key"]: r["cache"] for r in out["readers"]}
+    assert states == {"reader_a": "HIT", "reader_b": "MISS"}
+
+
+def test_the_request_path_never_writes_a_cache_entry(readers, tmp_path) -> None:
+    """The production bug, at the API boundary: POST /extract must leave the
+    cache directory exactly as it found it."""
+    readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+    _use_cache_dir(tmp_path)
+
+    post()
+    post()
+    assert list(tmp_path.glob("*.json")) == [], "POST /extract wrote a cache entry"
+
+
+def test_cache_state_agrees_with_the_per_reader_flags(readers, tmp_path) -> None:
+    """One aggregate and two per-reader flags describing the same fact must not
+    be able to disagree."""
+    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+    for r in pair:
+        extract.write_cache_entry(r, _one_image(), tmp_path)
+    _use_cache_dir(tmp_path)
+
+    out = post()
+    hits = sum(1 for r in out["readers"] if r["cache"] == "HIT")
+    expected = "HIT" if hits == len(out["readers"]) else "MISS" if hits == 0 else "PARTIAL"
+    assert out["cache_state"] == expected

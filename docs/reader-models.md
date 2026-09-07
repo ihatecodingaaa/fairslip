@@ -121,22 +121,72 @@ Worth saying out loud, because it is the part a demo cannot show:
 
 ## Caching
 
-Reader answers are cached on disk by content hash, so the live demo survives an
-API outage.
+Reader answers are replayed from entries **generated offline, committed to the
+repo, and read-only at runtime**. This is the contract, not a workaround:
+
+```
+backend/scripts/make_cache_entry.py     the only writer, run by hand
+          |   (entry committed to git)
+          v
+backend/demo/extract_cache/*.json       ships in the deployment bundle
+          |
+    load_cache_entry()  <-  read_with_cache()  <-  POST /extract
+```
+
+Generate entries for the demo images before the pitch, and commit them:
+
+```
+cd backend
+python scripts/make_cache_entry.py demo/payslip.jpg          # one image
+python scripts/make_cache_entry.py demo/payslip.jpg demo/roster.png   # sent together
+python scripts/make_cache_entry.py --check demo/payslip.jpg  # writes nothing
+```
+
+Images passed in ONE invocation are cached as one request: the key covers the
+whole image set, so two images sent together are a different entry from either
+sent alone. **Match the invocation to what the demo actually posts.**
 
 The key is `sha256(prompt version + model id + each image's role, media type and
-bytes)` — not the image bytes alone. A cached answer is therefore only ever
-replayed for the exact model and the exact prompt that produced it: change
-either and the key changes and the cache misses. A cache hit is marked
-`from_cache` on the way out so the screen can say the reading was replayed
-rather than made.
+bytes)`. Change the prompt or a model and every entry misses, because it is an
+answer to a different question. Bump `PROMPT_VERSION` in `fairslip/extract.py`
+whenever the prompt or schema changes, and regenerate with `--force`.
 
-**Failures are never cached.** Caching one would turn a transient outage into a
-permanent "this document does not show it".
+**Nothing in the request path writes.** An earlier version wrote at runtime; on
+Vercel's read-only filesystem every write raised `OSError` into a `pass`, so the
+cache was permanently empty and never said so, while the docs described it as
+working. Writing to `/tmp` instead would not help — `/tmp` does not survive
+between invocations, so the cache would still be empty when the network is down,
+having looked correct in testing. See `docs/debt.md`,
+`write-path-contradicts-its-own-contract`.
 
-Bump `PROMPT_VERSION` in `fairslip/extract.py` whenever the prompt or the schema
-changes. Committed cache entries are demo infrastructure: verify them with the
-network disabled before the pitch.
+**A miss is never silent.** Every reading carries `cache` (`HIT`/`MISS`) and the
+`cache_key` it looked for; `POST /extract` aggregates these into `cache_state`
+(`HIT`/`PARTIAL`/`MISS`) and a `cache_note`, and `/check` shows a banner saying
+which path the readings came down. A fast response is not evidence of a cache
+hit — the second production call was 3.76 s against 9.06 s and was two live
+calls on warm connections.
+
+`PARTIAL` matters: `/extract` calls both readers, so one cached entry still
+reaches the network. Both readers need an entry or the offline path is fiction.
+
+### Verified offline, 7 Sept
+
+Outbound networking was removed from the interpreter at startup (`socket`
+`getaddrinfo`/`connect` raise), so the SDKs faced a genuinely dead network.
+Nothing in `fairslip` or either SDK was patched.
+
+| Phase | Setup | Result |
+|---|---|---|
+| Control | no entry, network blocked | both readers failed — `APIConnectionError: Connection error.` |
+| Offline | entries present, network blocked | both `cache=HIT`, all six fields returned |
+
+The control is the part that makes the second row mean anything: it proves the
+block was real rather than assumed.
+
+`tests/test_cache_is_populated.py` guards the precondition — once any image is
+committed under `backend/demo/`, it fails until every (image, reader) pair has a
+committed entry, naming each missing filename. It skips while there is no
+artwork.
 
 ## What the readers are and are not asked
 

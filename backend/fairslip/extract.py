@@ -25,6 +25,32 @@ Three rules hold this module together, and each has a test:
 Reconciliation is pure: reconcile() takes reader output and returns Facts. It
 makes no network call and can be tested with canned readings, which is how the
 reconciler tests run - no API key, no images, no cost.
+
+## The cache contract
+
+Cache entries are GENERATED OFFLINE, COMMITTED TO THE REPO, and READ-ONLY AT
+RUNTIME. Nothing in the request path writes one:
+
+    backend/scripts/make_cache_entry.py   the only writer, run by hand
+              |  (entry committed to git)
+              v
+    backend/demo/extract_cache/*.json
+              |
+    load_cache_entry()  <- read_with_cache() <- POST /extract
+
+This is the contract, not a workaround for the deployment. The previous version
+wrote at runtime, which on a read-only serverless filesystem raised OSError on
+every write, was swallowed, and cached nothing - permanently and silently, while
+the docs described it as working. See docs/debt.md,
+write-path-contradicts-its-own-contract.
+
+Moving writes to /tmp would not fix it: /tmp does not survive between
+invocations, so the cache would still be empty when the network is down, having
+looked correct in testing.
+
+A miss is never silent. Every reading carries `cache` (HIT/MISS) and the
+`cache_key` it looked for, and POST /extract aggregates that to the top of the
+response so a screen can say which path it is on.
 """
 
 from __future__ import annotations
@@ -53,6 +79,10 @@ PROMPT_VERSION = "2026-09-07.1"
 MAX_TOKENS = 2048
 
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "demo" / "extract_cache"
+
+# What a reading's `cache` field says about where it came from.
+CACHE_HIT = "HIT"  # replayed from an entry committed to the repo
+CACHE_MISS = "MISS"  # no entry existed; this reading was made live
 
 
 class ExtractionError(RuntimeError):
@@ -177,10 +207,25 @@ class ReaderReading:
     ok: bool = True
     error: str | None = None
     latency_ms: int | None = None
-    from_cache: bool = False
+    # CACHE_HIT if a committed entry was replayed, CACHE_MISS if this reading was
+    # made live. `cache_key` names the entry that was looked for either way, so a
+    # miss can be acted on rather than merely noticed.
+    cache: str = CACHE_MISS
+    cache_key: str = ""
+
+    @property
+    def from_cache(self) -> bool:
+        """Derived, never stored separately: two fields that can disagree about
+        the same fact are a defect waiting to happen."""
+        return self.cache == CACHE_HIT
 
     @staticmethod
-    def failed(reader: Reader, error: str, latency_ms: int | None = None) -> ReaderReading:
+    def failed(
+        reader: Reader,
+        error: str,
+        latency_ms: int | None = None,
+        cache_key: str = "",
+    ) -> ReaderReading:
         return ReaderReading(
             key=reader.key,
             label=reader.label,
@@ -190,6 +235,8 @@ class ReaderReading:
             ok=False,
             error=error,
             latency_ms=latency_ms,
+            cache=CACHE_MISS,
+            cache_key=cache_key,
         )
 
 
@@ -396,66 +443,92 @@ def cache_key(reader: Reader, images: tuple[ImageInput, ...]) -> str:
     return h.hexdigest()
 
 
+class CacheMissError(ExtractionError):
+    """No committed entry for these images, and live calls were not permitted.
+
+    Distinct from a reader failure: the readers were never asked. Raised only
+    when the caller has explicitly demanded the cached path."""
+
+
+def cache_entry_path(reader: Reader, images: tuple[ImageInput, ...], cache_dir: Path) -> Path:
+    return cache_dir / f"{cache_key(reader, images)}.json"
+
+
+def load_cache_entry(
+    reader: Reader, images: tuple[ImageInput, ...], cache_dir: Path | None
+) -> ReaderReading | None:
+    """Read a committed entry, or return None. Never calls a reader, never writes.
+
+    A corrupt or truncated entry is a miss, not a reading: returning half a
+    parsed file would be presenting a guess as a transcription.
+    """
+    if cache_dir is None:
+        return None
+    key = cache_key(reader, images)
+    path = cache_dir / f"{key}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        values = payload["values"]
+        if not isinstance(values, dict):
+            return None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return ReaderReading(
+        key=reader.key,
+        label=reader.label,
+        model=reader.model,
+        provider=reader.provider,
+        values=dict(values),
+        ok=True,
+        latency_ms=payload.get("latency_ms"),
+        cache=CACHE_HIT,
+        cache_key=key,
+    )
+
+
 def read_with_cache(
     reader: Reader,
     images: tuple[ImageInput, ...],
     cache_dir: Path | None = DEFAULT_CACHE_DIR,
     *,
-    write: bool = True,
+    allow_live: bool = True,
 ) -> ReaderReading:
-    """Read, or replay a cached read of the identical images by the identical
-    model under the identical prompt.
+    """Replay a committed entry if one exists; otherwise call the reader.
 
-    A failure is never cached: caching one would turn a transient outage into a
-    permanent "this document does not show it". A cache hit is marked as such on
-    the way out, so a screen can say the reading was replayed rather than made.
+    THIS FUNCTION NEVER WRITES. Entries are generated deliberately, offline, by
+    backend/scripts/make_cache_entry.py, and committed. That is not a limitation
+    of the deployment - it is the contract. A runtime write path would be
+    unreachable on a read-only serverless filesystem and would fail silently
+    there, which is exactly the defect this replaced (docs/debt.md,
+    write-path-contradicts-its-own-contract).
+
+    A miss is never silent. The returned reading carries cache=CACHE_MISS and
+    the cache_key that was looked for, so a screen can say which path it is on
+    and an operator can see which entry is absent.
+
+    With allow_live=False a miss raises CacheMissError rather than reaching the
+    network - the setting to use when proving the offline demo path works.
     """
-    path = None if cache_dir is None else cache_dir / f"{cache_key(reader, images)}.json"
+    cached = load_cache_entry(reader, images, cache_dir)
+    if cached is not None:
+        return cached
 
-    if path is not None and path.is_file():
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            return ReaderReading(
-                key=reader.key,
-                label=reader.label,
-                model=reader.model,
-                provider=reader.provider,
-                values=dict(payload["values"]),
-                ok=True,
-                latency_ms=payload.get("latency_ms"),
-                from_cache=True,
-            )
-        except (OSError, ValueError, KeyError, TypeError):
-            # A corrupt cache entry is a miss, not a reading. Fall through and call.
-            pass
+    key = cache_key(reader, images)
+    if not allow_live:
+        raise CacheMissError(
+            f"no committed cache entry for {reader.model} at {key}; "
+            f"live calls are disabled, so nothing was read"
+        )
 
     started = time.monotonic()
     try:
         values = reader.read(images)
     except ExtractionError as e:
-        return ReaderReading.failed(reader, str(e), int((time.monotonic() - started) * 1000))
-    latency_ms = int((time.monotonic() - started) * 1000)
-
-    if write and path is not None:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps(
-                    {
-                        "prompt_version": PROMPT_VERSION,
-                        "model": reader.model,
-                        "provider": reader.provider,
-                        "latency_ms": latency_ms,
-                        "values": values,
-                    },
-                    indent=2,
-                    sort_keys=True,
-                ),
-                encoding="utf-8",
-            )
-        except OSError:
-            # A read-only filesystem must not turn a good reading into a failure.
-            pass
+        return ReaderReading.failed(
+            reader, str(e), int((time.monotonic() - started) * 1000), cache_key=key
+        )
 
     return ReaderReading(
         key=reader.key,
@@ -464,8 +537,68 @@ def read_with_cache(
         provider=reader.provider,
         values=values,
         ok=True,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        cache=CACHE_MISS,
+        cache_key=key,
+    )
+
+
+def write_cache_entry(
+    reader: Reader,
+    images: tuple[ImageInput, ...],
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+) -> tuple[Path, ReaderReading]:
+    """Call the reader for real and commit the answer to disk.
+
+    The ONLY thing in the codebase that writes a cache entry, and nothing in the
+    request path calls it. It is invoked by hand, from
+    backend/scripts/make_cache_entry.py, on a machine with a writable checkout
+    and working keys, and the resulting file is committed.
+
+    A failed reading is never written: committing one would turn a transient
+    outage into a permanent "this document does not show it" that ships.
+    """
+    started = time.monotonic()
+    values = reader.read(images)  # raises ExtractionError; the caller reports it
+    latency_ms = int((time.monotonic() - started) * 1000)
+
+    key = cache_key(reader, images)
+    path = cache_dir / f"{key}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "prompt_version": PROMPT_VERSION,
+                "model": reader.model,
+                "provider": reader.provider,
+                "reader_key": reader.key,
+                "images": [
+                    {
+                        "role": img.role,
+                        "media_type": img.media_type,
+                        "sha256": hashlib.sha256(img.data).hexdigest(),
+                        "bytes": len(img.data),
+                    }
+                    for img in images
+                ],
+                "latency_ms": latency_ms,
+                "values": values,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return path, ReaderReading(
+        key=reader.key,
+        label=reader.label,
+        model=reader.model,
+        provider=reader.provider,
+        values=values,
+        ok=True,
         latency_ms=latency_ms,
-        from_cache=False,
+        cache=CACHE_MISS,
+        cache_key=key,
     )
 
 
