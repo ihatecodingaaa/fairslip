@@ -64,13 +64,18 @@ export default function CheckPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [breakdown, setBreakdown] = useState<PayBreakdown | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const [transportError, setTransportError] = useState<string | null>(null);
+  // Two failures, two states. They were one, so a /compute failure rendered
+  // "The readers could not be reached" - while the readings it was contradicting
+  // sat on screen directly above. See docs/debt.md, ui-invents-a-cause.
+  const [readError, setReadError] = useState<string | null>(null);
+  const [computeError, setComputeError] = useState<string | null>(null);
 
   const chosen = DOCUMENTS.filter((d) => files[d.role]);
 
   async function read() {
     setPhase("reading");
-    setTransportError(null);
+    setReadError(null);
+    setComputeError(null);
     setRefusal(null);
     try {
       const images: ImageIn[] = await Promise.all(
@@ -87,7 +92,7 @@ export default function CheckPage() {
       setBreakdown(null);
       setPhase("reconciled");
     } catch (e) {
-      setTransportError(e instanceof Error ? e.message : String(e));
+      setReadError(e instanceof Error ? e.message : String(e));
       setPhase("collect");
     }
   }
@@ -109,7 +114,12 @@ export default function CheckPage() {
       // The engines' pay pack does not take residency or date of birth; those
       // two are held for the CPF pack and do not block this calculation.
       if (f.required_for.includes("cpf")) continue;
-      if (f.name === "rest_day_requested_by" && !restDayWorked(extract, answers)) continue;
+      // Only a rest day established as worked makes "who asked?" a question.
+      // While it is unknown, `rest_day_hours` is itself unresolved and already
+      // on this list, so the worker is pointed at the thing that settles it.
+      if (f.name === "rest_day_requested_by" && restDayVerdict(extract, answers).state !== "worked") {
+        continue;
+      }
       if (!answers[f.name]?.trim()) {
         out.push({ name: f.name, label: f.label, group: "worker" });
       }
@@ -119,7 +129,7 @@ export default function CheckPage() {
 
   async function compute() {
     if (!extract) return;
-    setTransportError(null);
+    setComputeError(null);
     setRefusal(null);
     try {
       const out = await postCompute(payInputsFrom(extract, answers));
@@ -130,7 +140,7 @@ export default function CheckPage() {
       }
       setBreakdown(out.value);
     } catch (e) {
-      setTransportError(e instanceof Error ? e.message : String(e));
+      setComputeError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -146,12 +156,22 @@ export default function CheckPage() {
           </p>
         </header>
 
-        {transportError && (
+        {readError && (
           <Banner tone="red" title="The readers could not be reached.">
-            <p>{transportError}</p>
+            <p>{readError}</p>
             <p className="mt-2">
               Nothing is shown below, because nothing was read. Backend expected at{" "}
-              <code className="font-mono">{API_BASE}</code>.
+              <code className="font-mono">{API_BASE || "the same origin as this page"}</code>.
+            </p>
+          </Banner>
+        )}
+
+        {computeError && (
+          <Banner tone="red" title="The calculation did not complete.">
+            <p>{computeError}</p>
+            <p className="mt-2">
+              The readers were reached and what they read is shown below. It is the calculation
+              that did not return a result, so no figure is shown for this month.
             </p>
           </Banner>
         )}
@@ -180,7 +200,7 @@ export default function CheckPage() {
             <WorkerGroup
               fields={extract.worker_fields}
               answers={answers}
-              restDayWorked={restDayWorked(extract, answers)}
+              restDay={restDayVerdict(extract, answers)}
               onAnswer={(name, value) => setAnswers((a) => ({ ...a, [name]: value }))}
             />
             <ComputeGate unresolved={unresolved} onCompute={compute} />
@@ -285,7 +305,16 @@ function Readers({ readers }: { readers: ReaderInfo[] }) {
             >
               {r.cache === "HIT" ? "from cache" : "called live"}
             </span>
-            {r.latency_ms !== null && (
+            {/*
+              A time is only shown for a live call, because only then does it
+              describe THIS request. `latency_ms` on a hit is the latency
+              recorded when the entry was generated, so printing it beside a
+              cache chip read as "this cached reply took 3,688 ms" when the
+              replay was about a millisecond. A number next to a chip is read as
+              describing the request in front of you.
+              See docs/debt.md, cached-path-wearing-a-live-timing.
+            */}
+            {r.cache !== "HIT" && r.latency_ms !== null && (
               <span className="text-xs text-zinc-500">{r.latency_ms} ms</span>
             )}
             {r.error && <span className="w-full text-xs text-red-800">{r.error}</span>}
@@ -460,12 +489,12 @@ function ReadFieldRow({
 function WorkerGroup({
   fields,
   answers,
-  restDayWorked,
+  restDay,
   onAnswer,
 }: {
   fields: WorkerField[];
   answers: Record<string, string>;
-  restDayWorked: boolean;
+  restDay: RestDayVerdict;
   onAnswer: (name: string, value: string) => void;
 }) {
   const netPaid = fields.find((f) => f.name === "net_paid");
@@ -512,7 +541,9 @@ function WorkerGroup({
 
       <ul className="divide-y divide-zinc-200">
         {rest.map((f) => {
-          const skipped = f.name === "rest_day_requested_by" && !restDayWorked;
+          // Non-rest-day fields always render their input; only this one is conditional.
+          const held: RestDayVerdict =
+            f.name === "rest_day_requested_by" ? restDay : { state: "worked", settledBy: null };
           return (
             <li key={f.name} className="px-5 py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -529,9 +560,20 @@ function WorkerGroup({
                 </div>
               </div>
               <p className="mt-1 text-xs text-zinc-600">{f.why}</p>
-              {skipped ? (
+              {held.state === "not_worked" ? (
                 <p className="mt-2 text-xs text-zinc-500">
-                  Not asked: the documents show no hours worked on a rest day.
+                  Not asked:{" "}
+                  {held.settledBy === "readers"
+                    ? "both readers agree no hours were worked on a rest day"
+                    : "you told us no hours were worked on a rest day"}
+                  , so MOM&rsquo;s rest-day table does not apply.
+                </p>
+              ) : held.state === "unknown" ? (
+                <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Not asked yet. Whether a rest day was worked is not established &mdash; see
+                  &ldquo;Hours worked on a rest day&rdquo; above. That is not the same as the
+                  documents showing no rest day, and FairSlip will not treat it as though it were.
+                  Answer that field and this question appears if it applies.
                 </p>
               ) : (
                 <WorkerInput
@@ -794,7 +836,9 @@ function Footer() {
         Figures are reconstructed from MOM&rsquo;s and CPF Board&rsquo;s published rules and are
         not a determination of any kind. Check with MOM, TADM or CPF Board.
       </p>
-      <p className="mt-3 font-mono text-[11px] text-zinc-400">Engines at {API_BASE}</p>
+      <p className="mt-3 font-mono text-[11px] text-zinc-400">
+        Engines at {API_BASE || "same origin"}
+      </p>
     </footer>
   );
 }
@@ -802,17 +846,50 @@ function Footer() {
 /* ------------------------------------------------------------ fact assembly */
 
 /**
- * Did the documents show hours worked on a rest day? Only then does MOM's
- * rest-day table apply, and only then is "who asked you to work it" a question
- * worth putting to the worker.
+ * Was a rest day worked? THREE answers, not two.
+ *
+ * "unknown" is the one that matters. A field the readers could not establish is
+ * not a field the documents settled: here reader A read 8 hours off a roster
+ * that says "Sun 14: full day (rest day)" and reader B read nothing, which
+ * makes the fact MISSING - not absent. Collapsing MISSING into "no rest day was
+ * worked" made the screen state something the documents contradict, on the part
+ * of the month that is most of the discrepancy this demo exists to show.
+ * See docs/debt.md, missing-narrated-as-settled.
  */
-function restDayWorked(extract: ExtractOut, answers: Record<string, string>): boolean {
+type RestDayState = "worked" | "not_worked" | "unknown";
+
+/** Who settled it. A screen that cannot say this cannot honestly narrate it. */
+type RestDaySettledBy = "readers" | "you" | null;
+
+type RestDayVerdict = { state: RestDayState; settledBy: RestDaySettledBy };
+
+function restDayVerdict(
+  extract: ExtractOut,
+  answers: Record<string, string>,
+): RestDayVerdict {
+  const unknown: RestDayVerdict = { state: "unknown", settledBy: null };
   const f = extract.read_fields.find((x) => x.name === "rest_day_hours");
-  if (!f) return false;
-  const raw = answers.rest_day_hours?.trim() || (isEstablished(f.fact.status) ? f.fact.value : null);
-  if (raw === null || raw === undefined || typeof raw === "object") return false;
+  if (!f) return unknown;
+
+  const typed = answers.rest_day_hours?.trim();
+  const fromReaders = isEstablished(f.fact.status) ? f.fact.value : null;
+  // A worker's answer wins, and knowing WHICH source won is the whole point:
+  // the input box only appears when the readers did NOT settle the field, so a
+  // typed value proves there was no reader agreement to cite.
+  const raw = typed || fromReaders;
+  const settledBy: RestDaySettledBy = typed ? "you" : fromReaders !== null ? "readers" : null;
+
+  if (raw === null || raw === undefined || raw === "" || typeof raw === "object") return unknown;
+
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0;
+  if (!Number.isFinite(n)) return unknown;
+  if (n > 0) return { state: "worked", settledBy };
+  if (n === 0) return { state: "not_worked", settledBy };
+
+  // Negative. NOT "no rest day was worked" - that would launder a reading
+  // nobody established into a settled zero and drop the component. It is a
+  // value the engine must see and refuse.
+  return unknown;
 }
 
 /**
@@ -844,12 +921,31 @@ function payInputsFrom(
       : { value: null, status: "MISSING", source: "the worker has not answered this" };
   }
 
-  // The rest-day pair travels together or not at all. Sending one half would be
-  // silently dropped by the engine and the month would render as though no rest
-  // day had been worked. See docs/debt.md, half-input-silently-dropped.
-  if (!restDayWorked(extract, answers)) {
-    out.rest_day_hours = null;
-    out.rest_day_requested_by = null;
+  // The rest-day pair travels together or not at all: rules.py drops BOTH when
+  // only one is supplied, with no flag (docs/debt.md, half-input-silently-dropped).
+  //
+  // Which way it travels depends on all three states, not two. Nulling the pair
+  // whenever it is not established would tell the engine "no rest day was
+  // worked" on a month where the readers simply had not settled it - the same
+  // false claim the screen used to make in words.
+  switch (restDayVerdict(extract, answers).state) {
+    case "worked":
+      break; // both facts are established or confirmed; send them as they are
+    case "not_worked":
+      // Established as zero: there is no rest-day component to compute.
+      out.rest_day_hours = null;
+      out.rest_day_requested_by = null;
+      break;
+    case "unknown":
+      // Send both unestablished so the ENGINE refuses. The gate should have
+      // blocked this already; if it ever does not, a refusal is the right
+      // outcome and silently dropping a rest day is not.
+      out.rest_day_requested_by = {
+        value: null,
+        status: "MISSING",
+        source: "not established: whether a rest day was worked is unresolved",
+      };
+      break;
   }
 
   // Not a PayInputs field - it belongs to the CPF pack.

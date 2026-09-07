@@ -18,7 +18,7 @@ domestic workers, and any determination of legal liability.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import Enum
 from typing import Literal
 
@@ -81,8 +81,8 @@ def daily_rate(monthly_basic: Decimal, days_per_week: int) -> Decimal:
     """Daily rate = (12 x monthly basic) / (52 x days worked per week).
     NOT single-valued: a 5-day and a 6-day week give different answers.
     The caller must supply days_per_week as an established fact."""
-    if days_per_week not in (5, 6):
-        raise ValueError("days_per_week must be 5 or 6 for v1")
+    if days_per_week not in ALLOWED_DAYS_PER_WEEK:
+        raise ValueError(f"days_per_week must be one of {sorted(ALLOWED_DAYS_PER_WEEK)} for v1")
     return (MONTHS_PER_YEAR * Decimal(monthly_basic)) / (WEEKS_PER_YEAR * Decimal(days_per_week))
 
 
@@ -170,7 +170,12 @@ class PayBreakdown:
         raise KeyError(label)
 
 
+ALLOWED_DAYS_PER_WEEK: frozenset[int] = frozenset({5, 6})
+REST_DAY_REQUESTERS: frozenset[str] = frozenset({"employer", "employee"})
+
+
 def _require(fact: Fact, name: str) -> object:
+    """The status gate: was this fact established at all?"""
     if not fact.established:
         raise UnverifiedInputError(
             f"{name} is {fact.status.value}; refusing to calculate on an unestablished fact"
@@ -178,15 +183,112 @@ def _require(fact: Fact, name: str) -> object:
     return fact.value
 
 
+# --------------------------------------------------------------------------
+# The value gate.
+#
+# A status of HUMAN_CONFIRMED says a person answered; it does not say the answer
+# is a number, or a number this engine can compute with. Those are two separate
+# claims and only one of them was being checked, so a worker typing "NaN" into a
+# box produced a 500, and "-5" produced overtime of -$47.20 - a figure the
+# engine invented from an input nobody established.
+#
+# The rule is the same as for status: refuse rather than approximate. A value
+# the engine cannot establish as its field's type is UNESTABLISHED_INPUT, and
+# the caller sees a refusal naming the field, exactly as for an unconfirmed one.
+#
+# See docs/debt.md, established-status-mistaken-for-established-value.
+# --------------------------------------------------------------------------
+
+
+def _require_decimal(fact: Fact, name: str, *, allow_negative: bool = False) -> Decimal:
+    """A finite, displayable, non-negative amount.
+
+    Three ways a Decimal can exist and still not be a value:
+      - "NaN" and "Infinity" parse happily and then poison every comparison and
+        sum they touch, silently, all the way to the screen.
+      - "1e400" parses and is finite, then raises the moment it is rounded for
+        display. A number the engine cannot express in cents is a number it
+        cannot show, and one it cannot show it has not established.
+      - a negative wage, hour count or deduction. Nothing this engine models can
+        be negative, and MOM's formulas have no meaning on one.
+    """
+    raw = _require(fact, name)
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError) as e:
+        raise UnverifiedInputError(
+            f"{name}: {raw!r} is not a number; refusing to calculate on it"
+        ) from e
+
+    if not value.is_finite():
+        raise UnverifiedInputError(
+            f"{name}: {raw!r} is not a finite number; refusing to calculate on it"
+        )
+
+    try:
+        to_cents(value)
+    except InvalidOperation as e:
+        raise UnverifiedInputError(
+            f"{name}: {value} cannot be expressed in cents; refusing to calculate on it"
+        ) from e
+
+    if value < 0 and not allow_negative:
+        raise UnverifiedInputError(
+            f"{name}: {value} is negative. Wages, hours and deductions cannot be, "
+            f"and this engine will not produce a figure from one"
+        )
+    return value
+
+
+def _require_days_per_week(fact: Fact, name: str = "days_per_week") -> int:
+    """Checked HERE, at the boundary, not inside daily_rate().
+
+    daily_rate() guards itself, but it is only called when a rest day was
+    worked - so a month without one accepted days_per_week=7 in silence and
+    computed a gross from it. A guard that only fires on some paths is not a
+    guard on the input."""
+    raw = _require(fact, name)
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise UnverifiedInputError(f"{name}: {raw!r} is not a whole number of days")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as e:
+        raise UnverifiedInputError(f"{name}: {raw!r} is not a whole number of days") from e
+    if value not in ALLOWED_DAYS_PER_WEEK:
+        raise UnverifiedInputError(
+            f"{name}: {value} is outside {sorted(ALLOWED_DAYS_PER_WEEK)}. MOM's daily rate is "
+            f"(12 x monthly basic) / (52 x days per week) and v1 encodes only the 5- and "
+            f"6-day week; refusing rather than extending the formula"
+        )
+    return value
+
+
+def _require_bool(fact: Fact, name: str) -> bool:
+    """`bool("false")` is True. A string that looks like an answer is not one."""
+    raw = _require(fact, name)
+    if not isinstance(raw, bool):
+        raise UnverifiedInputError(f"{name}: {raw!r} is not true or false")
+    return raw
+
+
+def _require_choice(fact: Fact, name: str, allowed: frozenset[str]) -> str:
+    raw = _require(fact, name)
+    if not isinstance(raw, str) or raw not in allowed:
+        raise UnverifiedInputError(f"{name}: {raw!r} is not one of {sorted(allowed)}")
+    return raw
+
+
 def compute_expected(inp: PayInputs) -> PayBreakdown:
-    """Refuses to run unless every fact it touches is ESTABLISHED."""
-    basic = Decimal(_require(inp.monthly_basic, "monthly_basic"))
-    ot_h = Decimal(_require(inp.ot_hours, "ot_hours"))
-    dpw = int(_require(inp.days_per_week, "days_per_week"))
-    ndh = Decimal(_require(inp.normal_daily_hours, "normal_daily_hours"))
-    workman = bool(_require(inp.is_workman, "is_workman"))
-    ded = Decimal(_require(inp.deductions_total, "deductions_total"))
-    paid = Decimal(_require(inp.net_paid, "net_paid"))
+    """Refuses to run unless every fact it touches is ESTABLISHED - in status AND
+    in value. A confirmed answer that is not a number of the right shape is
+    refused the same way an unconfirmed one is."""
+    basic = _require_decimal(inp.monthly_basic, "monthly_basic")
+    ot_h = _require_decimal(inp.ot_hours, "ot_hours")
+    dpw = _require_days_per_week(inp.days_per_week)
+    ndh = _require_decimal(inp.normal_daily_hours, "normal_daily_hours")
+    workman = _require_bool(inp.is_workman, "is_workman")
+    ded = _require_decimal(inp.deductions_total, "deductions_total")
+    paid = _require_decimal(inp.net_paid, "net_paid")
 
     flags: list[str] = []
     comps: list[Component] = []
@@ -210,8 +312,10 @@ def compute_expected(inp: PayInputs) -> PayBreakdown:
         flags.append(f"OT_HOURS_EXCEED_72: {ot_h}h recorded; MOM monthly cap is 72h")
 
     if inp.rest_day_hours is not None and inp.rest_day_requested_by is not None:
-        rdh = Decimal(_require(inp.rest_day_hours, "rest_day_hours"))
-        who = str(_require(inp.rest_day_requested_by, "rest_day_requested_by"))
+        rdh = _require_decimal(inp.rest_day_hours, "rest_day_hours")
+        who = _require_choice(
+            inp.rest_day_requested_by, "rest_day_requested_by", REST_DAY_REQUESTERS
+        )
     else:
         rdh = None
         who = None

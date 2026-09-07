@@ -419,7 +419,9 @@ function Footer() {
         Figures are reconstructed from MOM&rsquo;s and CPF Board&rsquo;s published rules and are
         not a determination of any kind. Check with MOM, TADM or CPF Board.
       </p>
-      <p className="mt-3 font-mono text-[11px] text-zinc-400">Engines at {API_BASE}</p>
+      <p className="mt-3 font-mono text-[11px] text-zinc-400">
+        Engines at {API_BASE || "same origin"}
+      </p>
     </footer>
   );
 }
