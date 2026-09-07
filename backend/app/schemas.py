@@ -258,10 +258,19 @@ class ExtractOut(BaseModel):
 # --------------------------------------------------------------------------
 
 
+class ActionOut(BaseModel):
+    """An action, and whether this cut implements it. `built` is a claim about
+    the software; `granted` is a claim about the mandate. They are separate."""
+
+    name: str
+    built: bool
+
+
 class MandateLevelOut(BaseModel):
     level: int
     label: str
     actions: list[str]  # Action values granted at this level
+    action_detail: list[ActionOut]
 
 
 class MandateOut(BaseModel):
@@ -359,3 +368,19 @@ class DraftOut(BaseModel):
     cache_state: str  # "HIT" | "MISS"
     cache_note: str
     generated_on: str
+
+
+class EscalationIn(BaseModel):
+    level: int
+
+
+class AgentDemoInputsOut(BaseModel):
+    """The three fictional months the agent demo verifies against.
+
+    Served from demo/fixtures.py so the frontend holds no fixture data of its
+    own: the screen must not be able to drift from the fixtures the tests use."""
+
+    month1: dict
+    month2_corrected: dict
+    month2_uncorrected: dict
+    month2_blocked: dict

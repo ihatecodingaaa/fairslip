@@ -139,6 +139,17 @@ _L4: frozenset[Action] = _L3 | {Action.PREPARE_ESCALATION}  # prepare escalation
 MANDATE_TABLE: dict[int, frozenset[Action]] = {0: _L0, 1: _L1, 2: _L2, 3: _L3, 4: _L4}
 MANDATE_LEVELS: frozenset[int] = frozenset(MANDATE_TABLE)
 
+# The mandate table is the specification. This is what the build implements.
+# Keeping them separate matters on screen: a level card that lists an action as
+# something the worker "may" allow is making a claim about the software, and
+# "specified" is not "built".
+BUILT_ACTIONS: frozenset[Action] = frozenset({Action.DRAFT, Action.SEND, Action.VERIFY})
+
+
+def is_built(action: Action) -> bool:
+    return action in BUILT_ACTIONS
+
+
 MANDATE_LABELS: dict[int, str] = {
     0: "Show me only",
     1: "Draft for me",

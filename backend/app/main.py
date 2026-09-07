@@ -21,6 +21,8 @@ from fastapi.responses import JSONResponse
 
 import demo.fixtures as fx
 from app.schemas import (
+    ActionOut,
+    AgentDemoInputsOut,
     BlockedFieldOut,
     ChoiceOut,
     CitedFigureOut,
@@ -32,6 +34,7 @@ from app.schemas import (
     CpfResultOut,
     DraftIn,
     DraftOut,
+    EscalationIn,
     ExtractOut,
     ExtractRequest,
     FactIn,
@@ -70,6 +73,7 @@ from fairslip.agent import (
     MandateExceededError,
     TapEvent,
     Unverifiable,
+    is_built,
 )
 from fairslip.cpf import (
     AgeBand,
@@ -646,6 +650,10 @@ def agent_mandate() -> MandateOut:
                 level=level,
                 label=MANDATE_LABELS[level],
                 actions=sorted(a.value for a in MANDATE_TABLE[level]),
+                action_detail=[
+                    ActionOut(name=a.value, built=is_built(a))
+                    for a in sorted(MANDATE_TABLE[level], key=lambda x: x.value)
+                ],
             )
             for level in sorted(MANDATE_TABLE)
         ],
@@ -790,3 +798,38 @@ def agent_draft(body: DraftIn) -> DraftOut:
         ),
         generated_on=draft.generated_on,
     )
+
+
+@app.get("/agent/demo-inputs", response_model=AgentDemoInputsOut)
+def agent_demo_inputs() -> AgentDemoInputsOut:
+    """Fictional. The month-2 fixtures the /check agent panel verifies against.
+
+    Rahim is the persona here because his month-2 fixtures are the ones
+    demo/fixtures.py declares. Nothing is computed - these are the same
+    established facts the backend tests use, serialised."""
+
+    def out(pi) -> dict:
+        return {
+            name: _fact_out(f).model_dump()
+            for name in type(pi).__dataclass_fields__
+            if (f := getattr(pi, name)) is not None
+        }
+
+    return AgentDemoInputsOut(
+        month1=out(fx.rahim_month1_established()),
+        month2_corrected=out(fx.rahim_month2_corrected()),
+        month2_uncorrected=out(fx.rahim_month2_uncorrected()),
+        month2_blocked=out(fx.rahim_month2_unestablished()),
+    )
+
+
+@app.post("/agent/escalation")
+def agent_escalation(body: EscalationIn) -> dict:
+    """Level 4's action, called for real so the mandate check runs first.
+
+    In this cut it always ends in a refusal - but it must be the RIGHT refusal.
+    Below level 4 that is MANDATE_EXCEEDED naming level 4, and at level 4 it is
+    ACTION_NOT_BUILT. The screen must never guess which: telling a worker at
+    level 0 that raising their level would not help is false, and it suppresses
+    the one real choice the mandate exists to offer."""
+    return Mandate(body.level).act(Action.PREPARE_ESCALATION)

@@ -101,7 +101,9 @@ export type Refusal = {
     | "OUT_OF_SCOPE"
     | "INVALID_INPUT"
     | "MANDATE_EXCEEDED"
-    | "ACTION_NOT_BUILT";
+    | "ACTION_NOT_BUILT"
+    | "DRAFT_UNAVAILABLE"
+    | "DRAFT_REJECTED";
   detail: string;
   /** Present only on MANDATE_EXCEEDED. */
   required_level?: number | null;
@@ -252,4 +254,129 @@ export async function fileToImageIn(
  */
 export function isEstablished(status: FactStatus): boolean {
   return status === "AGREED" || status === "HUMAN_CONFIRMED";
+}
+
+/* ------------------------------------------------------- the agent (stage 3)
+ *
+ * Transport only, exactly like the rest of this file. Every figure below is a
+ * Money the backend built from an engine's Decimal; nothing here computes, and
+ * nothing here decides a verdict or a mandate.
+ */
+
+/** `built` is a claim about the software; membership in a level is a claim about
+ * the mandate. They are separate, and the screen must not merge them. */
+export type ActionDetail = { name: string; built: boolean };
+
+export type MandateLevel = {
+  level: number;
+  label: string;
+  actions: string[];
+  action_detail: ActionDetail[];
+};
+
+export type MandateTable = {
+  levels: MandateLevel[];
+  /** Shown where the level is set, never in a tooltip. */
+  no_authentication_notice: string;
+  reference_links: Record<string, string>;
+};
+
+export type CitedFigure = {
+  label: string;
+  amount: Money;
+  formula: string;
+  source: string;
+};
+
+export type NgoOption = { name: string; what_they_do: string; link: string };
+
+export type DraftOut = {
+  /** Always MESSAGE_DRAFTED. A drafted message is not a sent one. */
+  state: string;
+  english: string;
+  translated: string;
+  language: string;
+  figures_cited: CitedFigure[];
+  alternative_heading: string;
+  alternative: NgoOption[];
+  model: string;
+  cache_state: string;
+  cache_note: string;
+  generated_on: string;
+};
+
+export type SentOut = {
+  state: string;
+  /** The moment of the TAP, from the backend. Never re-stamped here. */
+  tap_at: string;
+  tap_surface: string;
+  message_id: string;
+  note: string;
+};
+
+export type BlockedField = { name: string; status: string; detail: string };
+
+export type VerifyOut = {
+  verdict: "CORRECTED" | "PARTIALLY_CORRECTED" | "NOT_CORRECTED" | "UNVERIFIABLE";
+  state: string;
+  month1_difference: Money;
+  month2_difference: Money | null;
+  adjustment_found: Money | null;
+  remaining_gap: Money | null;
+  month1_expected_net: Money | null;
+  month2_expected_net: Money | null;
+  month2_net_paid: Money | null;
+  blocked_by: BlockedField[];
+  arithmetic: string;
+};
+
+export function getMandate(): Promise<Outcome<MandateTable>> {
+  return call<MandateTable>("/agent/mandate");
+}
+
+export function postDraft(level: number, specName: string): Promise<Outcome<DraftOut>> {
+  return call<DraftOut>("/agent/draft", {
+    method: "POST",
+    body: JSON.stringify({ level, spec_name: specName }),
+  });
+}
+
+/** `tapAt` is produced at the moment the worker taps, and sent as-is. */
+export function postSend(level: number, tapAt: string, surface: string): Promise<Outcome<SentOut>> {
+  return call<SentOut>("/agent/send", {
+    method: "POST",
+    body: JSON.stringify({ level, tap: { at: tapAt, surface } }),
+  });
+}
+
+export function postVerify(
+  level: number,
+  month1: PayInputs,
+  month2: PayInputs,
+): Promise<Outcome<VerifyOut>> {
+  return call<VerifyOut>("/agent/verify", {
+    method: "POST",
+    body: JSON.stringify({ level, month1, month2 }),
+  });
+}
+
+export type DemoInputs = {
+  month1: PayInputs;
+  month2_corrected: PayInputs;
+  month2_uncorrected: PayInputs;
+  /** Served by the backend so no screen synthesises a reader disagreement. */
+  month2_blocked: PayInputs;
+};
+
+export function getAgentDemoInputs(): Promise<Outcome<DemoInputs>> {
+  return call<DemoInputs>("/agent/demo-inputs");
+}
+
+/** Always ends in a refusal in this cut - but WHICH refusal is the point, and
+ * only the backend can say. Below level 4 the mandate check fires first. */
+export function postEscalation(level: number): Promise<Outcome<never>> {
+  return call<never>("/agent/escalation", {
+    method: "POST",
+    body: JSON.stringify({ level }),
+  });
 }

@@ -1,0 +1,603 @@
+"use client";
+
+/**
+ * Stage 3 screen: what happens after the number.
+ *
+ * The copy contract applies hardest here, because every state on this panel is
+ * one a worker could mistake for a stronger one:
+ *
+ *   - A drafted message is NOT a sent one. The draft carries state
+ *     MESSAGE_DRAFTED and the timeline shows SENT as not yet reached.
+ *   - AWAITING is NOT SENT. It is a separate step, reached only after a tap.
+ *   - PARTIALLY_CORRECTED is NOT CORRECTED. They get different words, different
+ *     colours, and the partial one says in a sentence what still stands.
+ *   - UNVERIFIABLE is not a verdict about the employer at all, and says so.
+ *
+ * This file computes nothing. Every dollar is a Money the backend built from an
+ * engine's Decimal, rendered through money(). Every verdict, every state name
+ * and every refusal reason arrives from the API.
+ */
+
+import { useEffect, useState } from "react";
+import {
+  getAgentDemoInputs,
+  getMandate,
+  money,
+  postDraft,
+  postEscalation,
+  postSend,
+  postVerify,
+  type DemoInputs,
+  type DraftOut,
+  type MandateTable,
+  type Refusal,
+  type SentOut,
+  type VerifyOut,
+} from "../../lib/api";
+
+/* The steps in the order the domain contract lists them. `reached` is derived
+ * from what actually happened, never assumed from the step before it. */
+const TIMELINE = [
+  { key: "MESSAGE_DRAFTED", label: "Drafted", hint: "A message was written. Drafting is not sending." },
+  { key: "SENT", label: "Sent", hint: "Recorded from your tap." },
+  {
+    key: "AWAITING_NEXT_PAYSLIP",
+    label: "Awaiting next payslip",
+    hint: "Tracking the next salary period is not built in this cut. FairSlip will not remind you.",
+  },
+] as const;
+
+export function AgentPanel() {
+  const [mandate, setMandate] = useState<MandateTable | null>(null);
+  const [level, setLevel] = useState(0);
+  const [draft, setDraft] = useState<DraftOut | null>(null);
+  const [sent, setSent] = useState<SentOut | null>(null);
+  const [verdict, setVerdict] = useState<VerifyOut | null>(null);
+  const [demo, setDemo] = useState<DemoInputs | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // A refusal is not a pending request. Swallowing `r.ok === false` left the
+    // screen saying "Loading..." forever for something that had already been
+    // refused - an error path narrated as a success in progress.
+    getMandate()
+      .then((r) => (r.ok ? setMandate(r.value) : setError(r.refusal.detail)))
+      .catch((e) => setError(String(e)));
+    getAgentDemoInputs()
+      .then((r) => (r.ok ? setDemo(r.value) : setError(r.refusal.detail)))
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  async function run<T>(
+    what: string,
+    call: () => Promise<{ ok: true; value: T } | { ok: false; refusal: Refusal }>,
+    onOk: (v: T) => void,
+  ) {
+    setBusy(what);
+    setRefusal(null);
+    setError(null);
+    try {
+      const r = await call();
+      if (r.ok) onOk(r.value);
+      else setRefusal(r.refusal);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const doDraft = () =>
+    run("draft", () => postDraft(level, "rahim_month1"), (v) => {
+      setDraft(v);
+      setSent(null);
+      setVerdict(null);
+    });
+
+  /* The tap. The moment is taken HERE, when the worker taps, and sent as-is.
+   * The backend records that moment - it never stamps its own. */
+  const doSend = () => {
+    const tappedAt = new Date().toISOString();
+    return run("send", () => postSend(level, tappedAt, "check-page"), setSent);
+  };
+
+  const doVerify = (which: "month2_corrected" | "month2_uncorrected" | "month2_blocked") => {
+    if (!demo) return;
+    // Every month-2 input comes from the backend, including the blocked one.
+    // Synthesising a DISAGREED fact here would mean inventing a reader
+    // transcript - naming vendors and quoting readings nobody made - and then
+    // rendering it back under "what was not established" as if it were evidence.
+    return run("verify", () => postVerify(level, demo.month1, demo[which]), setVerdict);
+  };
+
+  // AWAITING is a SEPARATE state from SENT in the backend's state machine, and
+  // the event that enters it is `track` - which this cut does not build. So
+  // nothing establishes that it has been entered, and marking it reached from
+  // `sent` would be assuming it from the step before, which is exactly what the
+  // comment on TIMELINE forbids.
+  const reached: Record<string, boolean> = {
+    MESSAGE_DRAFTED: draft !== null,
+    SENT: sent !== null,
+    AWAITING_NEXT_PAYSLIP: false,
+  };
+
+  return (
+    <section className="mt-8 rounded-lg border border-zinc-300 bg-white p-5">
+      <h2 className="text-lg font-semibold text-zinc-900">What happens next</h2>
+      <p className="mt-1 text-sm text-zinc-600">
+        FairSlip can help you raise this. What it may do is limited to what you allow, and it
+        never contacts your employer itself.
+      </p>
+
+      {error && (
+        <p className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+          FairSlip could not complete that request: {error}. If that was the send tap, FairSlip
+          cannot tell whether the record was made - check before tapping again.
+        </p>
+      )}
+
+      {refusal && <AgentRefusal refusal={refusal} onRaise={(l) => setLevel(l)} />}
+
+      <MandateSelector mandate={mandate} level={level} onPick={setLevel} />
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Action label="Draft a message" onClick={doDraft} busy={busy === "draft"} />
+        {/* Calls the real endpoint. In this cut it always ends in a refusal,
+            but WHICH refusal is the whole point and only the backend can say:
+            below level 4 the mandate check fires first and names level 4.
+            Fabricating ACTION_NOT_BUILT here would tell a worker at level 0
+            that raising their level would not help, which is false. */}
+        <Action
+          label="Prepare escalation"
+          onClick={() => run("escalate", () => postEscalation(level), () => undefined)}
+          busy={busy === "escalate"}
+        />
+      </div>
+
+      {draft && (
+        <>
+          <DraftView draft={draft} />
+          <TapToSend
+            sent={sent}
+            onSend={doSend}
+            busy={busy === "send"}
+            level={level}
+            mandate={mandate}
+          />
+          <Timeline reached={reached} sent={sent} />
+        </>
+      )}
+
+      <VerifySection
+        demo={demo}
+        verdict={verdict}
+        onVerify={doVerify}
+        busy={busy === "verify"}
+      />
+    </section>
+  );
+}
+
+/* Plain words for a worker. The raw values are the backend's action names, and
+ * a snake_case identifier is not something to put in front of someone reading at
+ * primary-school level. */
+const ACTION_WORDS: Record<string, string> = {
+  draft: "write a message for you",
+  send: "record that you sent it",
+  track: "watch for the next payslip",
+  verify: "check next month's payslip",
+  prepare_escalation: "gather an evidence pack",
+};
+
+/* ------------------------------------------------------------ the mandate */
+
+function MandateSelector({
+  mandate,
+  level,
+  onPick,
+}: {
+  mandate: MandateTable | null;
+  level: number;
+  onPick: (l: number) => void;
+}) {
+  if (!mandate) {
+    return (
+      <p className="mt-4 text-sm text-zinc-500">
+        Loading the mandate levels from the server that enforces them...
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold text-zinc-900">What you are allowing</h3>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {mandate.levels.map((l) => {
+          const picked = l.level === level;
+          return (
+            <button
+              key={l.level}
+              type="button"
+              onClick={() => onPick(l.level)}
+              aria-pressed={picked}
+              className={`rounded border px-3 py-2 text-left text-sm transition ${
+                picked
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-500"
+              }`}
+            >
+              <span className="block font-medium">
+                Level {l.level} - {l.label}
+              </span>
+              <span
+                className={`mt-1 block text-xs ${picked ? "text-zinc-300" : "text-zinc-600"}`}
+              >
+                {l.action_detail.length === 0 ? (
+                  "FairSlip may do nothing beyond showing you the figures."
+                ) : (
+                  <>
+                    May:{" "}
+                    {l.action_detail.map((a, i) => (
+                      <span key={a.name}>
+                        {i > 0 && ", "}
+                        <span className={a.built ? "" : "line-through opacity-70"}>
+                          {ACTION_WORDS[a.name] ?? a.name}
+                        </span>
+                        {!a.built && " (not built yet)"}
+                      </span>
+                    ))}
+                  </>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* The honest answer to "what stops someone else setting level 4", where
+          the level is set - not in a tooltip, not in a footnote. */}
+      <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <span className="font-semibold">About this build: </span>
+        {mandate.no_authentication_notice}
+      </p>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- the draft */
+
+function DraftView({ draft }: { draft: DraftOut }) {
+  return (
+    <div className="mt-6 rounded border border-zinc-300">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2">
+        <h3 className="text-sm font-semibold text-zinc-900">
+          A message you could send - not sent
+        </h3>
+        <span className="rounded bg-zinc-200 px-2 py-0.5 font-mono text-[11px] text-zinc-700">
+          {draft.state}
+        </span>
+      </div>
+
+      <div className="grid gap-0 md:grid-cols-2">
+        <article className="border-b border-zinc-200 p-4 md:border-b-0 md:border-r">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {draft.language}
+          </h4>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-900">
+            {draft.translated}
+          </p>
+        </article>
+        <article className="p-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">English</h4>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-900">
+            {draft.english}
+          </p>
+        </article>
+      </div>
+
+      <div className="border-t border-zinc-200 px-4 py-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Every figure in this message came from an engine
+        </h4>
+        <ul className="mt-2 space-y-1">
+          {draft.figures_cited.map((f) => (
+            <li key={f.label} className="font-mono text-xs text-zinc-700">
+              {money(f.amount)} - {f.label} - {f.formula}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Beside the draft, never behind a disclosure. */}
+      <div className="border-t border-zinc-200 bg-sky-50 px-4 py-3">
+        <p className="text-sm font-medium text-sky-900">{draft.alternative_heading}</p>
+        <ul className="mt-2 space-y-2">
+          {draft.alternative.map((o) => (
+            <li key={o.name} className="text-sm text-sky-900">
+              <a
+                href={o.link}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold underline underline-offset-2"
+              >
+                {o.name}
+              </a>
+              <span className="block text-xs text-sky-800">{o.what_they_do}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <p className="border-t border-zinc-200 px-4 py-2 text-[11px] text-zinc-500">
+        {draft.cache_note}
+      </p>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- the tap */
+
+function TapToSend({
+  sent,
+  onSend,
+  busy,
+  level,
+  mandate,
+}: {
+  sent: SentOut | null;
+  onSend: () => void;
+  busy: boolean;
+  level: number;
+  mandate: MandateTable | null;
+}) {
+  // Derived from the table the server enforces, not a second copy of it here.
+  const sendLevel = mandate?.levels.find((l) => l.actions.includes("send"))?.level ?? null;
+  const permitted = sendLevel !== null && level >= sendLevel;
+  if (sent) {
+    return (
+      <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 px-4 py-3">
+        <p className="text-sm font-semibold text-emerald-900">
+          Recorded: you approved sending this. FairSlip did not contact your employer.
+        </p>
+        <p className="mt-1 text-xs text-emerald-900">{sent.note}</p>
+        <p className="mt-1 font-mono text-[11px] text-emerald-800">
+          {sent.state} at {sent.tap_at} - tapped on {sent.tap_surface}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-4 rounded border border-zinc-300 bg-zinc-50 px-4 py-3">
+      <p className="text-sm text-zinc-800">
+        Nothing has been sent. FairSlip cannot record this as sent without your tap.
+      </p>
+      <button
+        type="button"
+        onClick={onSend}
+        disabled={busy}
+        className="mt-2 rounded bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {busy
+          ? "Recording..."
+          : permitted
+            ? "I approve - I will send this myself"
+            : `I approve - I will send this myself${
+                sendLevel !== null ? ` (needs level ${sendLevel}; you are at ${level})` : ""
+              }`}
+      </button>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ the timeline */
+
+function Timeline({ reached, sent }: { reached: Record<string, boolean>; sent: SentOut | null }) {
+  return (
+    <ol className="mt-4 space-y-2">
+      {TIMELINE.map((step) => {
+        const done = reached[step.key];
+        return (
+          <li key={step.key} className="flex gap-3">
+            <span
+              aria-hidden
+              className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 ${
+                done ? "border-emerald-600 bg-emerald-600" : "border-zinc-300 bg-white"
+              }`}
+            />
+            <div>
+              <p
+                className={`text-sm font-medium ${done ? "text-zinc-900" : "text-zinc-400"}`}
+              >
+                {step.label}
+                {!done && <span className="ml-2 text-xs font-normal">not yet reached</span>}
+                {done && step.key === "SENT" && sent && (
+                  <span className="ml-2 font-mono text-xs font-normal">{sent.tap_at}</span>
+                )}
+              </p>
+              <p className={`text-xs ${done ? "text-zinc-600" : "text-zinc-400"}`}>
+                {step.key === "MESSAGE_DRAFTED" && reached.SENT
+                  ? "A message was written, and you approved it below."
+                  : step.hint}
+              </p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/* ------------------------------------------------------------- the verdict */
+
+const VERDICT_COPY: Record<
+  VerifyOut["verdict"],
+  { title: string; body: string; tone: string }
+> = {
+  CORRECTED: {
+    title: "The month-1 difference closes.",
+    body: "The arithmetic below closes to within one cent. That is the month-1 pay difference only - FairSlip did not check CPF in this comparison.",
+    tone: "border-emerald-300 bg-emerald-50 text-emerald-900",
+  },
+  PARTIALLY_CORRECTED: {
+    title: "The difference narrowed. It did not close.",
+    body: "Payslip 2 paid more than payslip 2 alone required. FairSlip cannot say the extra was for month 1. A gap still stands, and it is shown below.",
+    tone: "border-amber-300 bg-amber-50 text-amber-900",
+  },
+  NOT_CORRECTED: {
+    title: "The difference did not narrow.",
+    body: "Payslip 2 does not reduce the month-1 difference. FairSlip is not saying why, and not saying anyone did anything wrong.",
+    tone: "border-orange-300 bg-orange-50 text-orange-900",
+  },
+  UNVERIFIABLE: {
+    title: "FairSlip cannot say.",
+    body: "FairSlip did not get a usable payslip 2, so it made no comparison. This is not a finding about your employer - it is a statement about what FairSlip could establish. What blocked it is below.",
+    tone: "border-zinc-300 bg-zinc-100 text-zinc-800",
+  },
+};
+
+function VerifySection({
+  demo,
+  verdict,
+  onVerify,
+  busy,
+}: {
+  demo: DemoInputs | null;
+  verdict: VerifyOut | null;
+  onVerify: (w: "month2_corrected" | "month2_uncorrected" | "month2_blocked") => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="mt-6 border-t border-zinc-200 pt-5">
+      <h3 className="text-sm font-semibold text-zinc-900">Next month</h3>
+      <p className="mt-1 text-sm text-zinc-600">
+        A real payslip 2 would go through the same two readers and the same engines. These
+        buttons use fictional month-2 fixtures, so no reader ran. The verdict is arithmetic -
+        no model takes part in it.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Action label="Payslip 2 with an extra payment" onClick={() => onVerify("month2_corrected")} busy={busy} disabled={!demo} />
+        <Action label="Payslip 2 with the same shortfall" onClick={() => onVerify("month2_uncorrected")} busy={busy} disabled={!demo} />
+        <Action label="Payslip 2 the readers could not agree on" onClick={() => onVerify("month2_blocked")} busy={busy} disabled={!demo} />
+      </div>
+
+      {verdict && <VerdictCard v={verdict} />}
+    </div>
+  );
+}
+
+function VerdictCard({ v }: { v: VerifyOut }) {
+  const copy = VERDICT_COPY[v.verdict];
+  return (
+    <div className={`mt-4 rounded border px-4 py-3 ${copy.tone}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{copy.title}</p>
+        <span className="rounded bg-white/70 px-2 py-0.5 font-mono text-[11px]">{v.verdict}</span>
+      </div>
+      <p className="mt-1 text-xs">{copy.body}</p>
+
+      {v.verdict === "UNVERIFIABLE" ? (
+        <div className="mt-3 rounded bg-white/70 px-3 py-2">
+          <p className="text-xs font-semibold">What was not established:</p>
+          <ul className="mt-1 space-y-1">
+            {v.blocked_by.map((b) => (
+              <li key={b.name} className="font-mono text-[11px]">
+                {b.name || "(unnamed field)"} - {b.status} - {b.detail}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            The month-1 difference of {money(v.month1_difference)} is unchanged by this: it was
+            established, and nothing here revises it.
+          </p>
+        </div>
+      ) : (
+        <dl className="mt-3 grid gap-x-6 gap-y-1 rounded bg-white/70 px-3 py-2 sm:grid-cols-2">
+          <Row label="Month-1 difference" value={money(v.month1_difference)} />
+          {v.month2_expected_net && (
+            <Row label="Month 2 should have paid" value={money(v.month2_expected_net)} />
+          )}
+          {v.month2_net_paid && <Row label="Month 2 reached the bank" value={money(v.month2_net_paid)} />}
+          {v.adjustment_found && (
+            <Row label="Adjustment found on payslip 2" value={money(v.adjustment_found)} />
+          )}
+          {v.remaining_gap && <Row label="Remaining gap" value={money(v.remaining_gap)} strong />}
+        </dl>
+      )}
+
+      <p className="mt-2 font-mono text-[11px] opacity-80">{v.arithmetic}</p>
+    </div>
+  );
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex justify-between gap-4 text-xs">
+      <dt>{label}</dt>
+      <dd className={`font-mono ${strong ? "font-bold" : ""}`}>{value}</dd>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- refusal, UI */
+
+function AgentRefusal({
+  refusal,
+  onRaise,
+}: {
+  refusal: Refusal;
+  onRaise: (l: number) => void;
+}) {
+  const mandateRefusal = refusal.error === "MANDATE_EXCEEDED";
+  return (
+    <div className="mt-4 rounded border border-amber-300 bg-amber-50 px-4 py-3">
+      <p className="text-sm font-semibold text-amber-900">
+        {mandateRefusal
+          ? "That is outside the mandate you granted."
+          : refusal.error === "ACTION_NOT_BUILT"
+            ? "FairSlip has not built that yet."
+            : "FairSlip declined, and said why."}
+      </p>
+      <p className="mt-1 rounded bg-white/60 px-3 py-2 font-mono text-xs text-amber-900">
+        {refusal.detail}
+      </p>
+      {mandateRefusal && refusal.required_level != null && (
+        <button
+          type="button"
+          onClick={() => onRaise(refusal.required_level as number)}
+          className="mt-2 rounded border border-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-900"
+        >
+          Raise to level {refusal.required_level} - your choice, nothing changes until you do
+        </button>
+      )}
+      {refusal.error === "ACTION_NOT_BUILT" && (
+        <p className="mt-2 text-xs text-amber-900">
+          This is not disabled by your mandate. Raising your mandate level will not enable it.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Action({
+  label,
+  onClick,
+  busy,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  busy: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || disabled}
+      className="rounded border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:border-zinc-700 disabled:opacity-50"
+    >
+      {busy ? "Working..." : label}
+    </button>
+  );
+}

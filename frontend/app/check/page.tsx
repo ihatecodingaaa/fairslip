@@ -15,6 +15,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from "react";
+import { AgentPanel } from "./AgentPanel";
 import {
   API_BASE,
   fileToImageIn,
@@ -205,6 +206,7 @@ export default function CheckPage() {
             />
             <ComputeGate unresolved={unresolved} onCompute={compute} />
             {breakdown && <Result breakdown={breakdown} />}
+            {breakdown && <AgentPanel />}
           </>
         )}
 
@@ -817,6 +819,8 @@ const REFUSAL_TITLES: Record<Refusal["error"], string> = {
   INVALID_INPUT: "That input could not be read as the type its field needs.",
   MANDATE_EXCEEDED: "That is outside the mandate you granted.",
   ACTION_NOT_BUILT: "FairSlip has not built that yet.",
+  DRAFT_UNAVAILABLE: "No drafted message is available for this month.",
+  DRAFT_REJECTED: "A message was written and then refused, because it broke FairSlip’s own copy rules.",
 };
 
 function RefusalBanner({ refusal }: { refusal: Refusal }) {

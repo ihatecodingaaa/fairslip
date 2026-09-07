@@ -78,6 +78,23 @@ def rahim_month2_uncorrected() -> PayInputs:
     return PayInputs(**_base("1400.00", "worker confirmed construction (workman)"))
 
 
+def rahim_month2_unestablished() -> PayInputs:
+    """Payslip #2 that could not be established: the readers disagreed on OT hours.
+
+    This lives HERE and not in the frontend. A screen that synthesised a
+    DISAGREED fact would be inventing a reader transcript - naming two vendors
+    and quoting readings nobody made - and then rendering it back as evidence.
+    Demo data is fictional, and it is fictional in one place.
+    """
+    base = _base("1524.48", "worker confirmed construction (workman)")
+    base["ot_hours"] = Fact(
+        {"reader_a": D("18"), "reader_b": D("13")},
+        Status.DISAGREED,
+        "fictional demo input: the two readers did not agree on this figure",
+    )
+    return PayInputs(**base)
+
+
 # ---------------------------------------------------------------- Mei Ling (Citizen, 40)
 
 

@@ -305,3 +305,52 @@ def test_an_unknown_spec_name_is_refused_by_name() -> None:
     assert r.status_code == 400
     assert r.json()["error"] == "INVALID_INPUT"
     assert "nope" in r.json()["detail"]
+
+
+def test_escalation_below_level_4_is_mandate_exceeded_not_action_not_built() -> None:
+    """The distinction that matters most on screen. Below level 4 the mandate
+    check fires FIRST, so the worker is told the level that would permit it -
+    never that raising their level would not help."""
+    for level in (0, 1, 2, 3):
+        r = client.post("/agent/escalation", json={"level": level})
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"] == "MANDATE_EXCEEDED", f"level {level} gave {body['error']}"
+        assert body["required_level"] == 4
+
+
+def test_escalation_at_level_4_is_action_not_built() -> None:
+    r = client.post("/agent/escalation", json={"level": 4})
+    assert r.status_code == 400
+    assert r.json()["error"] == "ACTION_NOT_BUILT"
+    assert "not built" in r.json()["detail"]
+
+
+def test_the_mandate_endpoint_says_which_actions_are_actually_built() -> None:
+    """The table is the specification; BUILT_ACTIONS is the build. A level card
+    that lists an action the worker may allow is a claim about the software."""
+    body = client.get("/agent/mandate").json()
+    seen: dict[str, bool] = {}
+    for lvl in body["levels"]:
+        assert len(lvl["action_detail"]) == len(lvl["actions"])
+        for a in lvl["action_detail"]:
+            seen[a["name"]] = a["built"]
+    assert seen["draft"] is True
+    assert seen["send"] is True
+    assert seen["verify"] is True
+    assert seen["track"] is False
+    assert seen["prepare_escalation"] is False
+
+
+def test_the_blocked_month_2_fixture_is_served_by_the_backend() -> None:
+    """So no screen has to synthesise a DISAGREED fact - which would mean
+    inventing a reader transcript and rendering it back as evidence."""
+    body = client.get("/agent/demo-inputs").json()
+    assert body["month2_blocked"]["ot_hours"]["status"] == "DISAGREED"
+    r = client.post(
+        "/agent/verify",
+        json={"level": 3, "month1": body["month1"], "month2": body["month2_blocked"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["verdict"] == "UNVERIFIABLE"
+    assert {b["name"] for b in r.json()["blocked_by"]} == {"ot_hours"}
