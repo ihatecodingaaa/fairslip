@@ -8,6 +8,21 @@ serve. Both were lines Lucas would have said out loud, in a pitch about not asse
 system has not established. Check every beat against the actual surface after any change that
 touches a surface - the check is `/demo-check`, and it takes two minutes.
 
+TIMED AGAINST PRODUCTION, three runs, 7 Sept 2026. The SYSTEM contributes 3.1-3.8 seconds to
+the whole scripted run and nothing it does takes longer than 1.3s, so there is no dead air to
+cut - every remaining second is a person typing or talking. The one measurable wait is the
+extraction, 1.0-1.3s on the committed cache against 9.06s live, so run it cached.
+
+EVERY CLICK IS WRITTEN DOWN. Four used to be missing - the script said a thing appeared and in
+fact a person had to click. A beat that says "the difference lands" and does not say who
+clicked what is a beat you will fumble when the room is watching.
+
+The scripted run is 24 presenter actions, and they are: 2 file picks, 1 "Read my documents",
+6 answers, 1 compute, 3 scrolls, 2 mandate levels, 1 "Draft a message", 1 approve tap,
+1 payslip-2 button, and 6 focus changes between fields. If you change a beat, recount here -
+a number with no derivation goes stale silently, which is the defect this file already
+records about itself.
+
 Setup: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with
 network disabled; printed handwritten payslip in Jaydon's hand; phone camera tested under the
 room's lighting; audio cached; fallback video on a hidden slide and on your phone.
@@ -24,6 +39,9 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
 
 0:10  Photograph the slip live, THEN attach the roster - the rest-day beat needs both, and
       with the payslip alone the screen says "neither reader found this" instead.
+      >>> CLICK "Read my documents". <<<  Nothing happens until you do. 1.0-1.3s on the
+      committed cache, so keep talking through it; it is 9s if it ever goes live.
+
       Fields light up. HOURS WORKED ON A REST DAY shows a grey "not established" chip and an
       amber answer box.
 
@@ -34,11 +52,30 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
 
       Tap the roster row. "She worked the full Sunday." Confirm. Chip turns green: you answered this.
 
-      THEN FIVE MORE ANSWERS BEFORE THE BUTTON ENABLES, so keep moving and narrate the reason
-      once: normal hours in a working day, what actually reached the bank, days a week
-      contracted, whether the job is a workman's job, and - once the rest day is answered - who
-      asked her to work it. "None of these is on any document. A model asked anyway would
-      return a guess that looks exactly like a reading." Jaydon types; Lucas talks over it.
+      THE COUNT DOES NOT GO DOWN WHEN YOU ANSWER THE REST DAY. The gate opens listing five
+      fields. Answering the rest-day hours removes one AND adds one - "Who asked you to work
+      the rest day" does not exist until FairSlip knows a rest day was worked - so the list
+      sits at five again. That is the moment that will throw you. It reaches zero only after
+      all six. Six answers in total, in the order the screen shows them:
+
+        1. Normal hours in a working day               -> 8
+        2. Hours worked on a rest day                  -> 8   (the beat you just narrated)
+        3. What actually reached your bank             -> 1120.00
+        4. Days a week you are contracted to work      -> 6 days a week
+        5. Whether your job counts as a workman's job  -> No - my work is not manual
+        6. Who asked you to work the rest day          -> My employer asked me to
+                                                          (appears only after 2)
+
+      Read fields sort above worker fields, so 1 and 2 are at the top together.
+
+      SKIP RESIDENCY AND DATE OF BIRTH. They are on the same screen, badged "for the CPF
+      check", and they DO NOT gate the button - measured: the button enables with date of
+      birth still blank. Filling them costs two actions and buys nothing on this path,
+      because /check runs the Employment Act pack only. If a judge asks why they are there,
+      that is the answer.
+
+      Narrate the reason once while Jaydon types: "None of these is on any document. A model
+      asked anyway would return a guess that looks exactly like a reading."
 
       WHY THIS BEAT AND NOT OT HOURS: on the committed cache both readers AGREE on 18 OT hours.
       The genuinely unestablished fields are `rest_day_hours` and `normal_daily_hours`, both
@@ -48,7 +85,10 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
       story: a model produced a number the other model could not find anywhere, which is
       precisely what judges fear about AI reading documents. And it is most of the discrepancy.
 
-0:35  POSSIBLE UNRECONCILED DIFFERENCE  $62.24
+0:35  >>> CLICK "Work out what the rules say this month should have paid". <<<  It is disabled
+      until all six are answered, and the figure does not appear on its own. 0.3-0.4s.
+
+      POSSIBLE UNRECONCILED DIFFERENCE  $62.24
       (Do not say "about 1.35 days of her basic pay" - days_of_pay() exists in rules.py but no
       endpoint calls it and nothing renders it. Every figure you say out loud must be one the
       screen shows.)
@@ -82,15 +122,28 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
       message, not yours - we are not drafting about your payslip."
 
 1:10  RAISE THE LEVEL FIRST - and say why, because the refusal is the feature:
-      "verify is level 3. It will not let me, and it tells me which level would." Tap level 3.
-      (Path B needs level 4 for the escalation pack; raise again when you get there.)
+      "verify is level 3. It will not let me, and it tells me which level would."
+      >>> CLICK "Level 3 - Verify". <<<
+      (The scripted run stops at 3. Level 4 is only needed for the escalation pack, which is
+      a Q&A move now - do not raise to 4 here.)
+
+      >>> SCROLL DOWN to "Next month". <<<  It is below the timeline and off screen after the
+      draft renders.
 
       "Next month." Payslip #2. Same engines, same rules - these buttons use fictional
       month-2 fixtures, so no reader runs here, and the screen says so.
-      Path A: "CORRECTED - an adjustment of $62.24 appears; the month-1 gap closes to $0.00."
-      Path B: "NOT CORRECTED - the gap stands, and it has doubled to $124.48. Escalation pack
-              ready: TADM's published evidence list. She files. We don't."
-      Run whichever the room needs. Both fixtures exist.
+
+      THE SCRIPTED RUN IS PATH A. >>> CLICK "Payslip 2 with an extra payment". <<<  0.4-0.8s.
+      "CORRECTED - an adjustment of $62.24 appears; the month-1 gap closes to $0.00."
+
+      THE TWO PATHS ARE MUTUALLY EXCLUSIVE. There is one verdict card and the second click
+      REPLACES its contents - no side-by-side, and it does not blank in between, it swaps.
+      Do not run both in the 90 seconds. Path B is a Q&A move, below.
+
+      ONE HAZARD WORTH KNOWING: if a verify click is REFUSED (wrong mandate level), the old
+      verdict card stays on screen behind the refusal banner. Nothing clears it. So a refused
+      click can leave a CORRECTED card sitting above a refusal - read the banner, not the
+      card, and raise the level before you click again.
 
 1:25  "AI reads. Code calculates. The worker decides. The agent follows through -
       within limits the worker set."
@@ -117,6 +170,28 @@ hits. Same engines, same published rules, visibly different outcome:
   (No reader runs when you switch - the panel is fixture data and says so. Do not say
   "same readers" here.)
 
+**"What if the employer does nothing?"** - Path B. >>> CLICK "Payslip 2 with the same
+shortfall". <<<  The CORRECTED card is replaced in place. "NOT CORRECTED - the gap stands, and
+it has doubled to $124.48, because month 2 repeated the same shortfall."
+
+  Then the pack. >>> SCROLL UP to the mandate row. <<<  Both controls are at the TOP of the
+  panel, and you are at the bottom after clicking the payslip-2 button.
+  >>> CLICK "Level 4 - Prepare escalation" <<< (verify was level 3; escalation needs 4, and it
+  will tell you so if you forget) >>> then CLICK "Prepare escalation". <<<
+  The pack does not appear on its own. 0.3-0.4s. It renders ABOVE the CPF example and above
+  "Next month" - so it appears behind you, not where you just clicked. Scroll to it.
+
+  "TADM's published evidence list, four items, quoted from their page with the link. The
+  filing deadlines, quoted from MOM's page. She files. We don't - the module that would
+  do it imports no network client and calls nothing that files, and a test parses it and
+  asserts that."
+
+  If they ask why the CPF report is not pre-filled: "two reasons, and the second is the better
+  one. We could not read the form - CPF Board's link returned an access error, and we were not
+  going to invent the structure of a government form. But CPF Board also says the Board
+  computes the CPF once TADM has concluded the claim. So TADM is not half the answer, it is
+  the first step. That sentence is on the screen, quoted, with the page date."
+
 **"Want to change any number on that roster?"** - the judge picks, one component turns orange
 and recomputes, the rest stay untouched.
 
@@ -124,10 +199,5 @@ and recomputes, the rest stay untouched.
 on the screen where the level is set: there is no authentication here, and the mandate level is
 whatever the caller sends. The guard stops the software exceeding a level. It does not stop a
 person claiming one, and we did not want to imply it did."
-
-**"Why isn't the CPF report pre-filled?"** - "Because we could not read the form. CPF Board's
-page links to it behind a redirect that returned an access error. We built the TADM half, where
-the evidence list is published, and the screen says the CPF half is not built and why. We were
-not going to invent the structure of a government form and hand it to a worker."
 
 If it breaks: "let me show you the recorded run", play the video. Do not debug on stage.

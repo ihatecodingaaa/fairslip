@@ -756,12 +756,18 @@ def test_no_user_visible_backend_string_assumes_a_pronoun() -> None:
 # (page "Last updated 12 Mar 2026"). The page is client-rendered and returns
 # nothing to curl, which is why these were the last unverified quotes in the
 # product. Substrings copied from the rendered text, character for character.
+# Four sentences: three read 7 Sept 2026, plus the sequence sentence from the
+# same page and the same reading.
 CPF_PAGE_SENTENCES = (
     (
         "all available supporting documents to support your claim "
         "(e.g. pay slips and employment contract)."
     ),
     "Claims made without any supporting documents would require a longer time to investigate.",
+    (
+        "The Board will compute the CPF contributions based on the amount of wages due and "
+        "payable once TADM has concluded your claims."
+    ),
     (
         "Please note the likelihood of recovery for any non/underpayment of CPF contributions "
         "beyond one year is low as the parties’ recollection of the facts or availability of "
@@ -770,25 +776,103 @@ CPF_PAGE_SENTENCES = (
 )
 
 
-@pytest.mark.parametrize("sentence", CPF_PAGE_SENTENCES)
-def test_every_cpf_quote_on_the_escalation_screen_is_on_the_published_page(
-    sentence: str,
-) -> None:
-    """Pins the quotes to what the page actually says.
-
-    The third one shipped TRUNCATED: it stopped at "beyond one year is low." with
-    a full stop, which reads as a bare limitation period. The clause that follows
-    names the reason - evidence going stale - and is the half that shows it is
-    not a deadline. A quotation cut at a point that changes its meaning is not a
-    quotation."""
+def _all_quoted() -> list[str]:
+    """Every `quoted` string the escalation screen shows, over every not_built
+    entry - not just the first."""
     body = client.post("/agent/escalation", json={"level": 4}).json()
-    known = " ".join(body["not_built"][0]["what_is_known"])
-    assert sentence in known
+    return [q["quoted"] for n in body["not_built"] for q in n["what_is_known"]]
+
+
+@pytest.mark.parametrize("sentence", CPF_PAGE_SENTENCES)
+def test_every_sentence_read_from_the_page_reaches_the_screen(sentence: str) -> None:
+    """Direction 1: what was read from the page is what ships.
+
+    One of these shipped TRUNCATED - it stopped at "beyond one year is low." with
+    a full stop, which reads as a bare limitation period. The clause that follows
+    names the reason, evidence going stale, and is the half that shows it is not
+    a deadline. A quotation cut where the cut changes its meaning is not a
+    quotation."""
+    assert any(sentence in q for q in _all_quoted())
+
+
+def test_every_quotation_on_the_screen_was_read_from_the_page() -> None:
+    """Direction 2, which the pair above could not check.
+
+    Checking only that the recorded sentences reach the screen passes by
+    construction whenever a quote is added to both sides at once. This asserts
+    the converse: nothing is presented as CPF Board's words unless it is in the
+    set read from the page. That is the direction a fabricated quote fails."""
+    for quoted in _all_quoted():
+        assert any(quoted in known for known in CPF_PAGE_SENTENCES), (
+            f"this is rendered in quotation marks but was not read from the page: {quoted!r}"
+        )
 
 
 def test_the_truncated_form_of_the_cpf_timing_quote_never_ships() -> None:
     """The specific regression: a full stop after "is low"."""
+    joined = " ".join(_all_quoted())
+    assert "beyond one year is low." not in joined
+    assert "beyond one year is low as the parties" in joined
+
+
+def test_every_not_built_block_names_the_exact_page_its_quotes_came_from() -> None:
+    """Every other quoted block on the escalation screen carries its source.
+    These did not, and a quotation whose page is not named cannot be checked.
+
+    Asserts the EXACT url, not a cpf.gov.sg prefix: two other CPF pages are in
+    REFERENCE_LINKS and either would have satisfied a prefix check while naming
+    the wrong page. Derived over every entry, not just the first."""
     body = client.post("/agent/escalation", json={"level": 4}).json()
-    known = " ".join(body["not_built"][0]["what_is_known"])
-    assert "beyond one year is low." not in known
-    assert "beyond one year is low as the parties" in known
+    quoting = [n for n in body["not_built"] if n["what_is_known"]]
+    assert quoting, "no not_built entry quotes anything; this test would be vacuous"
+    for n in quoting:
+        assert n["source_url"] == agent.REFERENCE_LINKS["cpf_report_underpayment"]
+        assert "CPF Board" in n["source_label"]
+        assert "12 Mar 2026" in n["source_label"]  # the page's own last-updated date
+        assert "read in a browser" in n["source_label"]  # and when WE read it
+
+
+def test_a_block_that_quotes_an_authority_cannot_be_built_without_its_source() -> None:
+    """Structural. Both fields used to default to "", so four quotations with no
+    attribution were constructible and the panel rendered them silently."""
+    with pytest.raises(ValueError, match="name the page"):
+        agent.NotBuilt(
+            what="x",
+            why="y",
+            what_is_known=(agent.QuotedSource(quoted="something an authority said"),),
+            source_url="",
+            source_label="",
+        )
+
+
+def test_the_sequence_quote_comes_first_because_it_reframes_the_rest() -> None:
+    """An ordering claim, asserted on the ORDER.
+
+    It previously asserted `"FOLLOWS TADM" in known[0]` - FairSlip's own gloss
+    wording - so editing the gloss would have failed a test named for ordering,
+    and the suite would have made an unestablished inference look verified."""
+    known = client.post("/agent/escalation", json={"level": 4}).json()["not_built"][0][
+        "what_is_known"
+    ]
+    assert "once TADM has concluded your claims" in known[0]["quoted"]
+
+
+def test_no_reading_of_a_quote_is_presented_as_the_authoritys_words() -> None:
+    """`quoted` and `note` are separate fields so the screen can render them
+    apart. The gloss once said the TADM half was "the half to take first" and
+    that a CPF report "would not be the next step" - advice nothing established,
+    under a heading reading "What CPF Board does say", on a page whose purpose is
+    to tell members how to lodge that report. It is also wrong for anyone outside
+    TADM's filing window, for whom the CPF report is the route that remains."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    for n in body["not_built"]:
+        for q in n["what_is_known"]:
+            # A reading must be marked as one, and must not tell the worker what
+            # to do first.
+            # The label on screen says whose words these are; the note itself
+            # must not repeat it ("FairSlip's words: FairSlip reads that as...")
+            # and must not be advice.
+            assert "FairSlip reads that as" not in q["note"], q["note"]
+            for advice in ("half to take first", "next step", "you should", "do not lodge"):
+                assert advice not in q["note"].lower(), f"advice in a note: {q['note']!r}"
+                assert advice not in q["quoted"].lower(), f"advice inside a quote: {q['quoted']!r}"

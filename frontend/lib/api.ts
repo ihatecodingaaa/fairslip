@@ -439,7 +439,20 @@ export type Deadline = {
 };
 
 /** A half of the pack that does not exist, and why. Rendered, never hidden. */
-export type NotBuilt = { what: string; why: string; what_is_known: string[] };
+/** An authority's own words, and - separately - FairSlip's reading of them.
+ * Same shape as EvidenceItem, for the same reason: a gloss rendered under a
+ * heading that names an authority is attributed to that authority. */
+export type QuotedSource = { quoted: string; note: string };
+
+export type NotBuilt = {
+  what: string;
+  why: string;
+  what_is_known: QuotedSource[];
+  /** The page these quotes came from, named and dated. Every other quoted block
+   * on this screen carries its source; these did not. */
+  source_url: string;
+  source_label: string;
+};
 
 export type EscalationOut = {
   heading: string;

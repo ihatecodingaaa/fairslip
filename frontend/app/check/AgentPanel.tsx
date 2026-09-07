@@ -691,13 +691,33 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
               <p className="mt-2 text-xs font-semibold text-amber-900">
                 What CPF Board does say:
               </p>
-              <ul className="mt-1 space-y-1">
+              {/* The quote and FairSlip's reading are rendered apart, and the
+                  reading is labelled. They were one string under this heading,
+                  so FairSlip's inference inherited CPF Board's attribution -
+                  the mirror of the defect Deadline's docstring names. */}
+              <ul className="mt-1 space-y-2">
                 {n.what_is_known.map((k) => (
-                  <li key={k} className="text-xs text-amber-900">
-                    {k}
+                  <li key={k.quoted} className="text-xs text-amber-900">
+                    <span className="block">&ldquo;{k.quoted}&rdquo;</span>
+                    {k.note && (
+                      <span className="mt-0.5 block text-amber-800">
+                        <span className="font-semibold">FairSlip&rsquo;s words, not CPF Board&rsquo;s: </span>
+                        {k.note}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
+              {n.source_url && (
+                <a
+                  href={n.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block text-[11px] text-amber-900 underline underline-offset-2"
+                >
+                  {n.source_label}
+                </a>
+              )}
             </>
           )}
         </div>

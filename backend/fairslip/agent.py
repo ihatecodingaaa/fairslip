@@ -1213,15 +1213,44 @@ class Deadline:
 
 
 @dataclass(frozen=True)
+class QuotedSource:
+    """One thing an authority actually said, and - separately - FairSlip's
+    reading of it.
+
+    Same shape as EvidenceItem, for the same reason stated there: a reader must
+    be able to see which words are the authority's. This existed as a single
+    string, so a gloss rendered under a heading reading "What CPF Board does
+    say" inherited CPF Board's attribution. `note` is FairSlip's and is rendered
+    as FairSlip's."""
+
+    quoted: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class NotBuilt:
     """A half of the pack that does not exist, and the reason.
 
     Present in the returned object rather than omitted: a pack that silently
-    contained only the TADM half would read as a complete pack."""
+    contained only the TADM half would read as a complete pack.
+
+    `source_url` / `source_label` have NO DEFAULTS, like EvidenceItem and
+    Deadline: they were optional, which made a block of four quotations with no
+    attribution constructible, and the panel rendered that silently. A quotation
+    whose page is not named is a quotation a reader cannot check."""
 
     what: str
     why: str
-    what_is_known: tuple[str, ...]
+    what_is_known: tuple[QuotedSource, ...]
+    source_url: str
+    source_label: str
+
+    def __post_init__(self) -> None:
+        if self.what_is_known and not (self.source_url and self.source_label):
+            raise ValueError(
+                "a NotBuilt that quotes an authority must name the page and its "
+                "date; quotes with no source cannot be checked by a reader"
+            )
 
 
 @dataclass(frozen=True)
@@ -1295,6 +1324,12 @@ TADM_DEADLINES: tuple[Deadline, ...] = (
 
 CPF_REPORT_NOT_BUILT = NotBuilt(
     what="A pre-filled body for CPF Board's under-payment report",
+    source_url=REFERENCE_LINKS["cpf_report_underpayment"],
+    source_label=(
+        "CPF Board, \u201cHow can I lodge a report for non-payment or "
+        "underpayment of CPF contributions?\u201d, last updated 12 Mar 2026; "
+        "read in a browser 7 Sept 2026"
+    ),
     why=(
         "FairSlip has not built this because the report form could not be read. "
         "CPF Board's page links to it behind a redirect that returned an access "
@@ -1303,22 +1338,52 @@ CPF_REPORT_NOT_BUILT = NotBuilt(
         "government counter, so FairSlip does not offer one."
     ),
     what_is_known=(
-        (
-            'CPF Board asks you to enclose "all available supporting documents to '
-            'support your claim (e.g. pay slips and employment contract)."'
+        QuotedSource(
+            quoted=(
+                "The Board will compute the CPF contributions based on the amount "
+                "of wages due and payable once TADM has concluded your claims."
+            ),
+            # A READING, not advice. The earlier version continued "which is why
+            # the TADM half above is the half to take first, and why a pre-filled
+            # CPF report would not be the next step" - a course of action nothing
+            # established, on a page whose purpose is to tell members how to
+            # lodge that very report. And it is wrong for the worker who needs it
+            # most: the deadlines quoted above give 6 months after leaving to
+            # file at TADM, so someone outside that window cannot go to TADM at
+            # all, and the CPF report is the route they have left. Discouraging
+            # a valid claim is the direction docs/debt.md records as the worst.
+            note=(
+                "Where a TADM claim is made, the CPF computation follows TADM's "
+                "conclusion. This says WHEN the Board computes an amount. It is "
+                "not advice about what to do first, and FairSlip is not telling "
+                "you which to do first."
+            ),
         ),
-        (
-            'CPF Board notes: "Claims made without any supporting documents would '
-            'require a longer time to investigate."'
+        QuotedSource(
+            quoted=(
+                "all available supporting documents to support your claim "
+                "(e.g. pay slips and employment contract)."
+            ),
+            note="CPF Board asks you to enclose these with a report.",
         ),
-        (
-            "On timing, CPF Board says only this - and the second half of the "
-            "sentence is the part that matters, so it is quoted whole: "
-            '"Please note the likelihood of recovery for any non/underpayment of '
-            "CPF contributions beyond one year is low as the parties\u2019 "
-            "recollection of the facts or availability of evidence may diminish "
-            'over time." That is a statement about EVIDENCE going stale, not a '
-            "deadline, and FairSlip does not present it as one."
+        QuotedSource(
+            quoted=(
+                "Claims made without any supporting documents would require a "
+                "longer time to investigate."
+            ),
+        ),
+        QuotedSource(
+            quoted=(
+                "Please note the likelihood of recovery for any non/underpayment "
+                "of CPF contributions beyond one year is low as the parties\u2019 "
+                "recollection of the facts or availability of evidence may "
+                "diminish over time."
+            ),
+            note=(
+                "This is about evidence going stale, not a deadline. CPF Board "
+                "publishes no limitation period for recovering under-paid CPF. "
+                "Quoted whole because stopping at \u201cis low\u201d reads as one."
+            ),
         ),
     ),
 )

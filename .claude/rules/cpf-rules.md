@@ -55,6 +55,18 @@ That sentence is about LIKELIHOOD, not entitlement. An earlier version of the pr
 described it as "CPF's 1-year refund/adjustment limit"; that is not what the page says and
 the enforcement page states no limitation period at all. Quote the sentence or say nothing.
 
+Where a TADM claim exists, CPF follows it (same page, verbatim):
+> "The Board will compute the CPF contributions based on the amount of wages due and
+> payable once TADM has concluded your claims."
+
+This is a statement about WHEN the Board computes an amount. It is not advice to take TADM
+first, and it must not be rendered as any. The page it sits on exists to tell members how to
+lodge a CPF report, and a worker outside TADM's filing window (6 months after leaving) cannot
+go to TADM at all - for them the CPF report is the route that remains. An earlier version of
+the escalation copy said the TADM half was "the half to take first" and that a CPF report
+"would not be the next step"; that was advice nothing established, and it discouraged the one
+claim some workers have left. See docs/debt.md, gloss-inherits-the-authoritys-attribution.
+
 What a member is told to attach when reporting (same page, verbatim):
 > "all available supporting documents to support your claim (e.g. pay slips and employment
 > contract)."

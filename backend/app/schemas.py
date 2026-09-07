@@ -438,13 +438,27 @@ class DeadlineOut(BaseModel):
     source_label: str = ""
 
 
+class QuotedSourceOut(BaseModel):
+    """`quoted` is the authority's own wording. `note` is FairSlip's reading of
+    it, and the screen must render it as FairSlip's."""
+
+    quoted: str
+    note: str = ""
+
+
 class NotBuiltOut(BaseModel):
     """A half of the pack that does not exist, and why. Returned rather than
     omitted: a pack containing only its built half would read as complete."""
 
     what: str
     why: str
-    what_is_known: list[str]
+    # Quote and reading kept apart, like EvidenceItem: a gloss rendered under a
+    # heading that names an authority is attributed to that authority.
+    what_is_known: list[QuotedSourceOut]
+    # Required, not optional. Its siblings are required, and a block of quotes
+    # with no attribution used to be constructible.
+    source_url: str
+    source_label: str
 
 
 class EscalationOut(BaseModel):

@@ -52,6 +52,7 @@ from app.schemas import (
     PayBreakdownOut,
     PayInputsIn,
     PersonaOut,
+    QuotedSourceOut,
     ReaderInfoOut,
     ReadFieldOut,
     RefusalOut,
@@ -973,7 +974,16 @@ def agent_escalation(body: EscalationIn) -> EscalationOut:
         ],
         filing_steps=list(pack.filing_steps),
         not_built=[
-            NotBuiltOut(what=n.what, why=n.why, what_is_known=list(n.what_is_known))
+            NotBuiltOut(
+                what=n.what,
+                why=n.why,
+                what_is_known=[
+                    QuotedSourceOut(quoted=q.quoted, note=q.note)
+                    for q in n.what_is_known
+                ],
+                source_url=n.source_url,
+                source_label=n.source_label,
+            )
             for n in pack.not_built
         ],
         disclaimer=pack.disclaimer,
