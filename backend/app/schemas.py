@@ -111,6 +111,20 @@ class SplitLine(BaseModel):
     sub: bool = False
 
 
+class CpfPackOut(BaseModel):
+    """The CPF pack as the agent panel needs it: the non-overlapping split, the
+    note that forbids adding two of its lines, and the sentence that reconciles
+    the two "missing from her bank" figures a reader sees on one page.
+
+    Deliberately NOT CpfOut. That model also carries `declared`, `expected` and
+    `delta`, none of which this panel renders - serialising unrendered fields
+    invites a later screen to display one without the caveats these lines carry."""
+
+    split: list[SplitLine]
+    split_note: str
+    split_bridge: str
+
+
 class CpfOut(BaseModel):
     declared: CpfResultOut
     expected: CpfResultOut
@@ -154,6 +168,10 @@ class PersonaOut(BaseModel):
     name: str
     summary: str
     expect_refusal: bool
+    # Stated by the server, not inferred from a residency string on screen. The
+    # age-band chip is a CPF rate-table row: showing it for a worker who is not
+    # a CPF member reads as a contribution rate that applies to them.
+    cpf_applies: bool
     pay_inputs: PayInputsIn
     cpf: CpfFixtureOut
 
@@ -248,6 +266,10 @@ class ExtractOut(BaseModel):
     # never inferred from a timing.
     cache_state: str  # "HIT" | "PARTIAL" | "MISS"
     cache_note: str
+    # Fields the Employment Act engine never receives. Served so the screen's
+    # compute gate and its input assembler derive from ONE constant: they
+    # drifted, and the gate blocked on a field the assembler then deleted.
+    cpf_only_fields: list[str]
 
 
 # --------------------------------------------------------------------------
@@ -356,6 +378,10 @@ class DraftOut(BaseModel):
     response carries no send of any kind: sending needs level 2 and a tap."""
 
     state: str
+    # Whose message this is, and that it is not the viewer's. Written by the
+    # server rather than composed by the screen, for the same reason cpf_basis
+    # is: a caveat the frontend assembles is a caveat the frontend can drop.
+    basis: str = ""
     english: str
     translated: str
     language: str
@@ -370,8 +396,64 @@ class DraftOut(BaseModel):
     generated_on: str
 
 
+class AgentPersonaOut(BaseModel):
+    """A fictional worker, stated rather than inferred. Every fact the switch
+    shows is a field here, so nothing on screen is something a viewer has to
+    assume - including whether CPF applies to them at all."""
+
+    key: str
+    name: str
+    residency_label: str
+    occupation: str
+    language: str
+    cpf_applies: bool
+
+
 class EscalationIn(BaseModel):
     level: int
+    # Which persona the pack is for. Decides whether the absent CPF half is
+    # mentioned: a worker who is not a CPF member has no CPF report to be
+    # missing, and naming one contradicts the card that says CPF does not apply.
+    persona: str | None = None
+
+
+class EvidenceItemOut(BaseModel):
+    """`quoted` is TADM's own wording; `note` is FairSlip's gloss. Kept apart so
+    a reader can always see which words are the authority's."""
+
+    quoted: str
+    note: str
+    source_url: str
+    source_label: str = ""
+
+
+class DeadlineOut(BaseModel):
+    """`source_label` names the page. These quotes are MOM's and they sit under a
+    heading about TADM; a quotation attributed by the nearest heading is
+    attributed to the wrong body."""
+
+    label: str
+    quoted: str
+    source_url: str
+    source_label: str = ""
+
+
+class NotBuiltOut(BaseModel):
+    """A half of the pack that does not exist, and why. Returned rather than
+    omitted: a pack containing only its built half would read as complete."""
+
+    what: str
+    why: str
+    what_is_known: list[str]
+
+
+class EscalationOut(BaseModel):
+    heading: str
+    evidence: list[EvidenceItemOut]
+    deadlines: list[DeadlineOut]
+    filing_steps: list[str]
+    not_built: list[NotBuiltOut]
+    disclaimer: str
 
 
 class AgentDemoInputsOut(BaseModel):
@@ -384,12 +466,21 @@ class AgentDemoInputsOut(BaseModel):
     month2_corrected: dict
     month2_uncorrected: dict
     month2_blocked: dict
-    persona: str
+    # Every persona the switch offers, and which one this response is for.
+    # Served so the screen renders the switch from the same record that decides
+    # what the response contains.
+    personas: list[AgentPersonaOut]
+    selected: AgentPersonaOut
     draft_spec_name: str
     # The CPF pack for this persona. Computed by the backend from the fixture's
     # declared_ow - the wage the employer actually contributed on - which NO
     # uploaded document states. It is fixture data, and `cpf_basis` says so on
     # screen. The frontend must never derive it (docs/debt.md, the declared_ow
     # open design question).
-    cpf: CpfOut | None = None
+    # Null for a persona who is not a CPF member. This branch is REACHABLE now
+    # that the panel can switch to a Work Permit holder, and it must be: a split
+    # of zeros carrying an overlap note that describes an overlap of $0 is a
+    # card contradicting itself. When cpf is null, `no_cpf_note` says why.
+    cpf: CpfPackOut | None = None
     cpf_basis: str = ""
+    no_cpf_note: str = ""

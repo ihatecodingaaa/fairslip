@@ -91,3 +91,51 @@ def test_the_committed_entries_are_keyed_by_the_current_template_version() -> No
     for name, spec in SPECS:
         expected = draft_entry_path(spec, DEFAULT_DRAFT_CACHE_DIR)
         assert expected.name == f"{draft_cache_key(spec)}.json", name
+
+
+@pytest.mark.parametrize(("name", "spec"), SPECS, ids=[n for n, _ in SPECS])
+def test_every_committed_entry_is_actually_TRACKED_BY_GIT(name: str, spec) -> None:
+    """`is_file()` cannot see git.
+
+    The entry for the DEFAULT persona sat untracked in the worktree while every
+    test above it passed: the file existed locally, so the precondition test was
+    green, and it would only have gone red after a deploy from a fresh clone -
+    where the default persona's draft returns DRAFT_UNAVAILABLE. The failure text
+    of the test above literally says "an entry that is not committed does not
+    exist in production" and could not check it.
+
+    Second instance of docs/debt.md, precondition-untested-mechanism-tested:
+    guarding the artefact's existence is not the same as guarding the artefact
+    SHIPPING. Skips loudly if git is unavailable rather than passing quietly.
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not on PATH, so tracking cannot be checked here")
+
+    path = draft_entry_path(spec, DEFAULT_DRAFT_CACHE_DIR)
+    repo_root = DEFAULT_DRAFT_CACHE_DIR.parents[2]
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", str(path)],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"{name}: {path.name} exists on disk but git does not track it. "
+        f"It will not reach production. Run:  git add {path}"
+    )
+
+
+def test_the_cache_directory_holds_no_entry_no_spec_claims() -> None:
+    """An orphan is a draft for a spec that no longer exists - a bumped template
+    version or a changed language leaves one behind. It is dead weight in the
+    bundle and, worse, it is a committed message nothing can explain."""
+    wanted = {draft_entry_path(spec, DEFAULT_DRAFT_CACHE_DIR).name for _, spec in SPECS}
+    on_disk = {p.name for p in DEFAULT_DRAFT_CACHE_DIR.glob("*.json")}
+    assert on_disk == wanted, (
+        f"orphaned draft entries: {sorted(on_disk - wanted)}. "
+        f"Delete them, or declare the spec that claims them."
+    )

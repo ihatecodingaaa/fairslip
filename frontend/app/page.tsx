@@ -116,6 +116,7 @@ export default function Home() {
 }
 
 function PersonaCard({ persona, result }: { persona: Persona; result?: PersonaResult }) {
+  const cpfApplies = persona.cpf_applies;
   return (
     <section className="mb-8 rounded-lg border border-zinc-300 bg-white shadow-sm">
       <div className="border-b border-zinc-200 px-5 py-4">
@@ -123,12 +124,18 @@ function PersonaCard({ persona, result }: { persona: Persona; result?: PersonaRe
         <p className="mt-1 text-sm text-zinc-600">{persona.summary}</p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <Chip>{persona.cpf.residency}</Chip>
-          <Chip>CPF age band: {persona.cpf.band}</Chip>
+          {/* The age band selects a row in the CPF rate table. For a worker who
+              is not a CPF member it is supplied but never used, and showing it
+              above a panel that says they are not a CPF member reads as a
+              contribution rate that applies to them. */}
+          {cpfApplies && <Chip>CPF age band: {persona.cpf.band}</Chip>}
           <Chip>Salary period {persona.cpf.contribution_month}</Chip>
         </div>
-        <p className="mt-2 font-mono text-[11px] text-zinc-500">
-          age band from {persona.cpf.band_source}
-        </p>
+        {cpfApplies && (
+          <p className="mt-2 font-mono text-[11px] text-zinc-500">
+            age band from {persona.cpf.band_source}
+          </p>
+        )}
       </div>
 
       {!result && <p className="px-5 py-4 text-sm text-zinc-500">Running the engines&hellip;</p>}
@@ -291,6 +298,14 @@ function CpfPanel({ outcome, persona }: { outcome: Outcome<CpfOut>; persona: Per
         </table>
       )}
 
+      {/* Both the rate formula and the shortfall split belong to a CPF member.
+          They sat outside this branch, so a Work Permit holder's card rendered
+          "No CPF: work permit holders are not CPF members" and then, below it,
+          a split of zeros ending in "Total withheld - cash plus CPF $62.24",
+          under a note explaining an overlap that is $0 for them. A card
+          contradicting itself. */}
+      {!noCpf && (
+        <>
       <p className="mt-3 font-mono text-[11px] text-zinc-500">{cpf.expected.formula}</p>
 
       <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3">
@@ -309,7 +324,11 @@ function CpfPanel({ outcome, persona }: { outcome: Outcome<CpfOut>; persona: Per
           ))}
         </ul>
       </div>
+        </>
+      )}
 
+      {/* Flags stay outside: for a Work Permit holder the NO_CPF flag is the
+          engine's own statement about them, and it belongs on their card. */}
       {cpf.expected.flags.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs text-zinc-600">
           {cpf.expected.flags.map((f) => (

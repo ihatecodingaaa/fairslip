@@ -143,7 +143,9 @@ MANDATE_LEVELS: frozenset[int] = frozenset(MANDATE_TABLE)
 # Keeping them separate matters on screen: a level card that lists an action as
 # something the worker "may" allow is making a claim about the software, and
 # "specified" is not "built".
-BUILT_ACTIONS: frozenset[Action] = frozenset({Action.DRAFT, Action.SEND, Action.VERIFY})
+BUILT_ACTIONS: frozenset[Action] = frozenset(
+    {Action.DRAFT, Action.SEND, Action.VERIFY, Action.PREPARE_ESCALATION}
+)
 
 
 def is_built(action: Action) -> bool:
@@ -579,6 +581,8 @@ class Mandate:
             return verify(**kwargs)  # type: ignore[arg-type]
         if action is Action.DRAFT:
             return read_draft_with_cache(**kwargs)  # type: ignore[arg-type]
+        if action is Action.PREPARE_ESCALATION:
+            return prepare_escalation(**kwargs)  # type: ignore[arg-type]
         raise _not_built(action)
 
 
@@ -603,7 +607,7 @@ class Mandate:
 # Bump when the template, the constraints, or the figure set changes. Part of
 # the cache key, so a cached draft can never be replayed as though a different
 # template produced it.
-DRAFT_TEMPLATE_VERSION = "2026-09-07.1"
+DRAFT_TEMPLATE_VERSION = "2026-09-07.2"
 
 # The same Haiku tier as reader A. The reason is cost and latency on a path a
 # worker waits on, and it is defensible ONLY because nothing about the draft's
@@ -621,6 +625,21 @@ DRAFT_CACHE_HIT = "HIT"
 DRAFT_CACHE_MISS = "MISS"
 
 DRAFT_MAX_TOKENS = 2048
+
+# Phrases that claim to know what a document shows. The draft is written from
+# ENGINE OUTPUT, not from the payslip: the overtime and rest-day figures were
+# reconstructed from MOM's rules and a payslip that printed them would not be in
+# dispute. A message a worker sends to their employer must not open by
+# misdescribing their own payslip.
+FORBIDDEN_DOCUMENT_CLAIMS: tuple[str, ...] = (
+    "my payslip shows",
+    "my payslip says",
+    "the payslip shows",
+    "the payslip says",
+    "my payslip states",
+    "as shown on my payslip",
+    "according to my payslip",
+)
 
 # From .claude/rules/fairslip-domain.md, "UI copy contract".
 FORBIDDEN_WORDS: tuple[str, ...] = (
@@ -684,29 +703,51 @@ class NgoAlternative:
     options: tuple[NgoOption, ...]
 
 
-def ngo_alternative() -> NgoAlternative:
-    """The worker does not have to send anything. These are the people who help
-    for free, named every time a draft is shown."""
-    return NgoAlternative(
-        heading="You do not have to send this. You can ask someone to help instead:",
-        options=(
+def ngo_alternative(*, migrant_worker: bool = False) -> NgoAlternative:
+    """The worker does not have to send anything. Named every time a draft is shown.
+
+    Each line says only what the organisation's name and published remit
+    establish, and links out so the worker reads their terms rather than
+    FairSlip's summary of them. The previous version told a worker that
+    mediation is free, that a mediator checks the figures with both sides, and
+    that MWC will talk to an employer for them - three claims about a third
+    party's service that nothing in this repo establishes, stated in FairSlip's
+    voice beside figures that ARE established.
+
+    MWC appears only for the workers it exists for. Offering "free help for
+    migrant workers" to a Singapore Citizen asserts something about the reader
+    that nothing established.
+    """
+    options = [
+        NgoOption(
+            name="Tripartite Alliance for Dispute Management (TADM)",
+            what_they_do=(
+                "Singapore's body for employment and salary disputes. Their page "
+                "sets out who can file and what to bring."
+            ),
+            link=REFERENCE_LINKS["tadm_file_claim"],
+        ),
+        NgoOption(
+            name="Ministry of Manpower (MOM)",
+            what_they_do="MOM's guidance on salary disputes and what the rules require.",
+            link=REFERENCE_LINKS["mom_disputes"],
+        ),
+    ]
+    if migrant_worker:
+        options.insert(
+            0,
             NgoOption(
-                name="Migrant Workers Centre (MWC)",
+                name="Migrant Workers' Centre (MWC)",
                 what_they_do=(
-                    "Free help for migrant workers with salary problems, in your own "
-                    "language. They can talk to your employer for you."
+                    "A Singapore organisation for migrant workers. Their page sets "
+                    "out the help they offer and how to reach them."
                 ),
                 link=REFERENCE_LINKS["mwc"],
             ),
-            NgoOption(
-                name="Tripartite Alliance for Dispute Management (TADM)",
-                what_they_do=(
-                    "The official body for salary disputes. Mediation is free for "
-                    "employees, and they check the figures themselves."
-                ),
-                link=REFERENCE_LINKS["tadm_file_claim"],
-            ),
-        ),
+        )
+    return NgoAlternative(
+        heading="You do not have to send this. You can ask someone to help instead:",
+        options=tuple(options),
     )
 
 
@@ -840,6 +881,14 @@ def _check_draft_text(text: str, spec: DraftSpec, where: str) -> None:
             f"Rejected rather than edited."
         )
 
+    claims = [c for c in FORBIDDEN_DOCUMENT_CLAIMS if c in lowered]
+    if claims:
+        raise DraftRejectedError(
+            f"{where}: the draft says {claims}, claiming to know what a document "
+            f"shows. These figures were reconstructed from the rules, not read "
+            f"off a payslip."
+        )
+
     allowed = _allowed_figure_strings(spec)
     invented = sorted(_figures_in_text(text) - allowed)
     if invented:
@@ -887,6 +936,11 @@ HARD RULES. A message that breaks any of these is discarded:
    claim any legal consequence.
 5. Ask the employer to check and explain, and say plainly that the employee may
    have misunderstood something and would welcome being corrected.
+6. DO NOT SAY WHAT ANY DOCUMENT SHOWS. You have not seen the payslip. The
+   figures above were RECONSTRUCTED by a rules engine, and most of them are not
+   printed on any document - "my payslip shows: overtime $169.93" is a claim
+   about a document you cannot make. Write "I worked out" or "the rules say the
+   month should have paid", never "my payslip shows" or "my payslip says".
 
 Write it twice.
 
@@ -924,6 +978,8 @@ def _build_draft(
     cache: str,
     key: str,
     generated_on: str = "",
+    *,
+    migrant_worker: bool = False,
 ) -> Draft:
     """The single construction point, so the checks cannot be bypassed by a
     caller who builds a Draft straight from a cache file. A committed entry gets
@@ -936,7 +992,7 @@ def _build_draft(
         translated=translated,
         language=spec.language,
         figures_cited=spec.figures,
-        alternative=ngo_alternative(),
+        alternative=ngo_alternative(migrant_worker=migrant_worker),
         model=model,
         cache=cache,
         cache_key=key,
@@ -1000,7 +1056,11 @@ def draft_entry_path(spec: DraftSpec, cache_dir: Path, model: str | None = None)
 
 
 def load_draft_entry(
-    spec: DraftSpec, cache_dir: Path | None, model: str | None = None
+    spec: DraftSpec,
+    cache_dir: Path | None,
+    model: str | None = None,
+    *,
+    migrant_worker: bool = False,
 ) -> Draft | None:
     """Read a committed entry, or return None. Never calls a model, never writes.
 
@@ -1030,6 +1090,7 @@ def load_draft_entry(
         DRAFT_CACHE_HIT,
         key,
         generated_on=str(payload.get("generated_on", "")),
+        migrant_worker=migrant_worker,
     )
 
 
@@ -1039,6 +1100,7 @@ def read_draft_with_cache(
     *,
     allow_live: bool = True,
     model: str | None = None,
+    migrant_worker: bool = False,
 ) -> Draft:
     """Replay a committed entry if one exists; otherwise call the model.
 
@@ -1047,7 +1109,7 @@ def read_draft_with_cache(
     offline control run uses to prove the demo path is genuinely cached and not
     merely fast (docs/debt.md, fast-is-not-cached)."""
     used = model or draft_model()
-    cached = load_draft_entry(spec, cache_dir, used)
+    cached = load_draft_entry(spec, cache_dir, used, migrant_worker=migrant_worker)
     if cached is not None:
         return cached
 
@@ -1059,7 +1121,10 @@ def read_draft_with_cache(
         )
 
     english, translated = call_draft_model(spec, used)
-    return _build_draft(spec, english, translated, used, DRAFT_CACHE_MISS, key)
+    return _build_draft(
+        spec, english, translated, used, DRAFT_CACHE_MISS, key,
+        migrant_worker=migrant_worker,
+    )
 
 
 def write_draft_entry(
@@ -1101,3 +1166,186 @@ def write_draft_entry(
         encoding="utf-8",
     )
     return path, draft
+
+
+# --------------------------------------------------------------------------
+# prepare_escalation: the TADM half, and the CPF half that is NOT built
+#
+# TADM publishes the documents a worker is asked to upload, and those four
+# items were read from the page on 7 Sept 2026 and are quoted verbatim below,
+# each carrying the URL it came from.
+#
+# CPF Board's under-payment report is a different matter. Its page tells a
+# member to "lodge a report" behind a link that returned HTTP 403, so the form
+# has NOT been read and its fields are unknown. A pre-filled body for a form
+# nobody has seen would be invented structure presented as an official one -
+# docs/debt.md, contested-secondary-source, in its most consequential form,
+# because a worker would carry it to a government counter. So this pack builds
+# the TADM half and says plainly that the CPF half is absent and why.
+#
+# It ASSEMBLES. It does not file. There is no network client in this module.
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EvidenceItem:
+    """One document TADM asks for, quoted from its published page.
+
+    `quoted` is the page's own wording, unedited. `note` is FairSlip's plain
+    gloss, kept separate so a reader can always see which words are TADM's."""
+
+    quoted: str
+    note: str
+    source_url: str
+    source_label: str
+
+
+@dataclass(frozen=True)
+class Deadline:
+    """`source_label` names the page, because these quotes are MOM's and they sit
+    under a heading about TADM. A quotation whose attribution is inherited from a
+    nearby heading is attributed to the wrong body."""
+
+    label: str
+    quoted: str
+    source_url: str
+    source_label: str
+
+
+@dataclass(frozen=True)
+class NotBuilt:
+    """A half of the pack that does not exist, and the reason.
+
+    Present in the returned object rather than omitted: a pack that silently
+    contained only the TADM half would read as a complete pack."""
+
+    what: str
+    why: str
+    what_is_known: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class EscalationPack:
+    """Assembled, never filed. `filed` does not exist as a field, and there is
+    no method that submits: the worker files, and the pack says so."""
+
+    heading: str
+    evidence: tuple[EvidenceItem, ...]
+    deadlines: tuple[Deadline, ...]
+    filing_steps: tuple[str, ...]
+    not_built: tuple[NotBuilt, ...]
+    disclaimer: str
+
+
+# Read from https://www.tal.sg/tadm/eservices/employees-file-employment-claim
+# on 7 Sept 2026. The page shows no "last updated" date; the deadlines below
+# were cross-checked against MOM's managing-employment-disputes page, which
+# does (last updated 26 March 2026).
+TADM_EVIDENCE: tuple[EvidenceItem, ...] = (
+    EvidenceItem(
+        quoted="Employment contract or key employment terms",
+        note="The terms you agreed to. A photo of a printed copy is fine.",
+        source_url=REFERENCE_LINKS["tadm_file_claim"],
+        source_label="TADM's published list of documents to upload",
+    ),
+    EvidenceItem(
+        quoted="Salary payment records and CPF statements (where available).",
+        note="Payslips and your bank record. Your CPF statement if you have one.",
+        source_url=REFERENCE_LINKS["tadm_file_claim"],
+        source_label="TADM's published list of documents to upload",
+    ),
+    EvidenceItem(
+        quoted="Termination or resignation letter",
+        note="Only if you have left the job. Not needed while you are employed.",
+        source_url=REFERENCE_LINKS["tadm_file_claim"],
+        source_label="TADM's published list of documents to upload",
+    ),
+    EvidenceItem(
+        quoted=(
+            "Other documents relevant to your claim, e.g. time sheet, "
+            "certification of pregnancy/estimated delivery date by a Singapore "
+            "medical practitioner."
+        ),
+        note="Your roster, timesheet, or the WhatsApp messages showing your hours.",
+        source_url=REFERENCE_LINKS["tadm_file_claim"],
+        source_label="TADM's published list of documents to upload",
+    ),
+)
+
+TADM_DEADLINES: tuple[Deadline, ...] = (
+    Deadline(
+        label="While you are still employed",
+        quoted="Within 1 year after the dispute arose.",
+        source_url=REFERENCE_LINKS["mom_disputes"],
+        source_label="MOM's managing-employment-disputes page",
+    ),
+    Deadline(
+        label="After you have left the job",
+        quoted="Within 6 months from your last day of work.",
+        source_url=REFERENCE_LINKS["mom_disputes"],
+        source_label="MOM's managing-employment-disputes page",
+    ),
+)
+
+# No claim value cap appears here. MOM and TADM describe the caps differently
+# ($20,000 / $30,000 union-assisted / $40,000 combined) and how they compose for
+# one worker could not be established from either page. A cap shown wrongly
+# either understates what a worker may claim or overstates it, and neither is
+# recoverable at a mediation counter. See docs/debt.md, tadm-claim-value-caps.
+
+CPF_REPORT_NOT_BUILT = NotBuilt(
+    what="A pre-filled body for CPF Board's under-payment report",
+    why=(
+        "FairSlip has not built this because the report form could not be read. "
+        "CPF Board's page links to it behind a redirect that returned an access "
+        "error, so the fields it asks for are unknown. Inventing that structure "
+        "and calling it CPF Board's form would be a guess carried to a "
+        "government counter, so FairSlip does not offer one."
+    ),
+    what_is_known=(
+        (
+            'CPF Board asks you to enclose "all available supporting documents to '
+            'support your claim (e.g. pay slips and employment contract)."'
+        ),
+        (
+            'CPF Board notes: "Claims made without any supporting documents would '
+            'require a longer time to investigate."'
+        ),
+        (
+            'On timing, CPF Board says only: "Please note the likelihood of recovery '
+            'for any non/underpayment of CPF contributions beyond one year is low." '
+            "That is a statement about likelihood, not a deadline, and FairSlip does "
+            "not present it as one."
+        ),
+    ),
+)
+
+
+def prepare_escalation(*, cpf_applies: bool = True) -> EscalationPack:
+    """Assemble what a worker would take to TADM. Files nothing, anywhere.
+
+    Level 4's action. The mandate is checked before this runs, at the single
+    chokepoint in Mandate.act().
+
+    `cpf_applies` decides whether the absent CPF half is mentioned at all. For a
+    worker who is not a CPF member there is no CPF report to be missing, and
+    saying "not built: a CPF under-payment report" to them contradicts the card
+    beside it that says the whole CPF question does not apply. An unbuilt half is
+    worth naming; an inapplicable one is noise that reads as an oversight."""
+    return EscalationPack(
+        heading="What to take to TADM",
+        evidence=TADM_EVIDENCE,
+        deadlines=TADM_DEADLINES,
+        filing_steps=(
+            "Gather the documents listed above.",
+            "Take them to TADM and file yourself. Their page sets out how.",
+            "FairSlip does not file, submit, or send anything on your behalf.",
+        ),
+        not_built=(CPF_REPORT_NOT_BUILT,) if cpf_applies else (),
+        disclaimer=(
+            "FairSlip has assembled a checklist, not a case. The figures it "
+            "reconstructed are what MOM's published rules say the month should "
+            "have paid; whether anything is due is for TADM to determine, not "
+            "FairSlip."
+        ),
+    )

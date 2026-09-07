@@ -81,6 +81,8 @@ export type Persona = {
   name: string;
   summary: string;
   expect_refusal: boolean;
+  /** Stated by the server, not inferred from a residency string on screen. */
+  cpf_applies: boolean;
   pay_inputs: PayInputs;
   cpf: CpfFixture;
 };
@@ -223,6 +225,9 @@ export type ExtractOut = {
    */
   cache_state: "HIT" | "PARTIAL" | "MISS";
   cache_note: string;
+  /** Fields the Employment Act engine never receives. The compute gate and the
+   * input assembler both read this, so they cannot drift apart. */
+  cpf_only_fields: string[];
 };
 
 export function postExtract(images: ImageIn[]): Promise<Outcome<ExtractOut>> {
@@ -267,6 +272,25 @@ export function isEstablished(status: FactStatus): boolean {
  * the mandate. They are separate, and the screen must not merge them. */
 export type ActionDetail = { name: string; built: boolean };
 
+/** A fictional worker. Every fact the switch shows is a field here, so nothing
+ * on the card is something a viewer has to assume. */
+export type AgentPersona = {
+  key: string;
+  name: string;
+  residency_label: string;
+  occupation: string;
+  language: string;
+  cpf_applies: boolean;
+};
+
+export type CpfPack = {
+  split: SplitLine[];
+  split_note: string;
+  /** Reconciles the two "missing from her bank" figures a reader sees on one
+   * page: the wage not paid, and the cash that did not arrive. */
+  split_bridge: string;
+};
+
 export type MandateLevel = {
   level: number;
   label: string;
@@ -293,6 +317,9 @@ export type NgoOption = { name: string; what_they_do: string; link: string };
 export type DraftOut = {
   /** Always MESSAGE_DRAFTED. A drafted message is not a sent one. */
   state: string;
+  /** Whose message this is, and that it is not the viewer's. The server writes
+   * it: a caveat the screen assembles is a caveat the screen can drop. */
+  basis: string;
   english: string;
   translated: string;
   language: string;
@@ -366,26 +393,71 @@ export type DemoInputs = {
   month2_uncorrected: PayInputs;
   /** Served by the backend so no screen synthesises a reader disagreement. */
   month2_blocked: PayInputs;
-  persona: string;
+  /** Every persona the switch offers, and which one this response is for.
+   * Served so the switch is rendered from the same record that decides what the
+   * response contains - a switch bolted onto one field is how a NO_CPF worker
+   * ends up under a CPF split. */
+  personas: AgentPersona[];
+  selected: AgentPersona;
   /** Which committed draft entry belongs to this persona. Never hardcoded. */
   draft_spec_name: string;
-  /** The CPF pack. Null when the persona has no CPF (a Work Permit holder). */
-  cpf: CpfOut | null;
+  /** The CPF pack, trimmed to what the panel renders. Not CpfOut: `declared`,
+   * `expected` and `delta` are not shown, and serialising unrendered figures
+   * invites a later screen to display one without the caveats these carry. */
+  /** Null for a persona who is not a CPF member. Reachable, and it must be:
+   * a split of zeros under a NO_CPF banner is a card contradicting itself. */
+  cpf: CpfPack | null;
   /** Whose month the CPF pack is, and why it is fixture data rather than
    * anything read from an uploaded document. The panel refuses to render CPF
    * figures without it. */
   cpf_basis: string;
+  /** Why there is no CPF pack. Present exactly when `cpf` is null. */
+  no_cpf_note: string;
 };
 
-export function getAgentDemoInputs(): Promise<Outcome<DemoInputs>> {
-  return call<DemoInputs>("/agent/demo-inputs");
+export function getAgentDemoInputs(persona?: string): Promise<Outcome<DemoInputs>> {
+  const q = persona ? `?persona=${encodeURIComponent(persona)}` : "";
+  return call<DemoInputs>(`/agent/demo-inputs${q}`);
 }
 
-/** Always ends in a refusal in this cut - but WHICH refusal is the point, and
- * only the backend can say. Below level 4 the mandate check fires first. */
-export function postEscalation(level: number): Promise<Outcome<never>> {
-  return call<never>("/agent/escalation", {
+export type EvidenceItem = {
+  /** TADM's own wording, unedited. */
+  quoted: string;
+  /** FairSlip's plain gloss. Kept apart so a reader sees whose words are whose. */
+  note: string;
+  source_url: string;
+  /** The page this quote came from, named. A quotation attributed by the
+   * nearest heading is attributed to the wrong body. */
+  source_label: string;
+};
+
+export type Deadline = {
+  label: string;
+  quoted: string;
+  source_url: string;
+  source_label: string;
+};
+
+/** A half of the pack that does not exist, and why. Rendered, never hidden. */
+export type NotBuilt = { what: string; why: string; what_is_known: string[] };
+
+export type EscalationOut = {
+  heading: string;
+  evidence: EvidenceItem[];
+  deadlines: Deadline[];
+  filing_steps: string[];
+  not_built: NotBuilt[];
+  disclaimer: string;
+};
+
+/** Below level 4 this refuses, and WHICH refusal is the point - only the backend
+ * can say, because the mandate check fires before any dispatch. */
+export function postEscalation(
+  level: number,
+  persona?: string,
+): Promise<Outcome<EscalationOut>> {
+  return call<EscalationOut>("/agent/escalation", {
     method: "POST",
-    body: JSON.stringify({ level }),
+    body: JSON.stringify({ level, persona: persona ?? null }),
   });
 }

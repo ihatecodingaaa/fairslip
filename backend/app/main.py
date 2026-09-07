@@ -23,6 +23,7 @@ import demo.fixtures as fx
 from app.schemas import (
     ActionOut,
     AgentDemoInputsOut,
+    AgentPersonaOut,
     BlockedFieldOut,
     ChoiceOut,
     CitedFigureOut,
@@ -30,11 +31,15 @@ from app.schemas import (
     CpfDeltaOut,
     CpfFixtureOut,
     CpfOut,
+    CpfPackOut,
     CpfRequest,
     CpfResultOut,
+    DeadlineOut,
     DraftIn,
     DraftOut,
     EscalationIn,
+    EscalationOut,
+    EvidenceItemOut,
     ExtractOut,
     ExtractRequest,
     FactIn,
@@ -43,6 +48,7 @@ from app.schemas import (
     MandateOut,
     Money,
     NgoOptionOut,
+    NotBuiltOut,
     PayBreakdownOut,
     PayInputsIn,
     PersonaOut,
@@ -76,6 +82,7 @@ from fairslip.agent import (
     is_built,
 )
 from fairslip.cpf import (
+    NO_CPF,
     AgeBand,
     CpfResult,
     OutOfScopeError,
@@ -315,6 +322,28 @@ SPLIT_NOTE = (
 )
 
 
+def split_bridge(s: ShortfallSplit) -> str:
+    """Why two figures on this page both describe money missing from their bank.
+
+    The reconciliation reports the WAGE that was not paid; the split reports the
+    CASH that did not arrive. They differ by exactly the employee CPF that would
+    have been deducted from that wage, and both are true. Leaving a reader to
+    work that out from two same-sounding labels is how a correct pair of numbers
+    reads as a contradiction.
+    """
+    return (
+        f"Two figures on this page describe money they did not receive, and they are "
+        f"different questions. ${money_display(s.gross_shortfall)} is the WAGE that was not "
+        f"paid. Of that, ${money_display(s.employee_cpf_on_shortfall)} would never have "
+        f"reached their hand anyway - it would have been deducted as their CPF - so the "
+        f"CASH "
+        f"missing from their bank is ${money_display(s.gross_shortfall)} minus "
+        f"${money_display(s.employee_cpf_on_shortfall)} = "
+        f"${money_display(s.cash_shortfall)}. Neither figure is wrong; they answer "
+        f"\"what were they not paid\" and \"what did not arrive in the bank\"."
+    )
+
+
 def _money(x: Decimal) -> Money:
     return Money.of(x)
 
@@ -431,6 +460,7 @@ def _persona(
         name=name,
         summary=summary,
         expect_refusal=expect_refusal,
+        cpf_applies=residency not in NO_CPF,
         pay_inputs=PayInputsIn(
             **{
                 f: (None if getattr(inputs, f) is None else _fact_out(getattr(inputs, f)))
@@ -476,7 +506,7 @@ def demo_fixtures() -> FixturesOut:
             ),
             _persona(
                 "rahim_before_confirmation",
-                "Rahim - before he confirms the hours",
+                "Rahim - before the hours are confirmed",
                 "Straight after extraction: the two readers returned different overtime hours.",
                 fx.rahim_month1_before_confirmation(),
                 dob=fx.RAHIM_DOB,
@@ -631,6 +661,7 @@ def extract(body: ExtractRequest) -> ExtractOut:
         worker_fields=_worker_fields_out(),
         agreed_count=sum(1 for f in read_fields if f.fact.status == "AGREED"),
         read_field_count=len(read_fields),
+        cpf_only_fields=sorted(CPF_ONLY_FIELDS),
         cache_state=cache_state,
         cache_note=cache_note,
     )
@@ -699,8 +730,9 @@ def agent_send(body: SendIn) -> SentOut:
         tap_surface=sent.tap.surface,
         message_id=sent.message_id,
         note=(
-            "Recorded from your tap. FairSlip did not contact your employer: you "
-            "send the message yourself, and this is the record that you did."
+            "Recorded from your tap. FairSlip did not contact your employer, and "
+            "cannot tell whether you sent anything: what this records is that you "
+            "approved it, at the moment above."
         ),
     )
 
@@ -772,17 +804,23 @@ def agent_draft(body: DraftIn) -> DraftOut:
             f"unknown draft spec {body.spec_name!r}; declared: {sorted(declared)}"
         )
     spec = declared[body.spec_name]
+    who = fx.persona_for_spec(body.spec_name)
+    # MWC exists for migrant workers. Offering it to a Citizen states something
+    # about the reader that nothing established.
+    migrant = who is not None and who.residency in fx.MIGRANT_PASS_TYPES
 
     draft = Mandate(body.level).act(
         Action.DRAFT,
         spec=spec,
         cache_dir=DEFAULT_DRAFT_CACHE_DIR,
         allow_live=DRAFT_ALLOW_LIVE,
+        migrant_worker=migrant,
     )
 
     hit = draft.cache == DRAFT_CACHE_HIT
     return DraftOut(
         state=AgentState.MESSAGE_DRAFTED.value,
+        basis=draft_basis(body.spec_name),
         english=draft.english,
         translated=draft.translated,
         language=draft.language,
@@ -809,12 +847,39 @@ def agent_draft(body: DraftIn) -> DraftOut:
     )
 
 
+def _persona_out(p: fx.DemoPersona) -> AgentPersonaOut:
+    return AgentPersonaOut(
+        key=p.key,
+        name=p.name,
+        residency_label=p.residency_label,
+        occupation=p.occupation,
+        language=p.language,
+        cpf_applies=p.cpf_applies,
+    )
+
+
+def draft_basis(spec_name: str) -> str:
+    """Whose message a draft is. Composed here, not on the screen: a caveat the
+    frontend assembles is a caveat the frontend can quietly stop assembling,
+    which is how the CPF card's twin shipped without one."""
+    p = fx.persona_for_spec(spec_name)
+    if p is None:
+        return "Fictional worked example - this is not your message."
+    return (
+        f"Fictional worked example - this is not your message. It is written in "
+        f"the first person for {p.name}, an invented {p.residency_label} "
+        f"working in {p.occupation}, about their invented month. FairSlip "
+        f"has not drafted anything about the documents you uploaded."
+    )
+
+
 @app.get("/agent/demo-inputs", response_model=AgentDemoInputsOut)
-def agent_demo_inputs() -> AgentDemoInputsOut:
+def agent_demo_inputs(persona: str = fx.DEFAULT_PERSONA_KEY) -> AgentDemoInputsOut:
     """Fictional. The month-2 fixtures the /check agent panel verifies against.
 
-    Mei Ling is the persona here. Nothing is computed on this path - these are
-    the same established facts the backend tests use, serialised."""
+    Which persona is served is a query parameter; Mei Ling is the default.
+    Nothing is computed on this path - these are the same established facts the
+    backend tests use, serialised."""
 
     def out(pi) -> dict:
         return {
@@ -823,54 +888,93 @@ def agent_demo_inputs() -> AgentDemoInputsOut:
             if (f := getattr(pi, name)) is not None
         }
 
-    # Mei Ling is the 90-second script's primary persona, and the only one whose
-    # CPF pack applies: Rahim is a Work Permit holder, correctly NO_CPF, so the
-    # compounding that makes the case cannot be shown on his figures at all.
-    m1 = fx.mei_ling_month1_established()
+    try:
+        who = fx.persona_by_key(persona)
+    except KeyError as e:
+        raise InvalidInputError(str(e)) from e
+
+    m1 = who.month1()
+    common = {
+        "month1": out(m1),
+        "month2_corrected": out(who.month2_corrected()),
+        "month2_uncorrected": out(who.month2_uncorrected()),
+        "month2_blocked": out(who.month2_blocked()),
+        "personas": [_persona_out(p) for p in fx.DEMO_PERSONAS],
+        "selected": _persona_out(who),
+        "draft_spec_name": who.draft_spec_name,
+    }
+
+    # Not a CPF member: no pack is computed at all. A split of zeros under a
+    # NO_CPF banner, carrying a note about an overlap of $0, is a card
+    # contradicting itself - and it is the defect this branch exists to prevent.
+    if not who.cpf_applies:
+        return AgentDemoInputsOut(**common, cpf=None, no_cpf_note=who.cpf_note)
+
     breakdown = compute_expected(m1)
     split = shortfall_split(
-        fx.MEI_LING_DECLARED_OW,
-        breakdown.expected_gross,
-        fx.MEI_LING_BAND,
-        fx.MEI_LING_RESIDENCY,
+        who.declared_ow, breakdown.expected_gross, who.band, who.residency
     )
     return AgentDemoInputsOut(
-        month1=out(m1),
-        month2_corrected=out(fx.mei_ling_month2_corrected()),
-        month2_uncorrected=out(fx.mei_ling_month2_uncorrected()),
-        month2_blocked=out(fx.mei_ling_month2_unestablished()),
-        persona="Mei Ling",
-        draft_spec_name="mei_ling_month1",
-        cpf=CpfOut(
-            declared=_cpf_result_out(split.delta.declared),
-            expected=_cpf_result_out(split.delta.expected),
-            delta=CpfDeltaOut(
-                total=_money(split.delta.total),
-                employee=_money(split.delta.employee),
-                employer=_money(split.delta.employer),
-            ),
+        **common,
+        cpf=CpfPackOut(
             split=_split_out(split),
             split_note=SPLIT_NOTE,
+            split_bridge=split_bridge(split),
         ),
         cpf_basis=(
-            f"Fictional worked example - these are not your figures. Mei Ling is invented, "
-            f"and every amount above is her month, not the month you uploaded. FairSlip did "
+            f"Fictional worked example - these are not your figures. {who.name} is "
+            f"invented, and every amount above is their month, not the month you "
+            f"uploaded. FairSlip did "
             f"not compute CPF for your month, for the reason given further up this page: "
             f"working it out needs the wage the employer contributed on, and reading that "
             f"backwards off a payslip gives a range rather than one figure. In this invented "
-            f"example that wage is simply given as ${money_display(fx.MEI_LING_DECLARED_OW)}, "
-            f"chosen so it is consistent with the $280 CPF line on her payslip."
+            f"example that wage is simply given as ${money_display(who.declared_ow)}, "
+            f"chosen so it is consistent with the $280 CPF line on their payslip."
         ),
     )
 
 
-@app.post("/agent/escalation")
-def agent_escalation(body: EscalationIn) -> dict:
+@app.post("/agent/escalation", response_model=EscalationOut)
+def agent_escalation(body: EscalationIn) -> EscalationOut:
     """Level 4's action, called for real so the mandate check runs first.
 
-    In this cut it always ends in a refusal - but it must be the RIGHT refusal.
-    Below level 4 that is MANDATE_EXCEEDED naming level 4, and at level 4 it is
-    ACTION_NOT_BUILT. The screen must never guess which: telling a worker at
+    Called for real so the mandate check runs FIRST, and so the refusal below
+    level 4 is the right one: MANDATE_EXCEEDED naming level 4, not
+    ACTION_NOT_BUILT. The screen must never guess which - telling a worker at
     level 0 that raising their level would not help is false, and it suppresses
-    the one real choice the mandate exists to offer."""
-    return Mandate(body.level).act(Action.PREPARE_ESCALATION)
+    the one real choice the mandate exists to offer.
+
+    At level 4 it assembles the TADM half. It files nothing: there is no network
+    client in fairslip.agent and none here."""
+    who = fx.persona_by_key(body.persona) if body.persona else None
+    pack = Mandate(body.level).act(
+        Action.PREPARE_ESCALATION,
+        cpf_applies=who.cpf_applies if who else True,
+    )
+    return EscalationOut(
+        heading=pack.heading,
+        evidence=[
+            EvidenceItemOut(
+                quoted=e.quoted,
+                note=e.note,
+                source_url=e.source_url,
+                source_label=e.source_label,
+            )
+            for e in pack.evidence
+        ],
+        deadlines=[
+            DeadlineOut(
+                label=d.label,
+                quoted=d.quoted,
+                source_url=d.source_url,
+                source_label=d.source_label,
+            )
+            for d in pack.deadlines
+        ],
+        filing_steps=list(pack.filing_steps),
+        not_built=[
+            NotBuiltOut(what=n.what, why=n.why, what_is_known=list(n.what_is_known))
+            for n in pack.not_built
+        ],
+        disclaimer=pack.disclaimer,
+    )

@@ -1,0 +1,9 @@
+{
+  "english": "Dear [Employer],\n\nI am writing about my pay for September 2026. I would like to check the numbers with you.\n\nBased on the Ministry of Manpower rules for overtime and rest-day pay, I worked out that the month should have paid $1,182.24 after deductions. This includes my basic pay of $1,200.00, plus overtime of $169.93 and rest-day pay of $92.31.\n\nHowever, the amount that reached my bank account was $1,120.00. There is a difference of $62.24 between these two figures.\n\nI may have misunderstood something, and I would welcome being corrected. Could you please check this and let me know why the figures are different? Thank you for your time.\n\nBest regards,\n[Employee]",
+  "generated_on": "2026-09-07",
+  "language": "Mandarin Chinese",
+  "model": "claude-haiku-4-5",
+  "spec_canonical": "{\"difference\":\"62.237762237762237762237762\",\"employer_name\":\"\",\"expected_net\":\"1182.237762237762237762237762\",\"figures\":[{\"amount\":\"1200\",\"formula\":\"monthly basic as stated\",\"label\":\"basic\",\"source\":\"payslip.jpg: 'Basic' row\"},{\"amount\":\"169.9300699300699300699300699\",\"formula\":\"(6.2937/h) x 1.5 x 18h\",\"label\":\"overtime\",\"source\":\"payslip.jpg: 'Basic' row; roster.png + worker confirmed 18h\"},{\"amount\":\"92.30769230769230769230769230\",\"formula\":\"rest-day table, employer's request, 8h of 8h, 6-day week\",\"label\":\"rest_day\",\"source\":\"payslip.jpg: 'Basic' row; worker confirmed 6-day week; roster.png: Sunday row; worker confirmed\"}],\"flags\":[],\"language\":\"Mandarin Chinese\",\"net_paid\":\"1120.00\",\"salary_period\":\"September 2026\"}",
+  "template_version": "2026-09-07.2",
+  "translated": "尊敬的[雇主]，\n\n我想就2026年9月的薪资与您核查一下。\n\n根据新加坡人力部公布的加班费和休息日薪资规则，我计算出该月扣除后应该支付$1,182.24。这包括基本薪资$1,200.00，加上加班费$169.93和休息日薪资$92.31。\n\n但是，实际进入我银行账户的金额是$1,120.00。两个数字之间相差$62.24。\n\n我可能理解有误，也很乐意听您的解释。能否请您检查一下，告诉我这两个数字为什么不同？感谢您的时间。\n\n此致\n敬礼\n[员工]"
+}

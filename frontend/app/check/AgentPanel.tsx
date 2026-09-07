@@ -27,8 +27,10 @@ import {
   postEscalation,
   postSend,
   postVerify,
-  type CpfOut,
+  type AgentPersona,
+  type CpfPack,
   type DemoInputs,
+  type EscalationOut,
   type DraftOut,
   type MandateTable,
   type Refusal,
@@ -54,10 +56,14 @@ export function AgentPanel() {
   const [draft, setDraft] = useState<DraftOut | null>(null);
   const [sent, setSent] = useState<SentOut | null>(null);
   const [verdict, setVerdict] = useState<VerifyOut | null>(null);
+  const [pack, setPack] = useState<EscalationOut | null>(null);
   const [demo, setDemo] = useState<DemoInputs | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Mei Ling by default. The scripted run never touches the switch; it is a
+  // Q&A move, so the default must be the persona the script narrates.
+  const [personaKey, setPersonaKey] = useState<string | null>(null);
 
   useEffect(() => {
     // A refusal is not a pending request. Swallowing `r.ok === false` left the
@@ -66,10 +72,24 @@ export function AgentPanel() {
     getMandate()
       .then((r) => (r.ok ? setMandate(r.value) : setError(r.refusal.detail)))
       .catch((e) => setError(String(e)));
-    getAgentDemoInputs()
-      .then((r) => (r.ok ? setDemo(r.value) : setError(r.refusal.detail)))
-      .catch((e) => setError(String(e)));
   }, []);
+
+  // Switching refetches only the persona-dependent payload. It does not touch
+  // the upload or the extraction above: both personas' draft entries are
+  // committed, so a switch is one request and never a model call.
+  useEffect(() => {
+    getAgentDemoInputs(personaKey ?? undefined)
+      .then((r) => {
+        if (!r.ok) return setError(r.refusal.detail);
+        setDemo(r.value);
+        setDraft(null);
+        setSent(null);
+        setVerdict(null);
+        setPack(null);
+        return undefined;
+      })
+      .catch((e) => setError(String(e)));
+  }, [personaKey]);
 
   async function run<T>(
     what: string,
@@ -143,6 +163,15 @@ export function AgentPanel() {
 
       {refusal && <AgentRefusal refusal={refusal} onRaise={(l) => setLevel(l)} />}
 
+      {demo && (
+        <PersonaSwitch
+          personas={demo.personas}
+          selected={demo.selected}
+          onPick={setPersonaKey}
+          busy={busy !== null}
+        />
+      )}
+
       <MandateSelector mandate={mandate} level={level} onPick={setLevel} />
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -152,19 +181,21 @@ export function AgentPanel() {
           busy={busy === "draft"}
           disabled={!demo}
         />
-        {/* Calls the real endpoint. In this cut it always ends in a refusal,
-            but WHICH refusal is the whole point and only the backend can say:
-            below level 4 the mandate check fires first and names level 4.
-            Fabricating ACTION_NOT_BUILT here would tell a worker at level 0
-            that raising their level would not help, which is false. */}
+        {/* Calls the real endpoint, because WHICH refusal comes back is the
+            point and only the backend can say: below level 4 the mandate check
+            fires first and names level 4. Fabricating a refusal here once told
+            a worker at level 0 that raising their level would not help, which
+            was false at four of the five levels. */}
         <Action
           label="Prepare escalation"
-          onClick={() => run("escalate", () => postEscalation(level), () => undefined)}
+          onClick={() =>
+            run("escalate", () => postEscalation(level, demo?.selected.key), setPack)
+          }
           busy={busy === "escalate"}
         />
       </div>
 
-      {draft && (
+      {draft && draft.basis.trim() !== "" && (
         <>
           <DraftView draft={draft} />
           <TapToSend
@@ -178,14 +209,21 @@ export function AgentPanel() {
         </>
       )}
 
-      {/* Rendered only when the server sent BOTH the pack and the sentence that
-          says whose month it is. CPF figures without that caveat would read as
-          this viewer's month, directly under their own reconciliation - and the
-          page says a few inches above that FairSlip did NOT compute CPF for
-          them. Two fields with independent defaults could drift apart, so the
-          gate requires both. */}
+      {pack && <EscalationPack pack={pack} />}
+
+      {/* One branch or the other, never both. A split of zeros under a NO_CPF
+          banner is a card contradicting itself, and the overlap note would be
+          describing an overlap of $0.
+
+          The CPF card renders only when the server sent BOTH the pack and the
+          sentence saying whose month it is: two fields with independent defaults
+          can drift, and CPF figures without that caveat read as the viewer's own
+          month, directly under their own reconciliation. */}
       {demo?.cpf && demo.cpf_basis.trim() !== "" && (
-        <CpfShortfall cpf={demo.cpf} basis={demo.cpf_basis} persona={demo.persona} />
+        <CpfShortfall cpf={demo.cpf} basis={demo.cpf_basis} persona={demo.selected} />
+      )}
+      {demo && !demo.cpf && demo.no_cpf_note.trim() !== "" && (
+        <NoCpfCard persona={demo.selected} note={demo.no_cpf_note} />
       )}
 
       <VerifySection
@@ -208,6 +246,91 @@ const ACTION_WORDS: Record<string, string> = {
   verify: "check next month's payslip",
   prepare_escalation: "gather an evidence pack",
 };
+
+/* ------------------------------------------------------------ the persona */
+
+/**
+ * Which invented worker the panel is showing.
+ *
+ * Every fact on a card is a field the server sent - pass type, occupation,
+ * language, and whether CPF applies at all - so nothing here is inferred from a
+ * name. The switch exists because the two personas produce visibly different
+ * outcomes from the same engines and the same readers, which is the point: the
+ * scope is a set of rules, not one hardcoded story.
+ */
+function PersonaSwitch({
+  personas,
+  selected,
+  onPick,
+  busy,
+}: {
+  personas: AgentPersona[];
+  selected: AgentPersona;
+  onPick: (key: string) => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold text-zinc-900">
+        Whose month this example shows
+      </h3>
+      <p className="mt-0.5 text-xs text-zinc-600">
+        Both are invented. Same engines, same published rules - and different rules apply to
+        each of them.
+      </p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {personas.map((p) => {
+          const picked = p.key === selected.key;
+          return (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => onPick(p.key)}
+              disabled={busy}
+              aria-pressed={picked}
+              className={`rounded border px-3 py-2 text-left text-sm transition disabled:opacity-60 ${
+                picked
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-500"
+              }`}
+            >
+              <span className="block font-medium">{p.name}</span>
+              <span
+                className={`mt-0.5 block text-xs ${picked ? "text-zinc-300" : "text-zinc-600"}`}
+              >
+                {p.residency_label} &middot; {p.occupation}
+              </span>
+              <span
+                className={`mt-0.5 block text-xs ${picked ? "text-zinc-300" : "text-zinc-600"}`}
+              >
+                Writes in {p.language} &middot;{" "}
+                {p.cpf_applies ? "CPF applies" : "not a CPF member"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** The honest screen for a worker who is not a CPF member: a statement, not a
+ * split of zeros. */
+function NoCpfCard({ persona, note }: { persona: AgentPersona; note: string }) {
+  return (
+    <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
+      <div className="border-b border-zinc-300 px-4 py-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+          Fictional worked example - not your figures
+        </p>
+        <h3 className="mt-0.5 text-sm font-semibold text-zinc-900">
+          No CPF for {persona.name}
+        </h3>
+      </div>
+      <p className="px-4 py-3 text-sm text-zinc-800">{note}</p>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------ the mandate */
 
@@ -285,17 +408,36 @@ function MandateSelector({
 
 /* --------------------------------------------------------------- the draft */
 
+/**
+ * The drafted message.
+ *
+ * It is written in the FIRST PERSON and offered as something to send, sitting
+ * directly under the viewer's own reconciliation - so without an attribution it
+ * reads as the viewer's own message about their own month. It is not: it is a
+ * committed fixture for an invented worker. The CPF card was given the dashed
+ * border, the "not your figures" line and a render gate for exactly this
+ * reason, and this component - its twin - was left without them.
+ * docs/debt.md, fix-applied-to-one-of-two-twins.
+ */
 function DraftView({ draft }: { draft: DraftOut }) {
   return (
-    <div className="mt-6 rounded border border-zinc-300">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2">
-        <h3 className="text-sm font-semibold text-zinc-900">
-          A message you could send - not sent
-        </h3>
+    <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-300 px-4 py-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+            Fictional worked example - not your message
+          </p>
+          <h3 className="mt-0.5 text-sm font-semibold text-zinc-900">
+            A message they could send - not sent
+          </h3>
+        </div>
         <span className="rounded bg-zinc-200 px-2 py-0.5 font-mono text-[11px] text-zinc-700">
           {draft.state}
         </span>
       </div>
+      <p className="border-b border-zinc-300 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+        {draft.basis}
+      </p>
 
       <div className="grid gap-0 md:grid-cols-2">
         <article className="border-b border-zinc-200 p-4 md:border-b-0 md:border-r">
@@ -321,7 +463,7 @@ function DraftView({ draft }: { draft: DraftOut }) {
         <ul className="mt-2 space-y-1">
           {draft.figures_cited.map((f) => (
             <li key={f.label} className="font-mono text-xs text-zinc-700">
-              {money(f.amount)} - {f.label} - {f.formula}
+              {money(f.amount)} - {f.label.replace(/_/g, " ")} - {f.formula}
             </li>
           ))}
         </ul>
@@ -354,6 +496,15 @@ function DraftView({ draft }: { draft: DraftOut }) {
   );
 }
 
+/** The tap's own moment, in the reader's timezone. The backend records the
+ * instant the worker tapped and never re-stamps it; this only renders it. A raw
+ * UTC string made a 14:32 tap in Singapore read as 06:32Z, which is true and
+ * looks wrong. The ISO string stays in `dateTime`/`title`. */
+function localTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
 /* ----------------------------------------------------------------- the tap */
 
 function TapToSend({
@@ -380,7 +531,8 @@ function TapToSend({
         </p>
         <p className="mt-1 text-xs text-emerald-900">{sent.note}</p>
         <p className="mt-1 font-mono text-[11px] text-emerald-800">
-          {sent.state} at {sent.tap_at} - tapped on {sent.tap_surface}
+          {sent.state} at <time dateTime={sent.tap_at}>{localTime(sent.tap_at)}</time> -
+          tapped on {sent.tap_surface}
         </p>
       </div>
     );
@@ -430,7 +582,11 @@ function Timeline({ reached, sent }: { reached: Record<string, boolean>; sent: S
                 {step.label}
                 {!done && <span className="ml-2 text-xs font-normal">not yet reached</span>}
                 {done && step.key === "SENT" && sent && (
-                  <span className="ml-2 font-mono text-xs font-normal">{sent.tap_at}</span>
+                  <span className="ml-2 font-mono text-xs font-normal">
+                    <time dateTime={sent.tap_at} title={sent.tap_at}>
+                      {localTime(sent.tap_at)}
+                    </time>
+                  </span>
                 )}
               </p>
               <p className={`text-xs ${done ? "text-zinc-600" : "text-zinc-400"}`}>
@@ -443,6 +599,114 @@ function Timeline({ reached, sent }: { reached: Record<string, boolean>; sent: S
         );
       })}
     </ol>
+  );
+}
+
+/* ---------------------------------------------------------- the escalation */
+
+/**
+ * Assembled, never filed. The pack's own `filing_steps` say FairSlip does not
+ * file; this component adds no claim of its own.
+ *
+ * `not_built` is rendered as prominently as the built half. A pack that showed
+ * only what exists would read as complete, and the missing half here is CPF
+ * Board's report form - which could not be read, so its fields are unknown.
+ */
+function EscalationPack({ pack }: { pack: EscalationOut }) {
+  return (
+    <div className="mt-6 rounded border border-zinc-300">
+      <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-2">
+        <h3 className="text-sm font-semibold text-zinc-900">{pack.heading}</h3>
+        <p className="mt-0.5 text-xs text-zinc-600">
+          FairSlip has assembled a checklist. You file; FairSlip does not.
+        </p>
+      </div>
+
+      <div className="px-4 py-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          What TADM asks you to bring
+        </h4>
+        <ul className="mt-2 space-y-2">
+          {pack.evidence.map((e) => (
+            <li key={e.quoted} className="text-sm text-zinc-900">
+              <span className="block">&ldquo;{e.quoted}&rdquo;</span>
+              <span className="block text-xs text-zinc-600">{e.note}</span>
+              <a
+                href={e.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-zinc-500 underline underline-offset-2"
+              >
+                {e.source_label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="border-t border-zinc-200 px-4 py-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Time limits for filing
+        </h4>
+        <ul className="mt-2 space-y-1">
+          {pack.deadlines.map((d) => (
+            <li key={d.label} className="text-sm text-zinc-900">
+              <span className="font-medium">{d.label}: </span>
+              <span>&ldquo;{d.quoted}&rdquo;</span>
+              {/* These are MOM's words under a heading about TADM. A quote
+                  attributed by the nearest heading is attributed to the wrong
+                  body, so each names its own page. */}
+              <a
+                href={d.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-1 text-[11px] text-zinc-500 underline underline-offset-2"
+              >
+                {d.source_label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="border-t border-zinc-200 px-4 py-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          How filing works
+        </h4>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+            {pack.filing_steps.map((s) => (
+              <li key={s} className="text-sm text-zinc-800">
+                {s}
+              </li>
+            ))}
+        </ol>
+      </div>
+
+      {pack.not_built.map((n) => (
+        <div key={n.what} className="border-t border-zinc-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-900">Not built: {n.what}</p>
+          <p className="mt-1 text-xs text-amber-900">{n.why}</p>
+          {n.what_is_known.length > 0 && (
+            <>
+              <p className="mt-2 text-xs font-semibold text-amber-900">
+                What CPF Board does say:
+              </p>
+              <ul className="mt-1 space-y-1">
+                {n.what_is_known.map((k) => (
+                  <li key={k} className="text-xs text-amber-900">
+                    {k}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      ))}
+
+      <p className="border-t border-zinc-200 px-4 py-2 text-xs text-zinc-600">
+        {pack.disclaimer}
+      </p>
+    </div>
   );
 }
 
@@ -463,9 +727,9 @@ function CpfShortfall({
   basis,
   persona,
 }: {
-  cpf: CpfOut;
+  cpf: CpfPack;
   basis: string;
-  persona: string;
+  persona: AgentPersona;
 }) {
   return (
     <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
@@ -479,7 +743,7 @@ function CpfShortfall({
         <p className="mt-0.5 text-xs text-zinc-600">
           Based on CPF Board&rsquo;s published rule that CPF contributions are payable on
           overtime pay. A difference in wage can therefore be a difference in CPF as well. Below
-          is one month for {persona}, an invented worker.
+          is one month for {persona.name}, an invented {persona.residency_label.toLowerCase()}.
         </p>
       </div>
       {/* The note explains the total, so it is placed BEFORE the lines it
@@ -499,6 +763,12 @@ function CpfShortfall({
           </div>
         ))}
       </dl>
+      {/* Two figures on this card describe money she did not receive. Both are
+          true and they differ by the employee CPF; the derivation is shown
+          rather than left for a reader to reconstruct. */}
+      <p className="border-t border-zinc-300 bg-white/70 px-4 py-2 text-xs text-zinc-700">
+        {cpf.split_bridge}
+      </p>
       <p className="border-t border-zinc-300 bg-amber-50 px-4 py-2 text-xs text-amber-900">
         {basis}
       </p>
@@ -545,13 +815,14 @@ function VerifySection({
   onVerify: (w: "month2_corrected" | "month2_uncorrected" | "month2_blocked") => void;
   busy: boolean;
 }) {
+  const personaName = demo?.selected.name ?? "the invented worker";
   return (
     <div className="mt-6 border-t border-zinc-200 pt-5">
       <h3 className="text-sm font-semibold text-zinc-900">Next month</h3>
       <p className="mt-1 text-sm text-zinc-600">
-        A real payslip 2 would go through the same two readers and the same engines. These
-        buttons use fictional month-2 fixtures, so no reader ran. The verdict is arithmetic -
-        no model takes part in it.
+        A real payslip 2 would go through the same two readers and the same engines. Both
+        months here are {personaName}&rsquo;s invented figures - not yours - so no reader
+        ran. The verdict is arithmetic; no model takes part in it.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Action label="Payslip 2 with an extra payment" onClick={() => onVerify("month2_corrected")} busy={busy} disabled={!demo} />
@@ -559,16 +830,23 @@ function VerifySection({
         <Action label="Payslip 2 the readers could not agree on" onClick={() => onVerify("month2_blocked")} busy={busy} disabled={!demo} />
       </div>
 
-      {verdict && <VerdictCard v={verdict} />}
+      {verdict && <VerdictCard v={verdict} personaName={personaName} />}
     </div>
   );
 }
 
-function VerdictCard({ v }: { v: VerifyOut }) {
+function VerdictCard({ v, personaName }: { v: VerifyOut; personaName: string }) {
   const copy = VERDICT_COPY[v.verdict];
   return (
-    <div className={`mt-4 rounded border px-4 py-3 ${copy.tone}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    // Dashed, like every other fixture card. "Month 2 reached the bank" sits
+    // inches below the viewer's own "Reached the bank" on the same page: same
+    // words, two different people's money. The draft and the CPF cards got this
+    // treatment and this one, their sibling, did not.
+    <div className={`mt-4 rounded border-2 border-dashed px-4 py-3 ${copy.tone}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        Fictional worked example - {personaName}&rsquo;s months, not yours
+      </p>
+      <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold">{copy.title}</p>
         <span className="rounded bg-white/70 px-2 py-0.5 font-mono text-[11px]">{v.verdict}</span>
       </div>
@@ -585,8 +863,9 @@ function VerdictCard({ v }: { v: VerifyOut }) {
             ))}
           </ul>
           <p className="mt-2 text-xs">
-            The month-1 difference of {money(v.month1_difference)} is unchanged by this: it was
-            established, and nothing here revises it.
+            {personaName}&rsquo;s month-1 difference of {money(v.month1_difference)} is
+            unchanged by this: it was established for that invented month, and nothing here
+            revises it.
           </p>
         </div>
       ) : (
@@ -595,7 +874,9 @@ function VerdictCard({ v }: { v: VerifyOut }) {
           {v.month2_expected_net && (
             <Row label="Month 2 should have paid" value={money(v.month2_expected_net)} />
           )}
-          {v.month2_net_paid && <Row label="Month 2 reached the bank" value={money(v.month2_net_paid)} />}
+          {v.month2_net_paid && (
+            <Row label="Month 2 reached their bank" value={money(v.month2_net_paid)} />
+          )}
           {v.adjustment_found && (
             <Row label="Adjustment found on payslip 2" value={money(v.adjustment_found)} />
           )}

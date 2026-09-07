@@ -106,7 +106,16 @@ export default function CheckPage() {
   const unresolved = useMemo(() => {
     if (!extract) return [];
     const out: { name: string; label: string; group: "read" | "worker" }[] = [];
+    // Fields the pay engine never receives cannot block a pay calculation.
+    // `cpf_employee_on_payslip` is read from the payslip but deleted by
+    // payInputsFrom, so a payslip with no CPF line - every Work Permit
+    // holder's - left the button disabled saying "the readers did not settle
+    // it" and "nothing has been calculated", both false as to that field. Worse,
+    // the worker could then answer it, get a green chip, and have the answer
+    // thrown away. Both places now read the server's one list.
+    const cpfOnly = new Set(extract.cpf_only_fields);
     for (const f of extract.read_fields) {
+      if (cpfOnly.has(f.name)) continue;
       if (!isEstablished(f.fact.status) && !answers[f.name]?.trim()) {
         out.push({ name: f.name, label: f.label, group: "read" });
       }
@@ -114,7 +123,7 @@ export default function CheckPage() {
     for (const f of extract.worker_fields) {
       // The engines' pay pack does not take residency or date of birth; those
       // two are held for the CPF pack and do not block this calculation.
-      if (f.required_for.includes("cpf")) continue;
+      if (f.required_for.includes("cpf") || cpfOnly.has(f.name)) continue;
       // Only a rest day established as worked makes "who asked?" a question.
       // While it is unknown, `rest_day_hours` is itself unresolved and already
       // on this list, so the worker is pointed at the thing that settles it.
@@ -193,6 +202,7 @@ export default function CheckPage() {
             <Readers readers={extract.readers} />
             <ReadGroup
               fields={extract.read_fields}
+              cpfOnly={extract.cpf_only_fields}
               agreed={extract.agreed_count}
               total={extract.read_field_count}
               answers={answers}
@@ -362,12 +372,17 @@ function CachePath({ state, note }: { state: ExtractOut["cache_state"]; note: st
 
 function ReadGroup({
   fields,
+  cpfOnly,
   agreed,
   total,
   answers,
   onAnswer,
 }: {
   fields: ReadField[];
+  /** Fields the pay engine never receives. Labelled, not silently unanswerable:
+   * one of these used to offer "What is the right figure?", record a green
+   * chip, and then have the answer deleted before /compute. */
+  cpfOnly: string[];
   agreed: number;
   total: number;
   answers: Record<string, string>;
@@ -416,6 +431,7 @@ function ReadGroup({
           <ReadFieldRow
             key={f.name}
             field={f}
+            cpfOnly={cpfOnly.includes(f.name)}
             answer={answers[f.name] ?? ""}
             onAnswer={(v) => onAnswer(f.name, v)}
           />
@@ -427,21 +443,37 @@ function ReadGroup({
 
 function ReadFieldRow({
   field,
+  cpfOnly,
   answer,
   onAnswer,
 }: {
   field: ReadField;
+  /** The pay engine never receives this one. It is read from the payslip for the
+   * CPF check, and payInputsFrom deletes it before /compute. */
+  cpfOnly: boolean;
   answer: string;
   onAnswer: (v: string) => void;
 }) {
   const settled = isEstablished(field.fact.status);
-  const confirmed = !settled && answer.trim().length > 0;
+  // An ANSWER, not a confirmation. This is `answer.trim().length > 0` and
+  // nothing more: "abc" and "-5" satisfy it. The engine still refuses them, so
+  // no bad figure ships - but the chip must not claim an establishment that
+  // only the engine can grant. docs/debt.md,
+  // established-status-mistaken-for-established-value.
+  const answered = !settled && answer.trim().length > 0;
 
   return (
     <li className="px-5 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="font-medium">{field.label}</span>
-        <StatusChip status={confirmed ? "HUMAN_CONFIRMED" : field.fact.status} />
+        <span className="font-medium">
+          {field.label}
+          {cpfOnly && (
+            <span className="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-normal text-sky-900">
+              for the CPF check
+            </span>
+          )}
+        </span>
+        <StatusChip status={answered ? "HUMAN_CONFIRMED" : field.fact.status} />
       </div>
 
       <ul className="mt-1.5 space-y-0.5 text-xs">
@@ -466,6 +498,14 @@ function ReadFieldRow({
 
       {settled ? (
         <p className="mt-1 text-xs text-zinc-500">{field.fact.source}</p>
+      ) : cpfOnly ? (
+        // No answer box. This field never reaches the pay engine, so an answer
+        // typed here would earn a green chip and then be deleted before
+        // /compute - a confirmation recorded and thrown away.
+        <p className="mt-1 text-xs text-zinc-500">
+          {field.fact.source}. This one is for the CPF check, which FairSlip does not run on
+          this screen, so it does not hold up your figures.
+        </p>
       ) : (
         <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
           <p className="text-xs text-amber-900">{field.fact.source}</p>
@@ -512,9 +552,10 @@ function WorkerGroup({
           </span>
         </h2>
         <p className="mt-1 text-sm text-violet-900">
-          No reader was shown these. A better photograph would not help, and a better model would
-          not either &mdash; the documents do not contain them. A model asked anyway would return
-          a guess that looks exactly like a reading.
+          No reader was shown these. A better photograph would not help, and a better model
+          would not either: some of these are facts no payslip states, and the rest are facts
+          only you can settle. A model asked anyway would return a guess that looks exactly
+          like a reading.
         </p>
       </div>
 
@@ -666,9 +707,7 @@ function ComputeGate({
                 />
                 <span className="text-zinc-800">{f.label}</span>
                 <span className="text-xs text-zinc-500">
-                  {f.group === "read"
-                    ? "the readers did not settle it"
-                    : "no document can show it"}
+                  {f.group === "read" ? "the readers did not settle it" : "we ask you, not a reader"}
                 </span>
               </li>
             ))}
@@ -676,7 +715,8 @@ function ComputeGate({
         </div>
       ) : (
         <p className="mt-3 text-sm text-zinc-700">
-          Every field the engine needs is either agreed by both readers or confirmed by you.
+          Every field the engine needs has an answer &mdash; agreed by both readers, or given
+          by you. The engine checks each value when it runs, and refuses any it cannot use.
         </p>
       )}
     </section>
@@ -767,7 +807,7 @@ function StatusChip({ status }: { status: Fact["status"] }) {
     AGREED: "both readers agree",
     DISAGREED: "readers disagree",
     MISSING: "not established",
-    HUMAN_CONFIRMED: "you confirmed this",
+    HUMAN_CONFIRMED: "you answered this",
   };
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-semibold ${tone}`}>{words[status]}</span>
@@ -930,7 +970,11 @@ function payInputsFrom(
   for (const f of extract.read_fields) {
     const typed = answers[f.name]?.trim();
     out[f.name] = typed
-      ? { value: typed, status: "HUMAN_CONFIRMED", source: "worker confirmed on screen" }
+      ? {
+          value: typed,
+          status: "HUMAN_CONFIRMED",
+          source: `you answered on screen: ${f.label}`,
+        }
       : f.fact;
   }
 
@@ -938,8 +982,16 @@ function payInputsFrom(
     if (f.required_for.includes("cpf")) continue; // held for the CPF pack
     const typed = answers[f.name]?.trim();
     out[f.name] = typed
-      ? { value: typed, status: "HUMAN_CONFIRMED", source: "worker answered on screen" }
-      : { value: null, status: "MISSING", source: "the worker has not answered this" };
+      ? {
+          // Naming the field does two things: the provenance list under the
+          // headline figure says WHICH answer a dollar came from, and the
+          // strings stop colliding - three worker answers all read "worker
+          // answered on screen", which React then rendered with duplicate keys.
+          value: typed,
+          status: "HUMAN_CONFIRMED",
+          source: `you answered on screen: ${f.label}`,
+        }
+      : { value: null, status: "MISSING", source: `you have not answered: ${f.label}` };
   }
 
   // The rest-day pair travels together or not at all: rules.py drops BOTH when
@@ -969,8 +1021,10 @@ function payInputsFrom(
       break;
   }
 
-  // Not a PayInputs field - it belongs to the CPF pack.
-  delete out.cpf_employee_on_payslip;
+  // Not PayInputs fields - they belong to the CPF pack. Derived from the same
+  // server list the compute gate reads, so the two cannot drift: the gate used
+  // to block on a field this function then deleted.
+  for (const name of extract.cpf_only_fields) delete out[name];
 
   return out;
 }

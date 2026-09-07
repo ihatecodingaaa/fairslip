@@ -8,6 +8,7 @@ Two personas so the demo can show both rule packs honestly:
     compounds into a CPF shortfall ($62.24 OT -> $23 CPF).
 """
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -177,7 +178,15 @@ MEI_LING_CPF_EMPLOYEE_ON_PAYSLIP = D("280")  # what the payslip shows
 # (docs/debt.md, precondition-untested-mechanism-tested).
 
 DEMO_SALARY_PERIOD = "September 2026"
-DEMO_LANGUAGE = "Bengali"
+
+# A language belongs to a PERSON, not to the demo. It was one global, so when the
+# agent panel switched personas Mei Ling silently inherited Rahim's Bengali - a
+# fabricated fact about a person, in a product whose whole thesis is that it does
+# not assert what it did not establish. These are fictional attributes of
+# fictional people, declared next to them, and the draft cache is keyed by
+# language so a persona cannot quietly borrow another's entry.
+RAHIM_LANGUAGE = "Bengali"
+MEI_LING_LANGUAGE = "Mandarin Chinese"
 
 
 def rahim_draft_spec() -> "DraftSpec":
@@ -203,7 +212,7 @@ def rahim_draft_spec() -> "DraftSpec":
         difference=bd.difference,
         flags=bd.flags,
         salary_period=DEMO_SALARY_PERIOD,
-        language=DEMO_LANGUAGE,
+        language=RAHIM_LANGUAGE,
     )
 
 
@@ -227,7 +236,7 @@ def mei_ling_draft_spec() -> "DraftSpec":
         difference=bd.difference,
         flags=bd.flags,
         salary_period=DEMO_SALARY_PERIOD,
-        language=DEMO_LANGUAGE,
+        language=MEI_LING_LANGUAGE,
     )
 
 
@@ -238,3 +247,132 @@ def draft_specs() -> tuple[tuple[str, "DraftSpec"], ...]:
         ("mei_ling_month1", mei_ling_draft_spec()),
         ("rahim_month1", rahim_draft_spec()),
     )
+
+
+# ---------------------------------------------------------------- the two demo personas
+#
+# ONE declaration per persona, carrying everything that depends on who they are:
+# their months, their language, their draft entry, and whether the CPF pack
+# applies to them at all. The agent panel switches between these.
+#
+# It is a single record rather than parallel lookups because every time this
+# repo has kept two persona-shaped things side by side, one of them got updated
+# and the other did not - a global DEMO_LANGUAGE put Mei Ling's message in
+# Rahim's Bengali, and a CPF split rendered under a NO_CPF banner. A switch
+# bolted onto one field would reintroduce both.
+
+
+@dataclass(frozen=True)
+class DemoPersona:
+    """A fictional worker, and every fact the screens need about them.
+
+    `cpf_applies` is not a display flag - it decides whether a CPF pack is
+    computed at all. A Work Permit holder is correctly NOT a CPF member, and the
+    honest screen for them is a NO_CPF statement, not a split of zeros with an
+    overlap note describing an overlap that does not exist.
+    """
+
+    key: str
+    name: str
+    residency: Residency
+    residency_label: str
+    occupation: str
+    language: str
+    band: AgeBand
+    dob: date
+    declared_ow: Decimal
+    draft_spec_name: str
+    cpf_applies: bool
+    cpf_note: str
+
+    def month1(self) -> PayInputs:
+        return _PERSONA_MONTHS[self.key]["month1"]()
+
+    def month2_corrected(self) -> PayInputs:
+        return _PERSONA_MONTHS[self.key]["corrected"]()
+
+    def month2_uncorrected(self) -> PayInputs:
+        return _PERSONA_MONTHS[self.key]["uncorrected"]()
+
+    def month2_blocked(self) -> PayInputs:
+        return _PERSONA_MONTHS[self.key]["blocked"]()
+
+
+_PERSONA_MONTHS: dict[str, dict] = {
+    "mei_ling": {
+        "month1": lambda: mei_ling_month1_established(),
+        "corrected": lambda: mei_ling_month2_corrected(),
+        "uncorrected": lambda: mei_ling_month2_uncorrected(),
+        "blocked": lambda: mei_ling_month2_unestablished(),
+    },
+    "rahim": {
+        "month1": lambda: rahim_month1_established(),
+        "corrected": lambda: rahim_month2_corrected(),
+        "uncorrected": lambda: rahim_month2_uncorrected(),
+        "blocked": lambda: rahim_month2_unestablished(),
+    },
+}
+
+
+MEI_LING = DemoPersona(
+    key="mei_ling",
+    name="Mei Ling",
+    residency=MEI_LING_RESIDENCY,
+    residency_label="Singapore Citizen",
+    occupation="F&B, non-workman",
+    language=MEI_LING_LANGUAGE,
+    band=MEI_LING_BAND,
+    dob=MEI_LING_DOB,
+    declared_ow=MEI_LING_DECLARED_OW,
+    draft_spec_name="mei_ling_month1",
+    cpf_applies=True,
+    cpf_note="",
+)
+
+RAHIM = DemoPersona(
+    key="rahim",
+    name="Rahim",
+    residency=RAHIM_RESIDENCY,
+    residency_label="Work Permit holder",
+    occupation="Construction, workman",
+    language=RAHIM_LANGUAGE,
+    band=RAHIM_BAND,
+    dob=RAHIM_DOB,
+    declared_ow=RAHIM_DECLARED_OW,
+    draft_spec_name="rahim_month1",
+    cpf_applies=False,
+    cpf_note=(
+        "No CPF. Work Permit holders are not CPF members, so there is no CPF "
+        "shortfall to show and no overlap to explain - the whole compounding "
+        "beat does not apply. That is the correct answer for this pass type, "
+        "not a gap in what FairSlip checked."
+    ),
+)
+
+# Pass types held by migrant workers. Decides whether MWC is offered - not a
+# judgement about a person, a fact about which organisation exists for whom.
+MIGRANT_PASS_TYPES: frozenset = frozenset(
+    {Residency.WORK_PERMIT, Residency.S_PASS}
+)
+
+# Mei Ling first: she is the default, and the scripted run never touches the switch.
+DEMO_PERSONAS: tuple[DemoPersona, ...] = (MEI_LING, RAHIM)
+DEFAULT_PERSONA_KEY = MEI_LING.key
+
+
+def persona_by_key(key: str) -> DemoPersona:
+    for p in DEMO_PERSONAS:
+        if p.key == key:
+            return p
+    raise KeyError(
+        f"unknown demo persona {key!r}; declared: {[p.key for p in DEMO_PERSONAS]}"
+    )
+
+
+def persona_for_spec(spec_name: str) -> DemoPersona | None:
+    """Which persona a draft entry belongs to. Returns None rather than guessing
+    for a spec no persona declares."""
+    for p in DEMO_PERSONAS:
+        if p.draft_spec_name == spec_name:
+            return p
+    return None

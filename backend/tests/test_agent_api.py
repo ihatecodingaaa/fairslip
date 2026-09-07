@@ -322,11 +322,54 @@ def test_escalation_below_level_4_is_mandate_exceeded_not_action_not_built() -> 
         assert body["required_level"] == 4
 
 
-def test_escalation_at_level_4_is_action_not_built() -> None:
+def test_escalation_at_level_4_assembles_the_tadm_half() -> None:
     r = client.post("/agent/escalation", json={"level": 4})
-    assert r.status_code == 400
-    assert r.json()["error"] == "ACTION_NOT_BUILT"
-    assert "not built" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["evidence"]) == 4
+    assert body["deadlines"] and body["filing_steps"]
+
+
+def test_every_evidence_item_quotes_its_published_source() -> None:
+    """Derived over the pack rather than checking one item. Each quote must
+    carry the URL it came from, and the URL must be a declared REFERENCE_LINK -
+    the set the module marks as shown to the worker and never fetched."""
+    from fairslip.agent import REFERENCE_LINKS
+
+    declared = set(REFERENCE_LINKS.values())
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    assert body["evidence"], "no evidence items; this test would be vacuous"
+    for item in body["evidence"] + body["deadlines"]:
+        assert item["quoted"].strip()
+        assert item["source_url"] in declared, item["source_url"]
+
+
+def test_the_cpf_report_half_is_declared_not_built_with_its_reason() -> None:
+    """The form behind CPF Board's link returned 403 and has not been read.
+    Inventing its fields would be a guess carried to a government counter."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    assert body["not_built"], "the absent CPF half is not declared at all"
+    cpf_half = body["not_built"][0]
+    assert "CPF Board" in cpf_half["what"]
+    assert "could not be read" in cpf_half["why"]
+    assert cpf_half["what_is_known"], "it says nothing about what IS known"
+
+
+def test_the_pack_states_no_claim_value_cap_anywhere() -> None:
+    """MOM and TADM describe the caps differently and how they compose for one
+    worker could not be established. A cap shown wrongly is not recoverable at a
+    mediation counter, so no amount appears (docs/debt.md, tadm-claim-value-caps)."""
+    blob = json.dumps(client.post("/agent/escalation", json={"level": 4}).json())
+    for cap in ("20,000", "30,000", "40,000", "$20000", "$30000", "$40000"):
+        assert cap not in blob, f"a claim cap reached the pack: {cap}"
+
+
+def test_the_pack_never_says_it_filed_anything() -> None:
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    blob = json.dumps(body).lower()
+    for claim in ("we filed", "we submitted", "your claim has been", "we have sent"):
+        assert claim not in blob
+    assert any("does not file" in s.lower() for s in body["filing_steps"])
 
 
 def test_the_mandate_endpoint_says_which_actions_are_actually_built() -> None:
@@ -341,8 +384,8 @@ def test_the_mandate_endpoint_says_which_actions_are_actually_built() -> None:
     assert seen["draft"] is True
     assert seen["send"] is True
     assert seen["verify"] is True
-    assert seen["track"] is False
-    assert seen["prepare_escalation"] is False
+    assert seen["prepare_escalation"] is True  # the TADM half is built
+    assert seen["track"] is False  # tracking the next salary period is not
 
 
 def test_the_blocked_month_2_fixture_is_served_by_the_backend() -> None:
@@ -364,6 +407,56 @@ def test_the_blocked_month_2_fixture_is_served_by_the_backend() -> None:
 # --------------------------------------------------------------------------
 
 
+def test_each_persona_declares_its_own_language() -> None:
+    """A language belongs to a PERSON. It was one global, so switching the panel
+    persona silently put Mei Ling's message in Rahim's Bengali - a fabricated
+    fact about a person. Derived over the declared specs, so a third persona
+    cannot inherit a language by accident."""
+    langs = {name: spec.language for name, spec in fx.draft_specs()}
+    assert langs["rahim_month1"] == fx.RAHIM_LANGUAGE == "Bengali"
+    assert langs["mei_ling_month1"] == fx.MEI_LING_LANGUAGE
+    assert fx.MEI_LING_LANGUAGE != fx.RAHIM_LANGUAGE
+    # No two personas may share a spec: the language is in the cache key, so a
+    # shared language with identical figures would share an entry.
+    assert len(set(langs.values())) == len(langs)
+
+
+def test_the_language_is_part_of_the_draft_cache_key() -> None:
+    """Otherwise a persona could be served another persona's message."""
+    import dataclasses
+
+    from fairslip.agent import draft_cache_key
+
+    spec = fx.mei_ling_draft_spec()
+    other = dataclasses.replace(spec, language=fx.RAHIM_LANGUAGE)
+    assert draft_cache_key(spec) != draft_cache_key(other)
+
+
+def test_the_served_persona_language_matches_the_draft_it_serves() -> None:
+    body = client.get("/agent/demo-inputs").json()
+    assert body["selected"]["language"] == fx.MEI_LING_LANGUAGE
+    r = client.post("/agent/draft", json={"level": 1, "spec_name": body["draft_spec_name"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["language"] == body["selected"]["language"]
+
+
+def test_the_split_bridge_derives_cash_from_gross_and_shows_the_subtraction() -> None:
+    """$62.24 and $50.24 both describe money she did not receive. The screen must
+    show the derivation rather than leave two same-sounding labels unexplained."""
+    cpf = client.get("/agent/demo-inputs").json()["cpf"]
+    bridge = cpf["split_bridge"]
+    assert "$62.24 minus $12.00 = $50.24" in bridge
+    assert "WAGE" in bridge and "CASH" in bridge
+    assert "Neither figure is wrong" in bridge
+
+
+def test_the_cpf_pack_serves_only_what_the_panel_renders() -> None:
+    """declared/expected/delta were serialised and never shown. A serialised
+    figure nothing renders is where the next unqualified claim gets displayed."""
+    cpf = client.get("/agent/demo-inputs").json()["cpf"]
+    assert set(cpf) == {"split", "split_note", "split_bridge"}
+
+
 def test_the_demo_inputs_serve_mei_ling_because_rahim_has_no_cpf() -> None:
     """The name states a rationale, so the test establishes it: Rahim is a Work
     Permit holder and his CPF shortfall really is zero, which is why the
@@ -378,7 +471,7 @@ def test_the_demo_inputs_serve_mei_ling_because_rahim_has_no_cpf() -> None:
     assert rahim.total_withheld == rahim.gross_shortfall  # nothing compounds
 
     body = client.get("/agent/demo-inputs").json()
-    assert body["persona"] == "Mei Ling"
+    assert body["selected"]["key"] == "mei_ling"  # the default, unswitched
     assert body["draft_spec_name"] == "mei_ling_month1"
     assert body["cpf"] is not None
 
@@ -407,7 +500,11 @@ def test_the_cpf_split_matches_the_calibration_and_never_double_counts() -> None
     double_count = d["gross_shortfall"] + d["cpf_shortfall"]
     assert double_count != d["total_withheld"]
     body = client.get("/agent/demo-inputs").json()
-    rendered = set(lines.values()) | {body["cpf_basis"], cpf["split_note"]}
+    rendered = set(lines.values()) | {
+        body["cpf_basis"],
+        cpf["split_note"],
+        cpf["split_bridge"],
+    }
     for text in rendered:
         assert f"{double_count:.2f}" not in text, f"the double-count reached: {text!r}"
 
@@ -452,7 +549,7 @@ def test_the_mei_ling_draft_is_served_from_the_committed_cache() -> None:
     r = client.post("/agent/draft", json={"level": 1, "spec_name": body["draft_spec_name"]})
     assert r.status_code == 200, r.text
     assert r.json()["cache_state"] == "HIT"
-    assert r.json()["language"] == "Bengali"
+    assert r.json()["language"] == fx.MEI_LING_LANGUAGE  # hers, not the demo's
 
 
 def test_the_cpf_caveat_retracts_before_it_asserts_and_names_the_persona() -> None:
@@ -467,7 +564,7 @@ def test_the_cpf_caveat_retracts_before_it_asserts_and_names_the_persona() -> No
     assert "not your figures" in head
     assert "Mei Ling" in basis
     # It must disclaim the whole panel, not declared_ow alone.
-    assert "every amount above is her month" in basis
+    assert "every amount above is their month" in basis
 
 
 def test_a_cpf_pack_is_never_served_without_the_sentence_that_says_whose_it_is() -> None:
@@ -483,3 +580,172 @@ def test_amounts_in_the_caveat_use_the_same_formatter_as_the_screen() -> None:
     basis = client.get("/agent/demo-inputs").json()["cpf_basis"]
     assert "$1,400.00" in basis
     assert "$1400.00" not in basis
+
+
+
+# --------------------------------------------------------------------------
+# The persona switch
+# --------------------------------------------------------------------------
+
+
+def test_mei_ling_is_the_default_and_the_scripted_run_never_switches() -> None:
+    assert fx.DEFAULT_PERSONA_KEY == "mei_ling"
+    assert client.get("/agent/demo-inputs").json()["selected"]["key"] == "mei_ling"
+
+
+def test_the_switch_is_rendered_from_the_same_record_that_decides_the_response() -> None:
+    """The personas the screen offers and the personas the endpoint can serve are
+    one list, so a switch cannot offer something the server will refuse."""
+    body = client.get("/agent/demo-inputs").json()
+    offered = [p["key"] for p in body["personas"]]
+    assert offered == [p.key for p in fx.DEMO_PERSONAS]
+    for key in offered:
+        assert client.get(f"/agent/demo-inputs?persona={key}").status_code == 200
+
+
+@pytest.mark.parametrize("key", [p.key for p in fx.DEMO_PERSONAS])
+def test_every_persona_states_its_facts_rather_than_leaving_them_inferred(key: str) -> None:
+    """Residency, occupation, language and whether CPF applies are all fields, so
+    nothing on the card is something a viewer has to assume."""
+    sel = client.get(f"/agent/demo-inputs?persona={key}").json()["selected"]
+    for field in ("name", "residency_label", "occupation", "language"):
+        assert sel[field].strip(), f"{key}.{field} is blank"
+    assert isinstance(sel["cpf_applies"], bool)
+
+
+@pytest.mark.parametrize("key", [p.key for p in fx.DEMO_PERSONAS])
+def test_switching_changes_everything_that_depends_on_the_persona(key: str) -> None:
+    """Not just the draft. The months, the language and the CPF pack all move
+    together - a switch threaded through one field is how a NO_CPF worker ends up
+    under a CPF split."""
+    who = fx.persona_by_key(key)
+    body = client.get(f"/agent/demo-inputs?persona={key}").json()
+
+    assert body["draft_spec_name"] == who.draft_spec_name
+    assert body["selected"]["language"] == who.language
+    assert (body["cpf"] is not None) == who.cpf_applies
+
+    # the months really are this persona's
+    expected_net_paid = str(who.month1().net_paid.value)
+    assert body["month1"]["net_paid"]["value"] == expected_net_paid
+
+
+@pytest.mark.parametrize("key", [p.key for p in fx.DEMO_PERSONAS])
+def test_both_personas_draft_from_a_committed_entry_with_no_live_call(key: str) -> None:
+    """The switch must be one click with no re-extraction and no model call."""
+    body = client.get(f"/agent/demo-inputs?persona={key}").json()
+    r = client.post("/agent/draft", json={"level": 1, "spec_name": body["draft_spec_name"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["cache_state"] == "HIT"
+    assert r.json()["language"] == body["selected"]["language"]
+
+
+def test_a_persona_without_cpf_gets_no_split_and_a_reason_instead() -> None:
+    """A split of zeros under a NO_CPF banner, carrying a note about an overlap
+    of $0, is a card contradicting itself."""
+    body = client.get("/agent/demo-inputs?persona=rahim").json()
+    assert body["cpf"] is None
+    assert body["cpf_basis"] == ""
+    assert "not CPF members" in body["no_cpf_note"]
+    assert body["selected"]["cpf_applies"] is False
+
+
+def test_a_persona_with_cpf_gets_no_no_cpf_note() -> None:
+    body = client.get("/agent/demo-inputs?persona=mei_ling").json()
+    assert body["no_cpf_note"] == ""
+    assert body["cpf"] is not None
+
+
+def test_an_unknown_persona_is_refused_by_name() -> None:
+    r = client.get("/agent/demo-inputs?persona=nope")
+    assert r.status_code == 400
+    assert "nope" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("key", [p.key for p in fx.DEMO_PERSONAS])
+def test_every_draft_says_whose_message_it_is(key: str) -> None:
+    """The draft is written in the first person and offered as something to send.
+    Without this it reads as the viewer's own message about their own month."""
+    body = client.get(f"/agent/demo-inputs?persona={key}").json()
+    basis = client.post(
+        "/agent/draft", json={"level": 1, "spec_name": body["draft_spec_name"]}
+    ).json()["basis"]
+    assert "not your message" in basis
+    assert body["selected"]["name"] in basis
+
+
+def test_mwc_is_offered_only_to_the_workers_it_exists_for() -> None:
+    """Offering "free help for migrant workers" to a Singapore Citizen asserts
+    something about the reader that nothing established."""
+    def names(key: str) -> set[str]:
+        body = client.get(f"/agent/demo-inputs?persona={key}").json()
+        d = client.post(
+            "/agent/draft", json={"level": 1, "spec_name": body["draft_spec_name"]}
+        ).json()
+        return {o["name"] for o in d["alternative"]}
+
+    assert any("MWC" in n for n in names("rahim"))
+    assert not any("MWC" in n for n in names("mei_ling"))
+    # TADM is for everyone, so it must never drop out.
+    for key in ("rahim", "mei_ling"):
+        assert any("TADM" in n for n in names(key))
+
+
+def test_every_quoted_authority_names_the_page_it_came_from() -> None:
+    """A quotation attributed by the nearest heading is attributed to the wrong
+    body: the deadlines are MOM's and they sit under a TADM heading."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    for item in body["evidence"]:
+        assert "TADM" in item["source_label"], item
+    for d in body["deadlines"]:
+        assert "MOM" in d["source_label"], d
+
+
+def test_the_filing_steps_make_no_claim_about_how_tadm_works() -> None:
+    """"A mediator checks the figures with both sides" and "mediation is free"
+    are claims about a third party's process that nothing here establishes."""
+    steps = " ".join(client.post("/agent/escalation", json={"level": 4}).json()["filing_steps"])
+    for claim in ("mediates", "mediator", "free", "Singpass"):
+        assert claim.lower() not in steps.lower(), claim
+
+
+def test_the_escalation_pack_omits_the_cpf_half_for_a_worker_with_no_cpf() -> None:
+    """Naming an absent CPF report to a Work Permit holder contradicts the card
+    beside it saying the whole CPF question does not apply to them. An unbuilt
+    half is worth naming; an inapplicable one reads as an oversight."""
+    for key in ("mei_ling", "rahim"):
+        who = fx.persona_by_key(key)
+        body = client.post("/agent/escalation", json={"level": 4, "persona": key}).json()
+        assert bool(body["not_built"]) is who.cpf_applies, key
+        # The TADM half is for everyone either way.
+        assert len(body["evidence"]) == 4, key
+
+
+def test_the_landing_personas_state_whether_cpf_applies() -> None:
+    """So the age-band chip - a CPF rate-table row - is not shown above a panel
+    saying the worker is not a CPF member."""
+    personas = client.get("/demo/fixtures").json()["personas"]
+    by_name = {p["name"]: p["cpf_applies"] for p in personas}
+    assert by_name["Mei Ling"] is True
+    assert all(v is False for k, v in by_name.items() if k.startswith("Rahim"))
+
+
+def test_no_user_visible_backend_string_assumes_a_pronoun() -> None:
+    """Fictional personas have no stated pronouns, and a name does not supply
+    one. Derived over the strings the agent surfaces actually send."""
+    import re
+
+    body = client.get("/agent/demo-inputs").json()
+    strings = [
+        body["cpf_basis"],
+        body["cpf"]["split_bridge"],
+        body["cpf"]["split_note"],
+        client.post("/agent/draft", json={"level": 1, "spec_name": "mei_ling_month1"}).json()[
+            "basis"
+        ],
+        client.get("/agent/demo-inputs?persona=rahim").json()["no_cpf_note"],
+        client.post("/agent/send", json={"level": 2, "tap": _tap()}).json()["note"],
+    ]
+    gendered = re.compile(r"\b(she|her|hers|he|him|his)\b", re.IGNORECASE)
+    for s in strings:
+        assert not gendered.search(s), f"gendered pronoun in: {s!r}"

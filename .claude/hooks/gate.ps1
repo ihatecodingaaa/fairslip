@@ -44,6 +44,20 @@ foreach ($r in $roots) {
       Pop-Location
       if ($code -ne 0) { $fail += "typecheck:$name"; $logs += $log }
     }
+
+    # Lint was run by hand all build, which means it was not gated at all.
+    # Only when the package actually defines the script, so this cannot invent
+    # a check a project does not have.
+    $pkg = Get-Content (Join-Path $r 'package.json') -Raw
+    if (($pkg -match '"lint"\s*:') -and (Get-Command npm -ErrorAction SilentlyContinue)) {
+      $ran += "eslint:$name"
+      $log = Join-Path $logDir "eslint-$name.log"
+      Push-Location $r
+      & npm run --silent lint *> $log
+      $code = $LASTEXITCODE
+      Pop-Location
+      if ($code -ne 0) { $fail += "eslint:$name"; $logs += $log }
+    }
   }
 
   if ((Test-Path (Join-Path $r 'pyproject.toml')) -or (Test-Path (Join-Path $r 'pytest.ini'))) {
@@ -72,6 +86,22 @@ foreach ($r in $roots) {
       # pytest exit 5 = no tests collected. Treat as pass but say so.
       if ($code -eq 5) { $ran += "(no tests in $name)" }
       elseif ($code -ne 0) { $fail += "pytest:$name"; $logs += $log }
+
+      # ruff through the SAME interpreter as pytest, for the same reason: the
+      # ruff.exe shim is the pytest.exe shim's twin under Smart App Control.
+      Push-Location $r
+      & $exe -m ruff --version *> $null
+      $hasRuff = ($LASTEXITCODE -eq 0)
+      Pop-Location
+      if ($hasRuff) {
+        $ran += "ruff:$name"
+        $log = Join-Path $logDir "ruff-$name.log"
+        Push-Location $r
+        & $exe -m ruff check --no-cache . *> $log
+        $code = $LASTEXITCODE
+        Pop-Location
+        if ($code -ne 0) { $fail += "ruff:$name"; $logs += $log }
+      }
     }
   }
 }

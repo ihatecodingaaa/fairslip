@@ -207,14 +207,21 @@ def test_the_alternative_field_has_no_default() -> None:
 
 
 def test_every_draft_carries_a_non_empty_ngo_alternative() -> None:
-    d = _build_draft(_spec(), GOOD_ENGLISH, GOOD_TRANSLATED, "m", "MISS", "k")
-    assert d.alternative.options
-    names = {o.name for o in d.alternative.options}
-    assert any("MWC" in n or "Migrant" in n for n in names)
-    assert any("TADM" in n for n in names)
-    for o in d.alternative.options:
-        assert o.link.startswith("https://")
-        assert o.what_they_do
+    """TADM is for every worker, so it is always present. MWC is not: it exists
+    for migrant workers, and offering it to a Citizen states something about the
+    reader that nothing established."""
+    for migrant in (False, True):
+        d = _build_draft(
+            _spec(), GOOD_ENGLISH, GOOD_TRANSLATED, "m", "MISS", "k",
+            migrant_worker=migrant,
+        )
+        assert d.alternative.options
+        names = {o.name for o in d.alternative.options}
+        assert any("TADM" in n for n in names)
+        assert any("MWC" in n or "Migrant" in n for n in names) is migrant
+        for o in d.alternative.options:
+            assert o.link.startswith("https://")
+            assert o.what_they_do
 
 
 def test_the_alternative_does_not_pressure_the_worker_to_send() -> None:
@@ -361,3 +368,42 @@ def test_a_cited_figure_display_is_the_engines_amount_rounded_only_for_display()
     f = CitedFigure(label="x", amount=D("62.237762237762"), formula="f", source="s")
     assert f.display == "62.24"
     assert f.amount == D("62.237762237762")  # the exact value is untouched
+
+
+# --------------------------------------------------------------------------
+# A draft must not claim to know what a document shows
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("claim", agent.FORBIDDEN_DOCUMENT_CLAIMS)
+def test_a_draft_claiming_to_know_what_the_payslip_shows_is_rejected(claim: str) -> None:
+    """The overtime and rest-day figures were RECONSTRUCTED from MOM's rules. A
+    payslip that printed them would not be in dispute. A committed draft opened
+    "My payslip shows: - Overtime: $169.93" - a false statement about the
+    worker's own document, in a message they are invited to send their employer,
+    which the forbidden-word check could not see. Cases derived from the list."""
+    spec = _spec()
+    with pytest.raises(DraftRejectedError, match="what a document shows"):
+        _build_draft(spec, f"Hello, {claim} $1,200.00.", GOOD_TRANSLATED, "m", "MISS", "k")
+
+
+def test_no_committed_draft_claims_to_know_what_a_document_shows() -> None:
+    """The guard runs on replay too, so a committed entry cannot carry one - but
+    assert it against the artefacts as well, because that is what ships."""
+    import json
+
+    from fairslip.agent import DEFAULT_DRAFT_CACHE_DIR
+
+    entries = sorted(DEFAULT_DRAFT_CACHE_DIR.glob("*.json"))
+    assert entries, "no committed drafts; this test would be vacuous"
+    for path in entries:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        text = (payload["english"] + " " + payload["translated"]).lower()
+        found = [c for c in agent.FORBIDDEN_DOCUMENT_CLAIMS if c in text]
+        assert found == [], f"{path.name} claims {found}"
+
+
+def test_the_prompt_forbids_claiming_what_a_document_shows() -> None:
+    p = draft_prompt(_spec())
+    assert "DO NOT SAY WHAT ANY DOCUMENT SHOWS" in p
+    assert "my payslip shows" in p
