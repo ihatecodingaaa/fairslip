@@ -366,6 +366,15 @@ export type DemoInputs = {
   month2_uncorrected: PayInputs;
   /** Served by the backend so no screen synthesises a reader disagreement. */
   month2_blocked: PayInputs;
+  persona: string;
+  /** Which committed draft entry belongs to this persona. Never hardcoded. */
+  draft_spec_name: string;
+  /** The CPF pack. Null when the persona has no CPF (a Work Permit holder). */
+  cpf: CpfOut | null;
+  /** Whose month the CPF pack is, and why it is fixture data rather than
+   * anything read from an uploaded document. The panel refuses to render CPF
+   * figures without it. */
+  cpf_basis: string;
 };
 
 export function getAgentDemoInputs(): Promise<Outcome<DemoInputs>> {

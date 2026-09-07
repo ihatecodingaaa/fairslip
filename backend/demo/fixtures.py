@@ -113,6 +113,57 @@ def mei_ling_month1_established() -> PayInputs:
     return PayInputs(**base)
 
 
+def mei_ling_month2_corrected() -> PayInputs:
+    """Payslip #2 on which the PAY difference closes - and the CPF line does not.
+
+    Net paid = $1,182.24 (the month's expected net) + $62.24 = $1,244.48.
+
+    Read the deductions line before calling this "the employer fixed it". It is
+    still $280, which is 20% of $1,400 with cents dropped - so this payslip
+    depicts an employer who paid the arrears as cash and left the CPF error in
+    place. The $62.24 is itself CPF-liable Ordinary Wage (.claude/rules/cpf-rules.md),
+    so a fully corrected month would carry a larger employee CPF line and a
+    different net.
+
+    That fuller correction is NOT modelled, because arrears paid in a later month
+    raise the Additional Wage question and v1 is Ordinary Wage only - the CPF
+    engine refuses AW rather than approximating it. So this fixture is honest
+    about one pack and silent about the other, and the verdict says exactly that:
+    CORRECTED is the Employment Act pack closing, and the screen states that
+    FairSlip did not check CPF in that comparison.
+    """
+    base = _base("1244.48", "worker confirmed F&B (non-workman)")
+    base["is_workman"] = Fact(False, Status.HUMAN_CONFIRMED, "worker confirmed F&B (non-workman)")
+    base["deductions_total"] = Fact(D("280"), Status.AGREED, "payslip.jpg: 'CPF (employee)' row")
+    return PayInputs(**base)
+
+
+def mei_ling_month2_uncorrected() -> PayInputs:
+    """Payslip #2, nothing changed: $1,120 again on a month that should have paid
+    $1,182.24. Identical to month 1 by construction - same wage, same shortfall."""
+    base = _base("1120.00", "worker confirmed F&B (non-workman)")
+    base["is_workman"] = Fact(False, Status.HUMAN_CONFIRMED, "worker confirmed F&B (non-workman)")
+    base["deductions_total"] = Fact(D("280"), Status.AGREED, "payslip.jpg: 'CPF (employee)' row")
+    return PayInputs(**base)
+
+
+def mei_ling_month2_unestablished() -> PayInputs:
+    """Payslip #2 that could not be established: the readers disagreed on OT hours.
+
+    Lives here, not in the frontend. A screen that synthesised a DISAGREED fact
+    would be inventing a reader transcript and rendering it back as evidence.
+    """
+    base = _base("1244.48", "worker confirmed F&B (non-workman)")
+    base["is_workman"] = Fact(False, Status.HUMAN_CONFIRMED, "worker confirmed F&B (non-workman)")
+    base["deductions_total"] = Fact(D("280"), Status.AGREED, "payslip.jpg: 'CPF (employee)' row")
+    base["ot_hours"] = Fact(
+        {"reader_a": D("18"), "reader_b": D("13")},
+        Status.DISAGREED,
+        "fictional demo input: the two readers did not agree on this figure",
+    )
+    return PayInputs(**base)
+
+
 MEI_LING_DECLARED_OW = D("1400.00")  # what the employer computed CPF on
 MEI_LING_CPF_EMPLOYEE_ON_PAYSLIP = D("280")  # what the payslip shows
 

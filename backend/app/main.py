@@ -300,6 +300,15 @@ _SPLIT_LINES: tuple[tuple[str, str, bool], ...] = (
     ("total_withheld", "Total withheld - cash plus CPF", False),
 )
 
+def money_display(amount: Decimal) -> str:
+    """The grouped display string, from the same Money the screen renders. A
+    hand-formatted amount beside money()-formatted ones is a second formatter."""
+    m = _money(amount)
+    whole, cents = m.display.replace("-", "").split(".")
+    grouped = f"{int(whole):,}"
+    return f"{'-' if m.display.startswith('-') else ''}{grouped}.{cents}"
+
+
 SPLIT_NOTE = (
     "The gross shortfall and the CPF shortfall overlap by the employee's CPF share on the "
     "missing wage. Adding them would count that share twice; the total below is cash plus CPF."
@@ -804,9 +813,8 @@ def agent_draft(body: DraftIn) -> DraftOut:
 def agent_demo_inputs() -> AgentDemoInputsOut:
     """Fictional. The month-2 fixtures the /check agent panel verifies against.
 
-    Rahim is the persona here because his month-2 fixtures are the ones
-    demo/fixtures.py declares. Nothing is computed - these are the same
-    established facts the backend tests use, serialised."""
+    Mei Ling is the persona here. Nothing is computed on this path - these are
+    the same established facts the backend tests use, serialised."""
 
     def out(pi) -> dict:
         return {
@@ -815,11 +823,44 @@ def agent_demo_inputs() -> AgentDemoInputsOut:
             if (f := getattr(pi, name)) is not None
         }
 
+    # Mei Ling is the 90-second script's primary persona, and the only one whose
+    # CPF pack applies: Rahim is a Work Permit holder, correctly NO_CPF, so the
+    # compounding that makes the case cannot be shown on his figures at all.
+    m1 = fx.mei_ling_month1_established()
+    breakdown = compute_expected(m1)
+    split = shortfall_split(
+        fx.MEI_LING_DECLARED_OW,
+        breakdown.expected_gross,
+        fx.MEI_LING_BAND,
+        fx.MEI_LING_RESIDENCY,
+    )
     return AgentDemoInputsOut(
-        month1=out(fx.rahim_month1_established()),
-        month2_corrected=out(fx.rahim_month2_corrected()),
-        month2_uncorrected=out(fx.rahim_month2_uncorrected()),
-        month2_blocked=out(fx.rahim_month2_unestablished()),
+        month1=out(m1),
+        month2_corrected=out(fx.mei_ling_month2_corrected()),
+        month2_uncorrected=out(fx.mei_ling_month2_uncorrected()),
+        month2_blocked=out(fx.mei_ling_month2_unestablished()),
+        persona="Mei Ling",
+        draft_spec_name="mei_ling_month1",
+        cpf=CpfOut(
+            declared=_cpf_result_out(split.delta.declared),
+            expected=_cpf_result_out(split.delta.expected),
+            delta=CpfDeltaOut(
+                total=_money(split.delta.total),
+                employee=_money(split.delta.employee),
+                employer=_money(split.delta.employer),
+            ),
+            split=_split_out(split),
+            split_note=SPLIT_NOTE,
+        ),
+        cpf_basis=(
+            f"Fictional worked example - these are not your figures. Mei Ling is invented, "
+            f"and every amount above is her month, not the month you uploaded. FairSlip did "
+            f"not compute CPF for your month, for the reason given further up this page: "
+            f"working it out needs the wage the employer contributed on, and reading that "
+            f"backwards off a payslip gives a range rather than one figure. In this invented "
+            f"example that wage is simply given as ${money_display(fx.MEI_LING_DECLARED_OW)}, "
+            f"chosen so it is consistent with the $280 CPF line on her payslip."
+        ),
     )
 
 

@@ -384,3 +384,12 @@ class AgentDemoInputsOut(BaseModel):
     month2_corrected: dict
     month2_uncorrected: dict
     month2_blocked: dict
+    persona: str
+    draft_spec_name: str
+    # The CPF pack for this persona. Computed by the backend from the fixture's
+    # declared_ow - the wage the employer actually contributed on - which NO
+    # uploaded document states. It is fixture data, and `cpf_basis` says so on
+    # screen. The frontend must never derive it (docs/debt.md, the declared_ow
+    # open design question).
+    cpf: CpfOut | None = None
+    cpf_basis: str = ""

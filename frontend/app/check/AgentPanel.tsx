@@ -27,6 +27,7 @@ import {
   postEscalation,
   postSend,
   postVerify,
+  type CpfOut,
   type DemoInputs,
   type DraftOut,
   type MandateTable,
@@ -89,12 +90,14 @@ export function AgentPanel() {
     }
   }
 
-  const doDraft = () =>
-    run("draft", () => postDraft(level, "rahim_month1"), (v) => {
+  const doDraft = () => {
+    if (!demo) return;
+    return run("draft", () => postDraft(level, demo.draft_spec_name), (v) => {
       setDraft(v);
       setSent(null);
       setVerdict(null);
     });
+  };
 
   /* The tap. The moment is taken HERE, when the worker taps, and sent as-is.
    * The backend records that moment - it never stamps its own. */
@@ -143,7 +146,12 @@ export function AgentPanel() {
       <MandateSelector mandate={mandate} level={level} onPick={setLevel} />
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <Action label="Draft a message" onClick={doDraft} busy={busy === "draft"} />
+        <Action
+          label="Draft a message"
+          onClick={doDraft}
+          busy={busy === "draft"}
+          disabled={!demo}
+        />
         {/* Calls the real endpoint. In this cut it always ends in a refusal,
             but WHICH refusal is the whole point and only the backend can say:
             below level 4 the mandate check fires first and names level 4.
@@ -168,6 +176,16 @@ export function AgentPanel() {
           />
           <Timeline reached={reached} sent={sent} />
         </>
+      )}
+
+      {/* Rendered only when the server sent BOTH the pack and the sentence that
+          says whose month it is. CPF figures without that caveat would read as
+          this viewer's month, directly under their own reconciliation - and the
+          page says a few inches above that FairSlip did NOT compute CPF for
+          them. Two fields with independent defaults could drift apart, so the
+          gate requires both. */}
+      {demo?.cpf && demo.cpf_basis.trim() !== "" && (
+        <CpfShortfall cpf={demo.cpf} basis={demo.cpf_basis} persona={demo.persona} />
       )}
 
       <VerifySection
@@ -425,6 +443,66 @@ function Timeline({ reached, sent }: { reached: Record<string, boolean>; sent: S
         );
       })}
     </ol>
+  );
+}
+
+/* ----------------------------------------------------------------- the CPF */
+
+/**
+ * The compounding: unpaid overtime is CPF-liable wage, so a pay shortfall is
+ * also a CPF shortfall.
+ *
+ * Every line is a SplitLine the backend computed with shortfall_split(). The
+ * two figures must NEVER be added on screen - $62.24 and $23.00 overlap by the
+ * $12.00 of CPF she would have paid on the missing overtime, so their sum
+ * double-counts it. The only combined figure that exists is total_withheld,
+ * and the backend is the thing that produced it.
+ */
+function CpfShortfall({
+  cpf,
+  basis,
+  persona,
+}: {
+  cpf: CpfOut;
+  basis: string;
+  persona: string;
+}) {
+  return (
+    <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
+      <div className="border-b border-zinc-300 px-4 py-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+          Fictional worked example - not your figures
+        </p>
+        <h3 className="mt-0.5 text-sm font-semibold text-zinc-900">
+          When a pay difference also reaches CPF
+        </h3>
+        <p className="mt-0.5 text-xs text-zinc-600">
+          Based on CPF Board&rsquo;s published rule that CPF contributions are payable on
+          overtime pay. A difference in wage can therefore be a difference in CPF as well. Below
+          is one month for {persona}, an invented worker.
+        </p>
+      </div>
+      {/* The note explains the total, so it is placed BEFORE the lines it
+          explains: it says "the total below", and rendering it underneath left
+          that pointing at the caveat instead. */}
+      <p className="border-b border-zinc-300 px-4 py-2 text-xs text-zinc-600">{cpf.split_note}</p>
+      <dl className="px-4 py-3">
+        {cpf.split.map((line) => (
+          <div
+            key={line.key}
+            className={`flex justify-between gap-4 py-0.5 ${
+              line.sub ? "pl-4 text-xs text-zinc-600" : "text-sm text-zinc-900"
+            } ${line.key === "total_withheld" ? "mt-1 border-t border-zinc-300 pt-2 font-semibold" : ""}`}
+          >
+            <dt>{line.label}</dt>
+            <dd className="font-mono">{money(line.amount)}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="border-t border-zinc-300 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+        {basis}
+      </p>
+    </div>
   );
 }
 

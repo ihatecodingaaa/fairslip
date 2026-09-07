@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,8 @@ import demo.fixtures as fx
 from app.main import app
 from fairslip import agent
 from fairslip.agent import MANDATE_TABLE, Action, Verdict, required_level
+from fairslip.cpf import shortfall_split
+from fairslip.rules import compute_expected
 
 client = TestClient(app)
 
@@ -354,3 +357,129 @@ def test_the_blocked_month_2_fixture_is_served_by_the_backend() -> None:
     assert r.status_code == 200
     assert r.json()["verdict"] == "UNVERIFIABLE"
     assert {b["name"] for b in r.json()["blocked_by"]} == {"ot_hours"}
+
+
+# --------------------------------------------------------------------------
+# The panel persona: Mei Ling, the only one whose CPF pack applies
+# --------------------------------------------------------------------------
+
+
+def test_the_demo_inputs_serve_mei_ling_because_rahim_has_no_cpf() -> None:
+    """The name states a rationale, so the test establishes it: Rahim is a Work
+    Permit holder and his CPF shortfall really is zero, which is why the
+    compounding cannot be shown on his figures at all."""
+    rahim = shortfall_split(
+        fx.RAHIM_DECLARED_OW,
+        compute_expected(fx.rahim_month1_established()).expected_gross,
+        fx.RAHIM_BAND,
+        fx.RAHIM_RESIDENCY,
+    )
+    assert rahim.cpf_shortfall == 0
+    assert rahim.total_withheld == rahim.gross_shortfall  # nothing compounds
+
+    body = client.get("/agent/demo-inputs").json()
+    assert body["persona"] == "Mei Ling"
+    assert body["draft_spec_name"] == "mei_ling_month1"
+    assert body["cpf"] is not None
+
+
+def test_the_cpf_split_matches_the_calibration_and_never_double_counts() -> None:
+    """The two identities from .claude/rules/cpf-rules.md, asserted on what the
+    endpoint actually returns: cash + cpf == total, and gross + employer == total."""
+    cpf = client.get("/agent/demo-inputs").json()["cpf"]
+    lines = {ln["key"]: ln["amount"]["display"] for ln in cpf["split"]}
+    assert lines["gross_shortfall"] == "62.24"
+    assert lines["employee_cpf_on_shortfall"] == "12.00"
+    assert lines["cash_shortfall"] == "50.24"
+    assert lines["cpf_shortfall"] == "23.00"
+    assert lines["employer_cpf_on_shortfall"] == "11.00"
+    assert lines["total_withheld"] == "73.24"
+
+    # The two identities from .claude/rules/cpf-rules.md, ASSERTED rather than
+    # merely named in the test's title. Decimal, because this is money.
+    d = {k: Decimal(v) for k, v in lines.items()}
+    assert d["cash_shortfall"] + d["cpf_shortfall"] == d["total_withheld"]
+    assert d["gross_shortfall"] + d["employer_cpf_on_shortfall"] == d["total_withheld"]
+
+    # The double-count is gross + cpf. Derived from the served figures rather
+    # than hardcoded as "85.24", so this stays true for any persona, and checked
+    # against every string the panel renders - not the split values alone.
+    double_count = d["gross_shortfall"] + d["cpf_shortfall"]
+    assert double_count != d["total_withheld"]
+    body = client.get("/agent/demo-inputs").json()
+    rendered = set(lines.values()) | {body["cpf_basis"], cpf["split_note"]}
+    for text in rendered:
+        assert f"{double_count:.2f}" not in text, f"the double-count reached: {text!r}"
+
+
+def test_the_cpf_basis_explains_where_the_declared_wage_came_from() -> None:
+    """It must not claim FairSlip "does not infer" the figure while showing an
+    inferred one: $1,400 IS 280 / 20%. The honest statement is that the example
+    gives the wage, chosen to be consistent with the payslip's CPF line."""
+    basis = client.get("/agent/demo-inputs").json()["cpf_basis"]
+    assert "invented example" in basis
+    assert "consistent with the $280 CPF line" in basis
+    assert "does not infer it" not in basis
+
+
+EXPECTED_VERDICTS = {
+    "month2_corrected": "CORRECTED",
+    "month2_uncorrected": "NOT_CORRECTED",
+    "month2_blocked": "UNVERIFIABLE",
+}
+
+
+def test_every_served_month_2_input_produces_its_verdict() -> None:
+    """The round trip, with the cases DERIVED from what the endpoint publishes,
+    so a fourth month-2 input cannot be served and left uncovered."""
+    body = client.get("/agent/demo-inputs").json()
+    served = sorted(k for k in body if k.startswith("month2_"))
+    assert served, "the endpoint published no month-2 inputs; this test would be vacuous"
+    assert set(served) == set(EXPECTED_VERDICTS), (
+        f"served {served} but verdicts are declared for {sorted(EXPECTED_VERDICTS)}; "
+        f"add the new input's expected verdict here"
+    )
+    for key in served:
+        r = client.post(
+            "/agent/verify", json={"level": 3, "month1": body["month1"], "month2": body[key]}
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["verdict"] == EXPECTED_VERDICTS[key], key
+
+
+def test_the_mei_ling_draft_is_served_from_the_committed_cache() -> None:
+    body = client.get("/agent/demo-inputs").json()
+    r = client.post("/agent/draft", json={"level": 1, "spec_name": body["draft_spec_name"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["cache_state"] == "HIT"
+    assert r.json()["language"] == "Bengali"
+
+
+def test_the_cpf_caveat_retracts_before_it_asserts_and_names_the_persona() -> None:
+    """The sentence must open by saying these are not the viewer's figures. An
+    indicative claim about an employer followed by a withdrawal has already been
+    read by the time the withdrawal arrives - and this panel sits directly under
+    the viewer's OWN reconciliation, on a page that says a few inches above that
+    FairSlip did not compute CPF for them."""
+    basis = client.get("/agent/demo-inputs").json()["cpf_basis"]
+    head = basis[:80].lower()
+    assert "fictional" in head
+    assert "not your figures" in head
+    assert "Mei Ling" in basis
+    # It must disclaim the whole panel, not declared_ow alone.
+    assert "every amount above is her month" in basis
+
+
+def test_a_cpf_pack_is_never_served_without_the_sentence_that_says_whose_it_is() -> None:
+    """The frontend gate requires both. Asserted here too, because two fields
+    with independent defaults can drift apart."""
+    body = client.get("/agent/demo-inputs").json()
+    assert (body["cpf"] is None) == (body["cpf_basis"].strip() == "")
+
+
+def test_amounts_in_the_caveat_use_the_same_formatter_as_the_screen() -> None:
+    """A hand-formatted amount beside money()-formatted ones is a second
+    formatter, and the two disagree on thousands separators."""
+    basis = client.get("/agent/demo-inputs").json()["cpf_basis"]
+    assert "$1,400.00" in basis
+    assert "$1400.00" not in basis
