@@ -12,7 +12,7 @@ import base64
 import binascii
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from fastapi import FastAPI, Request
@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 
 import demo.fixtures as fx
 from app.schemas import (
+    BlockedFieldOut,
     ChoiceOut,
     ComponentOut,
     CpfDeltaOut,
@@ -32,6 +33,8 @@ from app.schemas import (
     ExtractRequest,
     FactIn,
     FixturesOut,
+    MandateLevelOut,
+    MandateOut,
     Money,
     PayBreakdownOut,
     PayInputsIn,
@@ -39,8 +42,25 @@ from app.schemas import (
     ReaderInfoOut,
     ReadFieldOut,
     RefusalOut,
+    SendIn,
+    SentOut,
     SplitLine,
+    VerifyIn,
+    VerifyOut,
     WorkerFieldOut,
+)
+from fairslip.agent import (
+    MANDATE_LABELS,
+    MANDATE_TABLE,
+    NO_AUTHENTICATION_NOTICE,
+    REFERENCE_LINKS,
+    Action,
+    ActionNotBuiltError,
+    Mandate,
+    MandateError,
+    MandateExceededError,
+    TapEvent,
+    Unverifiable,
 )
 from fairslip.cpf import (
     AgeBand,
@@ -118,6 +138,30 @@ async def _unverified(_: Request, exc: UnverifiedInputError) -> JSONResponse:
 @app.exception_handler(OutOfScopeError)
 async def _out_of_scope(_: Request, exc: OutOfScopeError) -> JSONResponse:
     return _refusal("OUT_OF_SCOPE", str(exc))
+
+
+@app.exception_handler(MandateExceededError)
+async def _mandate_exceeded(_: Request, exc: MandateExceededError) -> JSONResponse:
+    """Refused because of the level the caller granted. `required_level` names the
+    level that WOULD have permitted it, so the screen offers a choice."""
+    return JSONResponse(
+        status_code=400,
+        content=RefusalOut(
+            error="MANDATE_EXCEEDED", detail=str(exc), required_level=exc.required_level
+        ).model_dump(),
+    )
+
+
+@app.exception_handler(ActionNotBuiltError)
+async def _not_built(_: Request, exc: ActionNotBuiltError) -> JSONResponse:
+    """Within the mandate, absent from this build. Never merged into
+    MANDATE_EXCEEDED: raising the level would not enable it."""
+    return _refusal("ACTION_NOT_BUILT", str(exc))
+
+
+@app.exception_handler(MandateError)
+async def _mandate(_: Request, exc: MandateError) -> JSONResponse:
+    return _refusal("INVALID_INPUT", str(exc))
 
 
 @app.exception_handler(InvalidInputError)
@@ -559,4 +603,115 @@ def extract(body: ExtractRequest) -> ExtractOut:
         read_field_count=len(read_fields),
         cache_state=cache_state,
         cache_note=cache_note,
+    )
+
+
+# --------------------------------------------------------------------------
+# Stage 3: the follow-through agent
+#
+# These endpoints are transport. The mandate guard lives in fairslip.agent, at
+# one chokepoint; nothing here re-implements it, and nothing here decides a
+# verdict. A refusal from the agent becomes a refusal in the response - it is
+# never downgraded into a partial success.
+# --------------------------------------------------------------------------
+
+
+@app.get("/agent/mandate", response_model=MandateOut)
+def agent_mandate() -> MandateOut:
+    """The mandate table, served from the code that enforces it.
+
+    The screen renders the worker's choice from this rather than from its own
+    copy, so the levels a worker is offered and the levels the guard enforces
+    cannot drift apart."""
+    return MandateOut(
+        levels=[
+            MandateLevelOut(
+                level=level,
+                label=MANDATE_LABELS[level],
+                actions=sorted(a.value for a in MANDATE_TABLE[level]),
+            )
+            for level in sorted(MANDATE_TABLE)
+        ],
+        no_authentication_notice=NO_AUTHENTICATION_NOTICE,
+        reference_links=dict(REFERENCE_LINKS),
+    )
+
+
+@app.post("/agent/send", response_model=SentOut)
+def agent_send(body: SendIn) -> SentOut:
+    """Record that the worker sent the message. Sends nothing.
+
+    There is no client in fairslip.agent and none here: the worker sends from
+    their own phone, and this records the tap that says they did. A request
+    without a tap is refused - there is no path that records SENT without one."""
+    tap = None
+    if body.tap is not None:
+        try:
+            at = datetime.fromisoformat(body.tap.at)
+        except ValueError as e:
+            raise InvalidInputError(f"tap.at: {body.tap.at!r} is not an ISO 8601 datetime") from e
+        try:
+            tap = TapEvent(at=at, surface=body.tap.surface)
+        except ValueError as e:
+            # A naive timestamp or an empty surface. Refused at the edge rather
+            # than escaping as a 500: the caller sent something the record cannot
+            # be built from, and that is an input refusal, not a crash.
+            raise InvalidInputError(str(e)) from e
+
+    sent = Mandate(body.level).act(Action.SEND, tap=tap, message_id=body.message_id)
+    return SentOut(
+        state=sent.state.value,
+        tap_at=sent.tap.at.isoformat(),
+        tap_surface=sent.tap.surface,
+        message_id=sent.message_id,
+        note=(
+            "Recorded from your tap. FairSlip did not contact your employer: you "
+            "send the message yourself, and this is the record that you did."
+        ),
+    )
+
+
+@app.post("/agent/verify", response_model=VerifyOut)
+def agent_verify(body: VerifyIn) -> VerifyOut:
+    """Reconcile month 2 against month 1, with arithmetic and nothing else.
+
+    Both months go through compute_expected(). No model is called on this path -
+    not here, and not in fairslip.agent, which imports no network client at all."""
+    month1 = compute_expected(_to_pay_inputs(body.month1))
+    result = Mandate(body.level).act(
+        Action.VERIFY, month1=month1, month2=_to_pay_inputs(body.month2)
+    )
+
+    if isinstance(result, Unverifiable):
+        return VerifyOut(
+            verdict=result.verdict.value,
+            state=result.state.value,
+            month1_difference=_money(result.month1_difference),
+            blocked_by=[
+                BlockedFieldOut(name=b.name, status=b.status, detail=b.detail)
+                for b in result.blocked_by
+            ],
+            arithmetic=(
+                "No verdict. Month 2 was not established, so FairSlip has not "
+                "checked whether the month-1 difference closed."
+            ),
+        )
+
+    # verify() returns one of exactly two types; Unverifiable was handled above.
+    return VerifyOut(
+        verdict=result.verdict.value,
+        state=result.state.value,
+        month1_difference=_money(result.month1_difference),
+        month2_difference=_money(result.month2_difference),
+        adjustment_found=_money(result.adjustment_found),
+        remaining_gap=_money(result.remaining_gap),
+        month1_expected_net=_money(result.month1_expected_net),
+        month2_expected_net=_money(result.month2_expected_net),
+        month2_net_paid=_money(result.month2_net_paid),
+        arithmetic=(
+            f"month-1 difference {_money(result.month1_difference).display} "
+            f"minus adjustment found on payslip 2 "
+            f"{_money(result.adjustment_found).display} "
+            f"= {_money(result.remaining_gap).display} remaining"
+        ),
     )

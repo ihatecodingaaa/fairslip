@@ -27,7 +27,11 @@ class Money(BaseModel):
 
     @classmethod
     def of(cls, amount: Decimal) -> Money:
-        return cls(exact=str(amount), display=f"{to_cents(amount):.2f}")
+        # `+ 0` collapses a negative zero. A residue of -0.004 rounds to cents as
+        # "-0.00", which reads as a real negative amount and, beside a CORRECTED
+        # verdict, reads as a contradiction. It is a display artefact only:
+        # `exact` still carries the engine's signed Decimal, so nothing is hidden.
+        return cls(exact=str(amount), display=f"{to_cents(amount) + Decimal(0):.2f}")
 
 
 class FactIn(BaseModel):
@@ -116,8 +120,20 @@ class CpfOut(BaseModel):
 
 
 class RefusalOut(BaseModel):
-    error: Literal["UNESTABLISHED_INPUT", "OUT_OF_SCOPE", "INVALID_INPUT"]
+    error: Literal[
+        "UNESTABLISHED_INPUT",
+        "OUT_OF_SCOPE",
+        "INVALID_INPUT",
+        # The agent was asked for an action the granted mandate level does not
+        # cover. `required_level` says which level would have permitted it, so a
+        # screen can offer the worker the choice instead of a dead end.
+        "MANDATE_EXCEEDED",
+        # Within the mandate, but not built in this cut. Deliberately distinct:
+        # raising the mandate level would NOT enable it.
+        "ACTION_NOT_BUILT",
+    ]
     detail: str
+    required_level: int | None = None
 
 
 class CpfFixtureOut(BaseModel):
@@ -228,3 +244,77 @@ class ExtractOut(BaseModel):
     # never inferred from a timing.
     cache_state: str  # "HIT" | "PARTIAL" | "MISS"
     cache_note: str
+
+
+# --------------------------------------------------------------------------
+# Stage 3: the follow-through agent
+#
+# Every money field here is a Money built from a Decimal the engines produced.
+# Nothing in this file computes, rounds for meaning, or combines two figures.
+# --------------------------------------------------------------------------
+
+
+class MandateLevelOut(BaseModel):
+    level: int
+    label: str
+    actions: list[str]  # Action values granted at this level
+
+
+class MandateOut(BaseModel):
+    """The whole table, so a screen renders the worker's choice from the server's
+    own answer rather than from a copy of the table it keeps itself."""
+
+    levels: list[MandateLevelOut]
+    # Stated on screen, not buried in a comment: nothing here establishes that
+    # the worker granted the level the caller claims.
+    no_authentication_notice: str
+    reference_links: dict[str, str]
+
+
+class TapIn(BaseModel):
+    at: str  # ISO 8601 WITH an offset; a naive timestamp is refused
+    surface: str
+
+
+class SendIn(BaseModel):
+    level: int
+    tap: TapIn | None = None
+    message_id: str = ""
+
+
+class SentOut(BaseModel):
+    state: str  # always "SENT"; a drafted message is not a sent one
+    tap_at: str  # the moment of the TAP, echoed back, never the moment of recording
+    tap_surface: str
+    message_id: str
+    note: str
+
+
+class BlockedFieldOut(BaseModel):
+    name: str  # "" when the engine's refusal did not name a known field
+    status: str  # a Status value, or "UNUSABLE_VALUE"
+    detail: str
+
+
+class VerifyIn(BaseModel):
+    level: int
+    month1: PayInputsIn
+    month2: PayInputsIn
+
+
+class VerifyOut(BaseModel):
+    """CORRECTED / PARTIALLY_CORRECTED / NOT_CORRECTED carry their arithmetic.
+    UNVERIFIABLE carries the fields that blocked it and NO month-2 figures - it
+    computed none, and a zero would read as 'nothing outstanding'."""
+
+    verdict: str
+    state: str
+    month1_difference: Money
+    month2_difference: Money | None = None
+    adjustment_found: Money | None = None
+    remaining_gap: Money | None = None
+    month1_expected_net: Money | None = None
+    month2_expected_net: Money | None = None
+    month2_net_paid: Money | None = None
+    blocked_by: list[BlockedFieldOut] = []
+    arithmetic: str  # the sum, in words, so the screen quotes rather than composes

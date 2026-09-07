@@ -808,16 +808,33 @@ function Banner({
  * disagreed when in fact the wage was out of scope.
  * See docs/debt.md, ui-invents-a-cause.
  */
+/** Every refusal code gets its own sentence. The fallback deliberately does NOT
+ * name a cause: asserting one for a code this function does not know is
+ * docs/debt.md, ui-invents-a-cause. The server's own detail is always shown. */
+const REFUSAL_TITLES: Record<Refusal["error"], string> = {
+  UNESTABLISHED_INPUT: "Nothing was calculated: a field it needs is not yet established.",
+  OUT_OF_SCOPE: "Outside what FairSlip checks.",
+  INVALID_INPUT: "That input could not be read as the type its field needs.",
+  MANDATE_EXCEEDED: "That is outside the mandate you granted.",
+  ACTION_NOT_BUILT: "FairSlip has not built that yet.",
+};
+
 function RefusalBanner({ refusal }: { refusal: Refusal }) {
-  const title =
-    refusal.error === "UNESTABLISHED_INPUT"
-      ? "Nothing was calculated: a field it needs is not yet established."
-      : refusal.error === "OUT_OF_SCOPE"
-        ? "Outside what FairSlip checks."
-        : "That input could not be read as the type its field needs.";
+  const title = REFUSAL_TITLES[refusal.error] ?? "FairSlip declined, and said why below.";
   return (
     <Banner tone="amber" title={title}>
       <p className="mt-1 rounded bg-white/60 px-3 py-2 font-mono text-xs">{refusal.detail}</p>
+      {refusal.error === "MANDATE_EXCEEDED" && refusal.required_level != null && (
+        <p className="mt-2 text-xs">
+          Mandate level {refusal.required_level} would permit it. Raising the level is your
+          choice, and nothing changes until you make it.
+        </p>
+      )}
+      {refusal.error === "ACTION_NOT_BUILT" && (
+        <p className="mt-2 text-xs">
+          This is not disabled by your mandate. Raising your mandate level will not enable it.
+        </p>
+      )}
     </Banner>
   );
 }

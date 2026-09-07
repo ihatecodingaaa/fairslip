@@ -87,10 +87,24 @@ export type Persona = {
 
 export type Fixtures = { notice: string; personas: Persona[] };
 
-/** An engine declined to compute, and said why. Not an error to be swallowed. */
+/** An engine declined to compute, and said why. Not an error to be swallowed.
+ *
+ * Kept in step with RefusalOut in backend/app/schemas.py. The two agent codes
+ * are deliberately separate: MANDATE_EXCEEDED means the worker did not grant
+ * this, and `required_level` names the level that would - so the screen can
+ * offer the choice. ACTION_NOT_BUILT means FairSlip did not build it, and
+ * raising the mandate level would NOT enable it. Collapsing them would send a
+ * worker to a setting that cannot help. */
 export type Refusal = {
-  error: "UNESTABLISHED_INPUT" | "OUT_OF_SCOPE" | "INVALID_INPUT";
+  error:
+    | "UNESTABLISHED_INPUT"
+    | "OUT_OF_SCOPE"
+    | "INVALID_INPUT"
+    | "MANDATE_EXCEEDED"
+    | "ACTION_NOT_BUILT";
   detail: string;
+  /** Present only on MANDATE_EXCEEDED. */
+  required_level?: number | null;
 };
 
 export type Outcome<T> = { ok: true; value: T } | { ok: false; refusal: Refusal };

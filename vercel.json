@@ -24,6 +24,10 @@
       "destination": { "service": "backend" }
     },
     {
+      "source": "/agent/(mandate|send|verify)",
+      "destination": { "service": "backend" }
+    },
+    {
       "source": "/(.*)",
       "destination": { "service": "frontend" }
     }
