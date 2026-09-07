@@ -474,3 +474,69 @@ export function postEscalation(
     body: JSON.stringify({ level, persona: persona ?? null }),
   });
 }
+
+
+/* --------------------------------------------------------------- impact radius
+ *
+ * Change one established fact and see how far the change reaches. Both runs are
+ * the engine's - the endpoint calls compute_expected twice and does the
+ * comparison there - so nothing here subtracts anything.
+ *
+ * The claim worth making is the second list: the lines that did NOT move. It is
+ * computed by comparing two engine runs, and which lines are RELATED to the
+ * change is read off each component's own recorded inputs. There is no
+ * field-to-component map in this codebase and a test asserts there is not.
+ */
+
+export type ChangedField = {
+  name: string;
+  before_value: string;
+  after_value: string;
+  before_source: string;
+  after_source: string;
+};
+
+export type ComponentImpact = {
+  label: string;
+  /** MOVED | UNCHANGED | ADDED | REMOVED. A line can disappear - that is not
+   * "unchanged", and saying so would be false. */
+  status: "MOVED" | "UNCHANGED" | "ADDED" | "REMOVED";
+  before: Money | null;
+  after: Money | null;
+  delta: Money | null;
+  /** Derived: this line listed the provenance of a fact that changed. */
+  depends_on_changed: boolean;
+  formula: string;
+};
+
+export type ImpactOut = {
+  changed_fields: ChangedField[];
+  components: ComponentImpact[];
+  moved_count: number;
+  unchanged_count: number;
+  /** Non-empty means a line moved without declaring a dependency on anything
+   * that changed - the graph and the arithmetic disagreeing. Rendered loudly. */
+  unexplained_moves: string[];
+  /** The other direction, and NOT an error: lines that listed the changed fact
+   * and held their value anyway. Saying "did not list the fact you changed"
+   * about these would be false. */
+  held_but_dependent: string[];
+  before_expected_net: Money;
+  after_expected_net: Money;
+  before_difference: Money;
+  after_difference: Money;
+  difference_delta: Money;
+  flags_before: string[];
+  flags_after: string[];
+  note: string;
+};
+
+export function postImpact(
+  before: PayInputs,
+  after: PayInputs,
+): Promise<Outcome<ImpactOut>> {
+  return call<ImpactOut>("/impact", {
+    method: "POST",
+    body: JSON.stringify({ before, after }),
+  });
+}

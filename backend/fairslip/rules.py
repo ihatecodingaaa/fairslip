@@ -332,6 +332,11 @@ def compute_expected(inp: PayInputs) -> PayBreakdown:
                     inp.days_per_week.source,
                     inp.rest_day_hours.source,
                     inp.rest_day_requested_by.source,
+                    # The rest-day table branches on HALF the normal daily hours,
+                    # and this component's own formula string prints it. It was
+                    # consumed and not recorded, so anything reading `inputs` as
+                    # the dependency graph got a smaller graph than the truth.
+                    inp.normal_daily_hours.source,
                 ),
             )
         )
@@ -343,7 +348,14 @@ def compute_expected(inp: PayInputs) -> PayBreakdown:
                     "rest_day_overtime",
                     rd_ot,
                     f"({hr:.4f}/h) x 1.5 x {excess}h beyond normal hours",
-                    (inp.monthly_basic.source, inp.rest_day_hours.source),
+                    (
+                        inp.monthly_basic.source,
+                        inp.rest_day_hours.source,
+                        # `excess` is rest_day_hours MINUS normal_daily_hours.
+                        # Omitting it made this the one component that could move
+                        # without declaring what moved it.
+                        inp.normal_daily_hours.source,
+                    ),
                 )
             )
 

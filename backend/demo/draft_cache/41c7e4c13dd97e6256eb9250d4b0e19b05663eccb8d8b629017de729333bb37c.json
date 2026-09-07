@@ -1,0 +1,9 @@
+{
+  "english": "Hi, I would like to check my pay for September 2026 with you. I worked out what I should have been paid using the Ministry of Manpower rules for overtime and rest-day pay. Based on my basic pay of $1,200.00, overtime of $169.93, and rest-day pay of $92.31, the amount after deductions should have been $1,182.24. However, the amount that reached my bank account was $1,120.00. There is a difference of $62.24. Could you please check this with me and let me know what happened? I may have misunderstood something, and I would be grateful if you could explain.",
+  "generated_on": "2026-09-07",
+  "language": "Mandarin Chinese",
+  "model": "claude-haiku-4-5",
+  "spec_canonical": "{\"difference\":\"62.237762237762237762237762\",\"employer_name\":\"\",\"expected_net\":\"1182.237762237762237762237762\",\"figures\":[{\"amount\":\"1200\",\"formula\":\"monthly basic as stated\",\"label\":\"basic\",\"source\":\"payslip.jpg: 'Basic' row\"},{\"amount\":\"169.9300699300699300699300699\",\"formula\":\"(6.2937/h) x 1.5 x 18h\",\"label\":\"overtime\",\"source\":\"payslip.jpg: 'Basic' row; roster.png + worker confirmed 18h\"},{\"amount\":\"92.30769230769230769230769230\",\"formula\":\"rest-day table, employer's request, 8h of 8h, 6-day week\",\"label\":\"rest_day\",\"source\":\"payslip.jpg: 'Basic' row; worker confirmed 6-day week; roster.png: Sunday row; worker confirmed; worker confirmed 8h/day\"}],\"flags\":[],\"language\":\"Mandarin Chinese\",\"net_paid\":\"1120.00\",\"salary_period\":\"September 2026\"}",
+  "template_version": "2026-09-07.2",
+  "translated": "你好，我想和你核对一下我2026年9月的薪水。我根据人力部公布的加班费和休息日薪酬规则计算了我应该获得的薪水。根据我的基本薪水$1,200.00、加班费$169.93和休息日薪酬$92.31，扣除后的金额应该是$1,182.24。但是，进入我银行账户的金额是$1,120.00。相差$62.24。你能帮我查一下这件事，告诉我发生了什么吗？我可能理解有误，如果你能为我解释，我会很感谢。"
+}

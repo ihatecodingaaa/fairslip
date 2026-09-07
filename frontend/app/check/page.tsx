@@ -16,6 +16,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { AgentPanel } from "./AgentPanel";
+import { ImpactRadius } from "./ImpactRadius";
 import {
   API_BASE,
   fileToImageIn,
@@ -28,6 +29,7 @@ import {
   type Fact,
   type ImageIn,
   type PayBreakdown,
+  type PayInputs,
   type ReadField,
   type ReaderInfo,
   type Refusal,
@@ -64,6 +66,10 @@ export default function CheckPage() {
   const [extract, setExtract] = useState<ExtractOut | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [breakdown, setBreakdown] = useState<PayBreakdown | null>(null);
+  // The exact facts that produced `breakdown`. Recomputing them from live state
+  // let an answer edited AFTER computing become the impact view's "before" -
+  // a different month from the one rendered above it, labelled "before".
+  const [computedFrom, setComputedFrom] = useState<PayInputs | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   // Two failures, two states. They were one, so a /compute failure rendered
   // "The readers could not be reached" - while the readings it was contradicting
@@ -142,13 +148,16 @@ export default function CheckPage() {
     setComputeError(null);
     setRefusal(null);
     try {
-      const out = await postCompute(payInputsFrom(extract, answers));
+      const sent = payInputsFrom(extract, answers);
+      const out = await postCompute(sent);
       if (!out.ok) {
         setRefusal(out.refusal);
         setBreakdown(null);
+        setComputedFrom(null);
         return;
       }
       setBreakdown(out.value);
+      setComputedFrom(sent);
     } catch (e) {
       setComputeError(e instanceof Error ? e.message : String(e));
     }
@@ -215,7 +224,9 @@ export default function CheckPage() {
               onAnswer={(name, value) => setAnswers((a) => ({ ...a, [name]: value }))}
             />
             <ComputeGate unresolved={unresolved} onCompute={compute} />
-            {breakdown && <Result breakdown={breakdown} />}
+            {breakdown && computedFrom && (
+              <Result breakdown={breakdown} inputs={computedFrom} />
+            )}
             {breakdown && <AgentPanel />}
           </>
         )}
@@ -725,7 +736,15 @@ function ComputeGate({
 
 /* ---------------------------------------------------------------- result */
 
-function Result({ breakdown }: { breakdown: PayBreakdown }) {
+function Result({
+  breakdown,
+  inputs,
+}: {
+  breakdown: PayBreakdown;
+  /** The exact facts that produced this breakdown. The impact view varies one
+   * of them and sends both sets to the engine. */
+  inputs: PayInputs;
+}) {
   return (
     <section className="mb-8 rounded-lg border border-zinc-300 bg-white shadow-sm">
       <div className="border-b border-zinc-200 px-5 py-4">
@@ -778,6 +797,8 @@ function Result({ breakdown }: { breakdown: PayBreakdown }) {
           </ul>
         </div>
       )}
+
+      <ImpactRadius inputs={inputs} />
 
       <div className="border-t border-zinc-200 px-5 py-4">
         <p className="text-sm font-semibold text-zinc-800">

@@ -498,3 +498,78 @@ class AgentDemoInputsOut(BaseModel):
     cpf: CpfPackOut | None = None
     cpf_basis: str = ""
     no_cpf_note: str = ""
+
+
+# --------------------------------------------------------------------------
+# Impact radius: change one established fact, and see what it did and did not
+# reach.
+#
+# The claim that matters is the SECOND list - the components that did NOT move.
+# It is computed by comparing two engine runs, never asserted in copy, and the
+# dependency edges come from Component.inputs, which is the engine's own record
+# of which source facts produced each amount. There is no field-to-component map
+# anywhere in this codebase, and adding one would be the defect.
+# --------------------------------------------------------------------------
+
+
+class ChangedFieldOut(BaseModel):
+    name: str
+    before_value: str
+    after_value: str
+    # The provenance strings for this fact. These are the keys the dependency
+    # edges are matched on - Component.inputs holds exactly these - and BOTH are
+    # used, because a line that only exists after the change carries the after
+    # one. They must be unique among the facts supplied, or the edges cannot be
+    # attributed and the run is refused.
+    before_source: str
+    after_source: str = ""
+
+
+class ComponentImpactOut(BaseModel):
+    """One line of the breakdown, before and after.
+
+    `status` is MOVED / UNCHANGED / ADDED / REMOVED. A component can disappear:
+    change the rest-day hours to nothing and the rest-day line is not a smaller
+    number, it is absent, and saying "unchanged" would be false.
+
+    `depends_on_changed` is derived - the component's own `inputs` contains the
+    source string of a fact that changed. `MOVED` with `depends_on_changed`
+    false would mean the graph and the arithmetic disagree, so it is surfaced
+    rather than smoothed over."""
+
+    label: str
+    status: str
+    before: Money | None = None
+    after: Money | None = None
+    delta: Money | None = None
+    depends_on_changed: bool
+    formula: str
+
+
+class ImpactIn(BaseModel):
+    before: PayInputsIn
+    after: PayInputsIn
+
+
+class ImpactOut(BaseModel):
+    changed_fields: list[ChangedFieldOut]
+    components: list[ComponentImpactOut]
+    moved_count: int
+    unchanged_count: int
+    # Present only when a component moved without depending on anything that
+    # changed. Empty on every correct run; rendered loudly if it ever is not.
+    unexplained_moves: list[str]
+    # The other direction, and it is NOT an error: a line that listed the changed
+    # fact and held its value anyway. The screen must say so about these rather
+    # than "did not list the fact you changed", which is false of them.
+    held_but_dependent: list[str]
+
+    before_expected_net: Money
+    after_expected_net: Money
+    before_difference: Money
+    after_difference: Money
+    difference_delta: Money
+
+    flags_before: list[str]
+    flags_after: list[str]
+    note: str

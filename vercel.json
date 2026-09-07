@@ -16,7 +16,7 @@
   },
   "rewrites": [
     {
-      "source": "/(health|compute|cpf|extract|openapi.json)(/.*)?",
+      "source": "/(health|compute|impact|cpf|extract|openapi.json)(/.*)?",
       "destination": { "service": "backend" }
     },
     {

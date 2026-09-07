@@ -25,8 +25,10 @@ from app.schemas import (
     AgentDemoInputsOut,
     AgentPersonaOut,
     BlockedFieldOut,
+    ChangedFieldOut,
     ChoiceOut,
     CitedFigureOut,
+    ComponentImpactOut,
     ComponentOut,
     CpfDeltaOut,
     CpfFixtureOut,
@@ -44,6 +46,8 @@ from app.schemas import (
     ExtractRequest,
     FactIn,
     FixturesOut,
+    ImpactIn,
+    ImpactOut,
     MandateLevelOut,
     MandateOut,
     Money,
@@ -987,4 +991,211 @@ def agent_escalation(body: EscalationIn) -> EscalationOut:
             for n in pack.not_built
         ],
         disclaimer=pack.disclaimer,
+    )
+
+
+# --------------------------------------------------------------------------
+# Impact radius
+# --------------------------------------------------------------------------
+
+
+def _engine_value_changed(before: object, after: object) -> bool:
+    """Did the worker actually change this fact, as the ENGINE sees it?
+
+    Compares the CONVERTED values - what _to_pay_inputs produced - not the JSON
+    the wire carried. A boolean field whose input box is seeded with
+    String(false) sends the string "false" against the boolean False, and a raw
+    comparison calls that a change: the screen then reported "is workman
+    False -> false" for a fact nobody touched. Decimals normalise the same way
+    the reconciler does, so "18" and "18.0" remain one value."""
+    if isinstance(before, Decimal) or isinstance(after, Decimal):
+        try:
+            return Decimal(str(before)) != Decimal(str(after))
+        except (InvalidOperation, TypeError, ValueError):
+            return before != after
+    return before != after
+
+
+@app.post("/impact", response_model=ImpactOut)
+def impact(body: ImpactIn) -> ImpactOut:
+    """Change one established fact and see how far the change reaches.
+
+    BOTH SIDES COME FROM THE ENGINE. This calls compute_expected() twice - the
+    same function /compute calls, with the same refusals - and does the
+    comparison here, so no screen has to subtract anything.
+
+    The dependency edges are read off Component.inputs, which records the
+    provenance string of every fact that produced an amount. A component is
+    related to a changed fact when it carries that fact's source string on
+    EITHER side - a line that only exists after the change carries the after
+    one.
+    Nothing in this function knows that overtime depends on ot_hours; it knows
+    that the overtime component listed a source that a changed fact also had.
+
+    If the new value is not established, or is out of scope, compute_expected
+    refuses and that refusal is the response. There is no fall back to the old
+    number: a screen showing the previous figure after a refused re-run would be
+    presenting a stale amount as a current one.
+    """
+    before_inputs = _to_pay_inputs(body.before)
+    after_inputs = _to_pay_inputs(body.after)
+
+    # Which facts differ, and what the BEFORE run called their source.
+    changed: list[ChangedFieldOut] = []
+    changed_sources: set[str] = set()
+    for name in PayInputs.__dataclass_fields__:
+        b = getattr(body.before, name)
+        a = getattr(body.after, name)
+        if b is None or a is None:
+            if b is not a:
+                raise InvalidInputError(
+                    f"{name}: present on one side of the comparison and absent on the "
+                    f"other; impact needs the same set of facts on both sides"
+                )
+            continue
+        bf = getattr(before_inputs, name)
+        af = getattr(after_inputs, name)
+        if _engine_value_changed(bf.value, af.value):
+            changed.append(
+                ChangedFieldOut(
+                    name=name,
+                    before_value=str(bf.value),
+                    after_value=str(af.value),
+                    before_source=b.source,
+                    after_source=a.source,
+                )
+            )
+            # BOTH sides' provenance strings. A component that only exists in
+            # the after-run (a rest-day overtime line that appears once the
+            # hours exceed the normal day) carries the AFTER source, so matching
+            # on the before source alone would call it unexplained.
+            changed_sources.add(b.source)
+            changed_sources.add(a.source)
+
+    if not changed:
+        raise InvalidInputError(
+            "nothing changed between the two sets of facts; there is no impact to show"
+        )
+
+    # The edges are matched on the identity of a provenance string, and nothing
+    # requires those strings to be distinct - Fact.source even defaults to "".
+    # Give every fact the same source and `depends_on_changed` becomes constant
+    # True: every line then claims to depend on the change, and the contradiction
+    # detector can never fire. It reports green because it has been blinded.
+    #
+    # So refuse rather than report a graph that cannot be computed. A view whose
+    # whole claim is "these lines did not move, and here is why" must not answer
+    # when it cannot tell which line is which.
+    all_sources: list[str] = []
+    for name in PayInputs.__dataclass_fields__:
+        for side in (body.before, body.after):
+            f = getattr(side, name)
+            if f is not None:
+                all_sources.append(f.source)
+    for cf in changed:
+        for src, where in ((cf.before_source, "before"), (cf.after_source, "after")):
+            if all_sources.count(src) > 1:
+                raise InvalidInputError(
+                    f"{cf.name}: its {where} provenance ({src!r}) is shared with another "
+                    f"fact, so which lines depend on it cannot be established. Impact "
+                    f"needs each fact to carry its own source."
+                )
+
+    # Both runs through the engine. A refusal on either is the response.
+    before_bd = compute_expected(before_inputs)
+    after_bd = compute_expected(after_inputs)
+
+    by_label_before = {c.label: c for c in before_bd.components}
+    by_label_after = {c.label: c for c in after_bd.components}
+
+    rows: list[ComponentImpactOut] = []
+    unexplained: list[str] = []
+    held_but_dependent: list[str] = []
+    moved = 0
+    unchanged = 0
+
+    for label in sorted(set(by_label_before) | set(by_label_after)):
+        b = by_label_before.get(label)
+        a = by_label_after.get(label)
+        # Derived: does this line carry the source string of a fact that changed?
+        # BOTH sides' inputs. `b or a` yielded the before-run whenever both
+        # existed, so the after-run's provenance was only ever consulted for an
+        # ADDED row - which contradicted the reason given above for collecting
+        # the after sources at all.
+        line_sources = set(b.inputs if b else ()) | set(a.inputs if a else ())
+        touches = bool(line_sources & changed_sources)
+
+        if b is not None and a is not None:
+            if b.amount == a.amount:
+                status, delta = "UNCHANGED", None
+                unchanged += 1
+                # A line CAN list the changed fact and still hold: the rest-day
+                # table brackets on half the normal daily hours, so 8 -> 9
+                # crosses no bracket. Saying "did not list the fact you changed"
+                # about that line would be false, and the screen used to.
+                if touches:
+                    held_but_dependent.append(label)
+            else:
+                status, delta = "MOVED", _money(a.amount - b.amount)
+                moved += 1
+                if not touches:
+                    unexplained.append(label)
+            rows.append(
+                ComponentImpactOut(
+                    label=label,
+                    status=status,
+                    before=_money(b.amount),
+                    after=_money(a.amount),
+                    delta=delta,
+                    depends_on_changed=touches,
+                    formula=a.formula,
+                )
+            )
+        elif a is not None:
+            moved += 1
+            if not touches:
+                unexplained.append(label)
+            rows.append(
+                ComponentImpactOut(
+                    label=label,
+                    status="ADDED",
+                    after=_money(a.amount),
+                    depends_on_changed=touches,
+                    formula=a.formula,
+                )
+            )
+        else:
+            moved += 1
+            if not touches:
+                unexplained.append(label)
+            rows.append(
+                ComponentImpactOut(
+                    label=label,
+                    status="REMOVED",
+                    before=_money(b.amount),
+                    depends_on_changed=touches,
+                    formula=b.formula,
+                )
+            )
+
+    return ImpactOut(
+        changed_fields=changed,
+        components=rows,
+        moved_count=moved,
+        unchanged_count=unchanged,
+        unexplained_moves=unexplained,
+        held_but_dependent=held_but_dependent,
+        before_expected_net=_money(before_bd.expected_net),
+        after_expected_net=_money(after_bd.expected_net),
+        before_difference=_money(before_bd.difference),
+        after_difference=_money(after_bd.difference),
+        difference_delta=_money(after_bd.difference - before_bd.difference),
+        flags_before=list(before_bd.flags),
+        flags_after=list(after_bd.flags),
+        note=(
+            "Both figures came from the same engine, run twice on the facts you "
+            "sent. Which lines are related to your change is read from what each "
+            "line recorded as its own inputs, not from a list of what depends on "
+            "what."
+        ),
     )

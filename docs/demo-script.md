@@ -21,7 +21,7 @@ The scripted run is 24 presenter actions, and they are: 2 file picks, 1 "Read my
 6 answers, 1 compute, 3 scrolls, 2 mandate levels, 1 "Draft a message", 1 approve tap,
 1 payslip-2 button, and 6 focus changes between fields. If you change a beat, recount here -
 a number with no derivation goes stale silently, which is the defect this file already
-records about itself.
+records about itself. The Q&A moves are NOT in that 24 and are not in the 90 seconds.
 
 Setup: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with
 network disabled; printed handwritten payslip in Jaydon's hand; phone camera tested under the
@@ -192,8 +192,46 @@ it has doubled to $124.48, because month 2 repeated the same shortfall."
   computes the CPF once TADM has concluded the claim. So TADM is not half the answer, it is
   the first step. That sentence is on the screen, quoted, with the page date."
 
-**"Want to change any number on that roster?"** - the judge picks, one component turns orange
-and recomputes, the rest stay untouched.
+**"Want to change any number on that roster?"** - THE IMPACT RADIUS. This is the strongest
+Q&A move you have; do not spend it in the 90 seconds.
+
+  >>> On the results card, CLICK "Change one of these numbers and re-run". <<<  One click from
+  the figures, and it is not on the scripted path.
+
+  Hand it to the judge: "pick any number on that roster and change it." They pick the field
+  from the list and type a value. >>> CLICK "Re-run the engine". <<<
+
+  What comes back is two lists, and the SECOND one is the point:
+
+    - the lines that moved, with the before, the after and the change
+    - THE LINES THAT DID NOT MOVE, counted
+
+  Say it out loud: "Change the overtime hours and overtime moves. Basic did not move.
+  Rest-day pay did not move. That is not us being careful in the copy - a line is shown as not
+  having moved when its AMOUNT is the same, and under each one we say whether it even listed
+  the fact you changed. Nowhere in this codebase is there a table saying which field affects
+  which line."
+
+  DO NOT SAY "the ones that did not list the fact you changed are shown as not having moved" -
+  that is backwards, and the counterexample is one field away. Change the normal daily hours
+  from 8 to 9: rest-day pay DOES list that fact and still does not move, because the rest-day
+  table brackets on half the normal day and 9 crosses no bracket. The screen says so in as
+  many words - "listed the fact you changed among its inputs, and still came out the same" -
+  which is the stronger claim anyway. If a judge picks that field, read it off the screen.
+
+  Two things to have ready:
+
+  - "What if I change the basic?" All three move - the hourly rate and the daily rate are both
+    built from it. Good: the radius is not always small, and it is not decided by us.
+  - "What if I put in something silly?" Try it. Set days a week to 7, or the basic to "abc".
+    The engine refuses and the screen shows the refusal, naming which kind it was - and it
+    does NOT fall back to the previous number. "A stale figure shown as a current one is the exact failure this whole
+    product is against."
+
+  BE HONEST ABOUT WHERE THIS CAME FROM: building this view found a bug in our own engine. The
+  rest-day components used the normal daily hours and did not record it as an input, so a line
+  could move without declaring what moved it. The view caught it because it checks that
+  invariant on every run, and the fix was to record the input the engine was already using.
 
 **"What stops someone else setting mandate level 4?"** - "Nothing, in this build. It says so
 on the screen where the level is set: there is no authentication here, and the mandate level is
