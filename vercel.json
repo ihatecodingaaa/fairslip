@@ -20,7 +20,7 @@
       "destination": { "service": "backend" }
     },
     {
-      "source": "/demo(/.*)?",
+      "source": "/demo/fixtures",
       "destination": { "service": "backend" }
     },
     {

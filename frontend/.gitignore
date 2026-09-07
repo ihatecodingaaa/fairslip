@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# An example file is documentation, not a secret. Stated last so nothing
+# appended above can cancel it - see docs/debt.md.
+!.env.example

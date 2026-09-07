@@ -141,3 +141,80 @@ class PersonaOut(BaseModel):
 class FixturesOut(BaseModel):
     notice: str
     personas: list[PersonaOut]
+
+
+# --------------------------------------------------------------------------
+# Extraction (Stage 2). The response separates the two groups of field
+# structurally, not by convention: `read_fields` are what two independent
+# readers were shown, `worker_fields` are what only the worker can establish.
+# A client cannot merge them into one list without deliberately doing so.
+# --------------------------------------------------------------------------
+
+
+class ImageIn(BaseModel):
+    role: str  # "payslip" | "roster" | "ket" - validated against extract.DOCUMENT_ROLES
+    media_type: str
+    data_b64: str
+
+
+class ExtractRequest(BaseModel):
+    images: list[ImageIn]
+
+
+class ReaderInfoOut(BaseModel):
+    """One reader, and whether it actually answered. `ok=False` with an `error`
+    is a first-class outcome: it means nothing this reader was asked is
+    established, and the screen must be able to say which reader was down."""
+
+    key: str
+    label: str
+    model: str
+    provider: str
+    ok: bool
+    error: str | None = None
+    latency_ms: int | None = None
+    from_cache: bool
+
+
+class ReadFieldOut(BaseModel):
+    """A field two readers were shown. `readings` is what each one actually said,
+    kept alongside the verdict so a screen can show the disagreement itself."""
+
+    name: str
+    label: str
+    fact: FactIn
+    readings: dict[str, str | None]
+    unreadable: list[str]
+
+
+class ChoiceOut(BaseModel):
+    """One option a worker may pick. `value` is what the engine accepts, verbatim -
+    it comes from the engine's own enum, so a screen cannot offer a value the
+    engine will reject."""
+
+    value: str
+    label: str
+
+
+class WorkerFieldOut(BaseModel):
+    """A field no reader was ever shown. `why` is not an apology for a gap - it
+    is the boundary, stated. It ships from the backend so a screen cannot
+    restate the reason a field is asked rather than read."""
+
+    name: str
+    label: str
+    prompt: str
+    why: str
+    required_for: list[str]  # "pay" and/or "cpf"
+    answer_type: str  # "decimal" | "choice" | "date"
+    choices: list[ChoiceOut]
+
+
+class ExtractOut(BaseModel):
+    readers: list[ReaderInfoOut]
+    read_fields: list[ReadFieldOut]
+    worker_fields: list[WorkerFieldOut]
+    # Counts of the reader group, computed once here so two screens cannot
+    # disagree about what "all agreed" means.
+    agreed_count: int
+    read_field_count: int

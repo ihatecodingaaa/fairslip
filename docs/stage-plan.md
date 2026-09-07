@@ -26,7 +26,8 @@ Mei Ling and $62.24 + NO_CPF for Rahim; gate green; both apps deployed and reach
 ## Stage 2 - Monday: two readers, reconciliation, confirmation
 
     /plan-stage Stage 2. Implement backend/fairslip/extract.py: two independent vision readers
-    (Claude via the Anthropic API as primary; a second vision model via OpenRouter as auditor) that
+    (Claude via the Anthropic API as primary; a second vendor's vision model as auditor - see the
+    note below: this was planned via OpenRouter and is built against OpenAI's API directly) that
     each return the field schema in .claude/rules/fairslip-domain.md from an image, plus a pure-code
     reconciler that normalises values to Decimal and produces a Fact per field with status AGREED /
     DISAGREED / MISSING. Add POST /extract taking two images. Cache results by image content hash.
@@ -38,7 +39,11 @@ Mei Ling and $62.24 + NO_CPF for Rahim; gate green; both apps deployed and reach
 Before the session (20 min): make the fictional handwritten payslip by hand from MOM's blank
 template with the OT hours written so 18 could read as 13; photograph it; make a WhatsApp-style
 roster screenshot; make a payslip #2 in two versions (with and without an "OT adjustment 62.24"
-line). Save under backend/demo/. Test two OpenRouter vision models on the handwriting and pick one.
+line). Save under backend/demo/. Test two second-vendor vision models on the handwriting and pick one.
+
+    CORRECTION, 7 Sept: reader B calls OpenAI's API directly, not OpenRouter. The bake-off used
+    OPENAI_API_KEY; there is no OpenRouter account. An aggregator would also give the two readers a
+    shared dependency - one account, one balance, one outage - which is what reader B exists to avoid.
 
 Done when: /extract-check shows the OT field DISAGREED on the handwritten slip; confirming it lets
 /compute run; gate green.

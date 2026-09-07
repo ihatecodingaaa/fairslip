@@ -8,7 +8,10 @@ downgraded into a partial success.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -18,20 +21,26 @@ from fastapi.responses import JSONResponse
 
 import demo.fixtures as fx
 from app.schemas import (
+    ChoiceOut,
     ComponentOut,
     CpfDeltaOut,
     CpfFixtureOut,
     CpfOut,
     CpfRequest,
     CpfResultOut,
+    ExtractOut,
+    ExtractRequest,
     FactIn,
     FixturesOut,
     Money,
     PayBreakdownOut,
     PayInputsIn,
     PersonaOut,
+    ReaderInfoOut,
+    ReadFieldOut,
     RefusalOut,
     SplitLine,
+    WorkerFieldOut,
 )
 from fairslip.cpf import (
     AgeBand,
@@ -41,6 +50,22 @@ from fairslip.cpf import (
     ShortfallSplit,
     band_for,
     shortfall_split,
+)
+from fairslip.extract import (
+    DOCUMENT_ROLES,
+    ImageInput,
+    default_readers,
+    read_with_cache,
+    reconcile,
+)
+from fairslip.extract_schema import (
+    ANSWER_TYPES,
+    CPF_ONLY_FIELDS,
+    FIELD_LABELS,
+    WORKER_ONLY_FIELDS,
+    WORKER_PROMPTS,
+    WORKER_WHY,
+    choices_for,
 )
 from fairslip.rules import (
     ESTABLISHED,
@@ -122,10 +147,18 @@ def _as_int(name: str, v: object) -> int:
         raise InvalidInputError(f"{name}: {v!r} is not a whole number") from e
 
 
+# The exact strings the API offers as choices for a boolean field. A worker's
+# answer arrives as the `value` this server published in choices_for(), so this
+# server has to accept it back. Anything else is still refused.
+_BOOL_WORDS = {"true": True, "false": False}
+
+
 def _as_bool(name: str, v: object) -> bool:
-    if not isinstance(v, bool):
-        raise InvalidInputError(f"{name}: {v!r} is not true or false")
-    return v
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.strip().lower() in _BOOL_WORDS:
+        return _BOOL_WORDS[v.strip().lower()]
+    raise InvalidInputError(f"{name}: {v!r} is not true or false")
 
 
 def _as_str(name: str, v: object) -> str:
@@ -377,4 +410,116 @@ def demo_fixtures() -> FixturesOut:
                 expect_refusal=True,
             ),
         ],
+    )
+
+
+# --------------------------------------------------------------------------
+# Extraction. Transport only: the two readers run in fairslip.extract and the
+# reconciler is pure code there. This layer decodes images, runs the readers
+# concurrently (concurrently, so that neither can see the other's answer even
+# by accident of ordering), and carries the reconciliation back.
+# --------------------------------------------------------------------------
+
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+ALLOWED_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+
+
+def _to_images(body: ExtractRequest) -> tuple[ImageInput, ...]:
+    if not body.images:
+        raise InvalidInputError("no images supplied; extraction needs at least one document")
+    out: list[ImageInput] = []
+    for i, img in enumerate(body.images):
+        where = f"images[{i}]"
+        if img.role not in DOCUMENT_ROLES:
+            raise InvalidInputError(
+                f"{where}: unknown document role {img.role!r}; "
+                f"expected one of {sorted(DOCUMENT_ROLES)}"
+            )
+        if img.media_type not in ALLOWED_MEDIA_TYPES:
+            raise InvalidInputError(
+                f"{where}: unsupported media type {img.media_type!r}; "
+                f"expected one of {sorted(ALLOWED_MEDIA_TYPES)}"
+            )
+        try:
+            data = base64.b64decode(img.data_b64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise InvalidInputError(f"{where}: data_b64 is not valid base64") from e
+        if not data:
+            raise InvalidInputError(f"{where}: no image data")
+        if len(data) > MAX_IMAGE_BYTES:
+            raise InvalidInputError(
+                f"{where}: {len(data)} bytes exceeds the {MAX_IMAGE_BYTES}-byte limit"
+            )
+        out.append(ImageInput(role=img.role, media_type=img.media_type, data=data))
+    return tuple(out)
+
+
+def _worker_fields_out() -> list[WorkerFieldOut]:
+    """Derived from WORKER_ONLY_FIELDS, so this list cannot drift from the split
+    the tests enforce. Ordered with net_paid first: it is the field that shows
+    why the split exists at all."""
+    order = sorted(WORKER_ONLY_FIELDS, key=lambda n: (n != "net_paid", n))
+    return [
+        WorkerFieldOut(
+            name=name,
+            label=FIELD_LABELS[name],
+            prompt=WORKER_PROMPTS[name],
+            why=WORKER_WHY[name],
+            required_for=(["cpf"] if name in CPF_ONLY_FIELDS else ["pay"]),
+            answer_type=ANSWER_TYPES[name],
+            choices=(
+                [ChoiceOut(value=v, label=lbl) for v, lbl in choices_for(name)]
+                if ANSWER_TYPES[name] == "choice"
+                else []
+            ),
+        )
+        for name in order
+    ]
+
+
+@app.post("/extract", response_model=ExtractOut)
+def extract(body: ExtractRequest) -> ExtractOut:
+    """Run both readers on the same images and reconcile in pure code.
+
+    This endpoint establishes nothing on its own. It returns a status per field,
+    and the six fields no reader was shown, which the worker must answer before
+    /compute will run. A reader outage is reported as a reader outage; it never
+    promotes the surviving reader's answer to an agreement.
+    """
+    images = _to_images(body)
+    readers = default_readers()
+
+    with ThreadPoolExecutor(max_workers=len(readers)) as pool:
+        readings = tuple(pool.map(lambda r: read_with_cache(r, images), readers))
+
+    reconciled = reconcile(readings)
+    read_fields = [
+        ReadFieldOut(
+            name=name,
+            label=FIELD_LABELS[name],
+            fact=_fact_out(rec.fact),
+            readings=rec.readings,
+            unreadable=list(rec.unreadable),
+        )
+        for name, rec in sorted(reconciled.items())
+    ]
+
+    return ExtractOut(
+        readers=[
+            ReaderInfoOut(
+                key=r.key,
+                label=r.label,
+                model=r.model,
+                provider=r.provider,
+                ok=r.ok,
+                error=r.error,
+                latency_ms=r.latency_ms,
+                from_cache=r.from_cache,
+            )
+            for r in readings
+        ],
+        read_fields=read_fields,
+        worker_fields=_worker_fields_out(),
+        agreed_count=sum(1 for f in read_fields if f.fact.status == "AGREED"),
+        read_field_count=len(read_fields),
     )

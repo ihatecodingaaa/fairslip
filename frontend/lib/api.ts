@@ -138,3 +138,93 @@ export function money(m: Money): string {
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${negative ? "-" : ""}$${grouped}.${cents}`;
 }
+
+/* ------------------------------------------------------------------------
+ * Extraction (Stage 2).
+ *
+ * The response separates the two groups of field structurally. `readFields`
+ * were shown to two independent readers; `workerFields` were shown to neither,
+ * and no amount of reading can establish them. The UI keeps them apart because
+ * the API does.
+ * ---------------------------------------------------------------------- */
+
+export type DocumentRole = "payslip" | "roster" | "ket";
+
+export type ImageIn = {
+  role: DocumentRole;
+  media_type: string;
+  data_b64: string;
+};
+
+export type ReaderInfo = {
+  key: string;
+  label: string;
+  model: string;
+  provider: string;
+  ok: boolean;
+  error: string | null;
+  latency_ms: number | null;
+  from_cache: boolean;
+};
+
+export type ReadField = {
+  name: string;
+  label: string;
+  fact: Fact;
+  /** What each reader actually said, kept beside the verdict. */
+  readings: Record<string, string | null>;
+  /** Reader keys that answered something that would not parse as a number. */
+  unreadable: string[];
+};
+
+export type Choice = { value: string; label: string };
+
+export type WorkerField = {
+  name: string;
+  label: string;
+  prompt: string;
+  /** Why no reader was shown this field. Ships from the backend. */
+  why: string;
+  required_for: string[];
+  answer_type: "decimal" | "choice" | "date";
+  choices: Choice[];
+};
+
+export type ExtractOut = {
+  readers: ReaderInfo[];
+  read_fields: ReadField[];
+  worker_fields: WorkerField[];
+  agreed_count: number;
+  read_field_count: number;
+};
+
+export function postExtract(images: ImageIn[]): Promise<Outcome<ExtractOut>> {
+  return call<ExtractOut>("/extract", {
+    method: "POST",
+    body: JSON.stringify({ images }),
+  });
+}
+
+/** Read a File into the base64 payload /extract expects. Browser-only. */
+export async function fileToImageIn(
+  file: File,
+  role: DocumentRole,
+): Promise<ImageIn> {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const CHUNK = 0x8000; // btoa on a very large spread would blow the call stack
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return { role, media_type: file.type, data_b64: btoa(binary) };
+}
+
+/**
+ * A field is established when two independent readers agreed, or when the
+ * worker said so. This mirrors fairslip.rules.ESTABLISHED; it decides only what
+ * the screen enables, never what an engine computes.
+ */
+export function isEstablished(status: FactStatus): boolean {
+  return status === "AGREED" || status === "HUMAN_CONFIRMED";
+}

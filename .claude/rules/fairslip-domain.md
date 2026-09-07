@@ -4,7 +4,7 @@
 
     photo / screenshot
           |
-    [Reader A: Claude Vision]   [Reader B: second vision model via OpenRouter]
+    [Reader A: Claude Vision]   [Reader B: second vendor's vision model, called directly]
           +-------- reconcile (pure code) --------+
                        |
         Fact(value, status, source) per field   status: AGREED | DISAGREED | MISSING
@@ -31,19 +31,32 @@
 
 ## Fields (v2)
 
-| field | type | required | source |
-|---|---|---|---|
-| monthly_basic | Decimal | yes | payslip |
-| ot_hours | Decimal | yes | roster; worker confirms if readers disagree |
-| days_per_week | int 5/6 | yes | KET or worker |
-| normal_daily_hours | Decimal | yes | KET or worker |
-| is_workman | bool | yes | worker |
-| deductions_total | Decimal | yes | payslip |
-| net_paid | Decimal | yes | worker, from bank |
-| rest_day_hours / rest_day_requested_by | optional | | roster / worker |
-| cpf_employee_on_payslip | Decimal | optional | payslip "CPF" line, if present |
-| residency | enum | yes for CPF | worker (Citizen / PR yr / Work Permit ...) |
-| date_of_birth or age_band | | yes for CPF | worker; band_for() applies the step-up rule |
+Reader-eligibility rule: a field may be shown to a vision reader **only if what the
+document shows IS the fact the engine needs** - not merely a number wearing the same
+name. Everything else is asked of the worker and is HUMAN_CONFIRMED by construction.
+The split is enforced in `fairslip/extract_schema.py` (READER_FIELDS / WORKER_ONLY_FIELDS)
+and tested; this table is the specification it implements.
+
+| field | type | required | reader? | source |
+|---|---|---|---|---|
+| monthly_basic | Decimal | yes | READER | payslip |
+| ot_hours | Decimal | yes | READER | roster; worker confirms if readers disagree |
+| normal_daily_hours | Decimal | yes | READER | KET |
+| deductions_total | Decimal | yes | READER | payslip |
+| rest_day_hours | Decimal | optional | READER | roster |
+| cpf_employee_on_payslip | Decimal | optional | READER | payslip "CPF" line, if present |
+| net_paid | Decimal | yes | WORKER | worker, from bank - see below |
+| days_per_week | int 5/6 | yes | WORKER | KET or worker |
+| is_workman | bool | yes | WORKER | worker |
+| rest_day_requested_by | enum | optional | WORKER | worker |
+| residency | enum | yes for CPF | WORKER | worker (Citizen / PR yr / Work Permit ...) |
+| date_of_birth or age_band | | yes for CPF | WORKER | worker; band_for() applies the step-up rule |
+
+`net_paid` is the case that defines the rule. A payslip prints "Net pay", and both
+readers could read it and agree - but the fact the engine needs is the amount that
+reached the bank. Those are two distinct facts wearing one name, and an AGREED on the
+printed figure would silently endorse the very discrepancy this product exists to find.
+So `net_paid` is the worker's answer from their bank, or it is nothing.
 
 ## Agent mandate levels (the worker grants; the agent cannot exceed)
 

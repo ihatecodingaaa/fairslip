@@ -23,5 +23,9 @@ out/
 # Vercel
 .vercel/
 
-.vercel
-.env*
+# Secrets, restated last: git takes the LAST matching pattern, so an .env rule
+# appended below an exception silently re-ignores the file the exception exists
+# to protect. See docs/debt.md, appended-pattern-cancels-earlier-exception.
+.env
+.env.*
+!.env.example

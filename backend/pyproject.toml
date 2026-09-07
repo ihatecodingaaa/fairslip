@@ -2,7 +2,15 @@
 name = "fairslip"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "pydantic>=2.7"]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    # Vision readers (Stage 2). Vercel installs from THIS file, not
+    # requirements.txt - see docs/debt.md manifest-not-read-by-builder.
+    "anthropic>=1.4",
+    "openai>=3.8",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "httpx"]  # httpx backs fastapi.testclient.TestClient

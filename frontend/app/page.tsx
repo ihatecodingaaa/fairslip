@@ -23,6 +23,7 @@ import {
   type Outcome,
   type PayBreakdown,
   type Persona,
+  type Refusal,
 } from "@/lib/api";
 
 type PersonaResult = {
@@ -79,6 +80,12 @@ export default function Home() {
           <p className="mt-2 text-zinc-600">
             Does your pay add up &mdash; and if not, what happens next?
           </p>
+          <a
+            href="/check"
+            className="mt-4 inline-block rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Check a payslip of your own &rarr;
+          </a>
           <p className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             {fixtures?.notice ??
               "Fictional data. No real worker's document or information appears in FairSlip."}
@@ -127,7 +134,7 @@ function PersonaCard({ persona, result }: { persona: Persona; result?: PersonaRe
       {!result && <p className="px-5 py-4 text-sm text-zinc-500">Running the engines&hellip;</p>}
 
       {result && !result.breakdown.ok && (
-        <Refused detail={result.breakdown.refusal.detail} persona={persona} />
+        <Refused refusal={result.breakdown.refusal} persona={persona} />
       )}
 
       {result?.breakdown.ok && (
@@ -151,20 +158,31 @@ function Chip({ children }: { children: ReactNode }) {
   );
 }
 
-function Refused({ detail, persona }: { detail: string; persona: Persona }) {
+/**
+ * Branch on the discriminant the response actually carried. One hardcoded cause
+ * for every refusal is how a screen ends up telling a worker the readers
+ * disagreed when in fact the input was out of scope.
+ * See docs/debt.md, ui-invents-a-cause.
+ */
+function Refused({ refusal, persona }: { refusal: Refusal; persona: Persona }) {
   const unsettled = Object.entries(persona.pay_inputs).filter(
     ([, f]) => f && f.status !== "AGREED" && f.status !== "HUMAN_CONFIRMED",
   );
+  const because =
+    refusal.error === "UNESTABLISHED_INPUT"
+      ? "A field this month depends on was not agreed by both readers and has not been confirmed by the worker. FairSlip does not guess such a value, so no figure is shown."
+      : refusal.error === "OUT_OF_SCOPE"
+        ? "This month falls outside the rules FairSlip encodes, so the engine refused rather than approximate."
+        : "A value could not be read as the type its field requires, so the engine was not run.";
   return (
     <div className="px-5 py-4">
       <p className="text-lg font-semibold text-amber-800">Nothing was calculated for this month.</p>
-      <p className="mt-1 text-sm text-zinc-700">
-        Our two readers disagree, and this field is not yet confirmed. FairSlip does not guess a
-        value the worker has not confirmed, so no figure is shown.
+      <p className="mt-1 text-sm text-zinc-700">{because}</p>
+      <p className="mt-3 rounded bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-700">
+        {refusal.detail}
       </p>
-      <p className="mt-3 rounded bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-700">{detail}</p>
       <ul className="mt-3 space-y-2 text-sm">
-        {unsettled.map(([name, f]) => (
+        {(refusal.error === "UNESTABLISHED_INPUT" ? unsettled : []).map(([name, f]) => (
           <li key={name} className="rounded border border-amber-300 bg-amber-50 px-3 py-2">
             <span className="font-medium">{name}</span>{" "}
             <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-semibold text-amber-900">
@@ -209,11 +227,15 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function CpfPanel({ outcome, persona }: { outcome: Outcome<CpfOut>; persona: Persona }) {
   if (!outcome.ok) {
+    const heading =
+      outcome.refusal.error === "OUT_OF_SCOPE"
+        ? "Outside what FairSlip checks: no CPF figure is shown."
+        : outcome.refusal.error === "UNESTABLISHED_INPUT"
+          ? "No CPF figure is shown: an input it needs is not established."
+          : "No CPF figure is shown: an input could not be read as its field requires.";
     return (
       <div className="border-b border-zinc-200 px-5 py-4">
-        <p className="text-sm font-semibold text-zinc-800">
-          Outside what FairSlip checks: no CPF figure is shown.
-        </p>
+        <p className="text-sm font-semibold text-zinc-800">{heading}</p>
         <p className="mt-1 text-sm text-zinc-600">{outcome.refusal.detail}</p>
       </div>
     );

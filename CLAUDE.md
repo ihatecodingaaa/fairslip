@@ -29,7 +29,9 @@ Never write "owed", "underpaid", "breach", "entitled", or "resolved" (unless ari
   - `fairslip/extract.py` two-reader extraction + reconciliation (Stage 2)
   - `fairslip/agent.py` mandate-bounded follow-through (Stage 3)
   - `demo/` fictional Rahim fixtures, months 1 and 2
-- Vision: Claude primary; second model via OpenRouter as auditor. Cache by image hash.
+- Vision: two vendors, each called DIRECTLY - Claude via the Anthropic API (primary), GPT via
+  OpenAI's API (auditor). Not through an aggregator: the second reader exists to avoid a shared
+  failure, and routing both through one third party reintroduces one. Cache by image hash.
 - Work Permit holders have no CPF. The CPF pack returns NO_CPF for them, not an error.
 
 ## Commands
