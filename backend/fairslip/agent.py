@@ -1301,6 +1301,9 @@ TADM_EVIDENCE: tuple[EvidenceItem, ...] = (
     ),
 )
 
+# A deadline is when you may FILE. The look-back is how far back a filed claim
+# may REACH. They are different questions, and a worker shown only the first has
+# an incomplete picture on the screen that tells them what to do next.
 TADM_DEADLINES: tuple[Deadline, ...] = (
     Deadline(
         label="While you are still employed",
@@ -1313,6 +1316,17 @@ TADM_DEADLINES: tuple[Deadline, ...] = (
         quoted="Within 6 months from your last day of work.",
         source_url=REFERENCE_LINKS["mom_disputes"],
         source_label="MOM's managing-employment-disputes page",
+    ),
+    # Scoped as TADM scopes it. This sentence is printed INSIDE the "If you have
+    # left employment" bullet; the "still in employment" bullet does not repeat
+    # it. TADM's worked example for the still-employed case implies a similar
+    # reach, but an implication is not what the page states, so the label says
+    # "after you have left" and nothing here extends it further.
+    Deadline(
+        label="How far back a claim can reach, if you have left",
+        quoted="Your claims cannot be earlier than 1 year from the date of filing.",
+        source_url=REFERENCE_LINKS["tadm_file_claim"],
+        source_label="TADM's file-an-employment-claim page (no last-updated date shown)",
     ),
 )
 
@@ -1389,18 +1403,72 @@ CPF_REPORT_NOT_BUILT = NotBuilt(
 )
 
 
+class EscalationCopyError(RuntimeError):
+    """The escalation pack tried to render a word the UI copy contract forbids.
+
+    Raised rather than filtered: a pack that had to be censored to be shown is
+    not a pack this system should be handing a worker."""
+
+
+def _fairslip_authored_strings(pack: EscalationPack) -> tuple[tuple[str, str], ...]:
+    """(where, text) for every string in the pack that FAIRSLIP WROTE.
+
+    `quoted` fields are deliberately excluded, and the exclusion is the point:
+    they are the authority's own words, pinned separately to the pages they were
+    read from (.claude/rules/mom-pay-rules.md, cpf-rules.md) and asserted in both
+    directions by tests. Running a forbidden-word filter over a quotation would
+    either censor an authority or force the quotation to be trimmed until it
+    passed - and trimming a quote until it reads better is the exact defect that
+    shipped "beyond one year is low." with a full stop.
+    """
+    out: list[tuple[str, str]] = [
+        ("heading", pack.heading),
+        ("disclaimer", pack.disclaimer),
+    ]
+    out += [(f"filing_steps[{i}]", t) for i, t in enumerate(pack.filing_steps)]
+    for i, e in enumerate(pack.evidence):
+        out.append((f"evidence[{i}].note", e.note))
+        out.append((f"evidence[{i}].source_label", e.source_label))
+    for i, d in enumerate(pack.deadlines):
+        out.append((f"deadlines[{i}].label", d.label))
+        out.append((f"deadlines[{i}].source_label", d.source_label))
+    for i, n in enumerate(pack.not_built):
+        out.append((f"not_built[{i}].what", n.what))
+        out.append((f"not_built[{i}].why", n.why))
+        out.append((f"not_built[{i}].source_label", n.source_label))
+        for j, q in enumerate(n.what_is_known):
+            out.append((f"not_built[{i}].what_is_known[{j}].note", q.note))
+    return tuple(out)
+
+
+def check_escalation_copy(pack: EscalationPack) -> None:
+    """The UI copy contract, applied to the escalation screen.
+
+    FORBIDDEN_WORDS ran only inside the draft guard, so every word the contract
+    forbids could reach this screen unchecked - and this is the screen a worker
+    reads when deciding what to do next."""
+    for where, text in _fairslip_authored_strings(pack):
+        lowered = text.lower()
+        hits = [w for w in FORBIDDEN_WORDS if w in lowered]
+        if hits:
+            raise EscalationCopyError(
+                f"{where}: FairSlip wrote {hits}, which the UI copy contract "
+                f"forbids. Rewrite it; do not filter it out."
+            )
+
+
 def prepare_escalation(*, cpf_applies: bool = True) -> EscalationPack:
     """Assemble what a worker would take to TADM. Files nothing, anywhere.
 
     Level 4's action. The mandate is checked before this runs, at the single
-    chokepoint in Mandate.act().
+    chokepoint in Mandate.act(). The copy is checked on the way out.
 
     `cpf_applies` decides whether the absent CPF half is mentioned at all. For a
     worker who is not a CPF member there is no CPF report to be missing, and
     saying "not built: a CPF under-payment report" to them contradicts the card
     beside it that says the whole CPF question does not apply. An unbuilt half is
     worth naming; an inapplicable one is noise that reads as an oversight."""
-    return EscalationPack(
+    pack = EscalationPack(
         heading="What to take to TADM",
         evidence=TADM_EVIDENCE,
         deadlines=TADM_DEADLINES,
@@ -1417,3 +1485,7 @@ def prepare_escalation(*, cpf_applies: bool = True) -> EscalationPack:
             "FairSlip."
         ),
     )
+    # Checked on the way out, so a forbidden word cannot reach a screen even if
+    # it is added to a constant far from here.
+    check_escalation_copy(pack)
+    return pack

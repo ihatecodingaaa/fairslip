@@ -8,6 +8,7 @@ checking the round trip, and last time that gap shipped.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -423,7 +424,6 @@ def test_each_persona_declares_its_own_language() -> None:
 
 def test_the_language_is_part_of_the_draft_cache_key() -> None:
     """Otherwise a persona could be served another persona's message."""
-    import dataclasses
 
     from fairslip.agent import draft_cache_key
 
@@ -693,12 +693,21 @@ def test_mwc_is_offered_only_to_the_workers_it_exists_for() -> None:
 
 def test_every_quoted_authority_names_the_page_it_came_from() -> None:
     """A quotation attributed by the nearest heading is attributed to the wrong
-    body: the deadlines are MOM's and they sit under a TADM heading."""
+    body. Two authorities are quoted under one TADM heading - MOM's page carries
+    the two filing deadlines, TADM's carries the evidence list and the look-back
+    sentence MOM does not print - so each item is checked against the page it
+    actually came from, not against a single expected authority."""
     body = client.post("/agent/escalation", json={"level": 4}).json()
+    declared = set(agent.REFERENCE_LINKS.values())
     for item in body["evidence"]:
         assert "TADM" in item["source_label"], item
+        assert item["source_url"] in declared, item
     for d in body["deadlines"]:
-        assert "MOM" in d["source_label"], d
+        assert d["source_label"].strip(), d
+        assert d["source_url"] in declared, d
+        # the label must name the body whose page it is
+        expected = "TADM" if d["source_url"] == agent.REFERENCE_LINKS["tadm_file_claim"] else "MOM"
+        assert expected in d["source_label"], d
 
 
 def test_the_filing_steps_make_no_claim_about_how_tadm_works() -> None:
@@ -876,3 +885,24 @@ def test_no_reading_of_a_quote_is_presented_as_the_authoritys_words() -> None:
             for advice in ("half to take first", "next step", "you should", "do not lodge"):
                 assert advice not in q["note"].lower(), f"advice in a note: {q['note']!r}"
                 assert advice not in q["quoted"].lower(), f"advice inside a quote: {q['quoted']!r}"
+
+
+def test_the_pack_shows_how_far_back_a_claim_reaches_not_only_when_to_file() -> None:
+    """A deadline is when you may FILE. The look-back is how far back a filed
+    claim may REACH. A worker shown only the first has an incomplete picture on
+    the screen that tells them what to do next."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    quoted = [d["quoted"] for d in body["deadlines"]]
+    assert "Your claims cannot be earlier than 1 year from the date of filing." in quoted
+    assert len(body["deadlines"]) == 3
+
+
+def test_the_look_back_is_scoped_to_the_case_the_page_prints_it_in() -> None:
+    """TADM prints it inside the "If you have left employment" bullet, and the
+    still-in-employment bullet does not repeat it. The label must not extend it,
+    and it must be sourced to TADM - MOM's page does not carry the sentence."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    look_back = next(d for d in body["deadlines"] if "cannot be earlier" in d["quoted"])
+    assert "if you have left" in look_back["label"].lower()
+    assert look_back["source_url"] == agent.REFERENCE_LINKS["tadm_file_claim"]
+    assert "no last-updated date shown" in look_back["source_label"]
