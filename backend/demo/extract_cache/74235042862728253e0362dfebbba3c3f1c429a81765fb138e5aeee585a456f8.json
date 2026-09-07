@@ -1,0 +1,23 @@
+{
+  "images": [
+    {
+      "bytes": 74924,
+      "media_type": "image/png",
+      "role": "roster",
+      "sha256": "4fac3aff947f08c7bfb4e161aabbf905d3f7fd3510315767fb05ebd080c7d975"
+    }
+  ],
+  "latency_ms": 3860,
+  "model": "claude-haiku-4-5",
+  "prompt_version": "2026-09-07.1",
+  "provider": "Anthropic",
+  "reader_key": "reader_a",
+  "values": {
+    "cpf_employee_on_payslip": null,
+    "deductions_total": null,
+    "monthly_basic": null,
+    "normal_daily_hours": null,
+    "ot_hours": "18",
+    "rest_day_hours": "8"
+  }
+}

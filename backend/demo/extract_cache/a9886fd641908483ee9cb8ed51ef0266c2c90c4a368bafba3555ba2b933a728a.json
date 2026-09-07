@@ -1,0 +1,29 @@
+{
+  "images": [
+    {
+      "bytes": 151148,
+      "media_type": "image/jpeg",
+      "role": "payslip",
+      "sha256": "965741832f0c92872bd61672f56f0b1ac7cb7a1efb370f04c4e63016641a5d25"
+    },
+    {
+      "bytes": 74924,
+      "media_type": "image/png",
+      "role": "roster",
+      "sha256": "4fac3aff947f08c7bfb4e161aabbf905d3f7fd3510315767fb05ebd080c7d975"
+    }
+  ],
+  "latency_ms": 5940,
+  "model": "gpt-5.6-luna",
+  "prompt_version": "2026-09-07.1",
+  "provider": "OpenAI",
+  "reader_key": "reader_b",
+  "values": {
+    "cpf_employee_on_payslip": "280",
+    "deductions_total": "280",
+    "monthly_basic": "1200",
+    "normal_daily_hours": null,
+    "ot_hours": "18",
+    "rest_day_hours": null
+  }
+}

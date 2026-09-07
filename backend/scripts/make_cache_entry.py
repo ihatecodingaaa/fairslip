@@ -39,28 +39,13 @@ from fairslip.extract import (
     PROMPT_VERSION,
     ExtractionError,
     ImageInput,
+    UnknownDocumentError,
     cache_entry_path,
     default_readers,
+    image_from_path,
     load_cache_entry,
     write_cache_entry,
 )
-
-MEDIA_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-    ".gif": "image/gif",
-}
-
-# A filename is the only hint we have about what a document is, and the role
-# changes what the reader is told the image shows. Guessing silently would be
-# the wrong kind of convenience, so an unguessable name is an error.
-ROLE_HINTS = {
-    "payslip": ("payslip", "slip", "pay"),
-    "roster": ("roster", "timesheet", "schedule", "hours", "whatsapp"),
-    "ket": ("ket", "terms", "contract"),
-}
 
 
 def load_env(path: Path) -> None:
@@ -75,36 +60,23 @@ def load_env(path: Path) -> None:
             os.environ.setdefault(k.strip(), v.strip())
 
 
-def guess_role(path: Path) -> str:
-    name = path.stem.lower()
-    for role, hints in ROLE_HINTS.items():
-        if any(h in name for h in hints):
-            return role
-    raise SystemExit(
-        f"cannot tell what {path.name} is from its name. Rename it to contain one of "
-        f"{sorted(h for hs in ROLE_HINTS.values() for h in hs)}, or pass role=path "
-        f"(e.g. roster={path})."
-    )
-
-
 def to_image(spec: str) -> ImageInput:
-    """Accept `path` or `role=path`."""
+    """Accept `path` or `role=path`. Role inference and the media-type map live
+    in fairslip.extract, so this script and tests/test_cache_is_populated.py
+    cannot disagree about a file's role - which is part of the cache key."""
+    role: str | None = None
     if "=" in spec and spec.split("=", 1)[0] in DOCUMENT_ROLES:
-        role, raw = spec.split("=", 1)
-        path = Path(raw)
+        head, raw = spec.split("=", 1)
+        role, path = head, Path(raw)
     else:
         path = Path(spec)
-        role = guess_role(path)
 
     if not path.is_file():
         raise SystemExit(f"no such file: {path}")
-    media_type = MEDIA_TYPES.get(path.suffix.lower())
-    if media_type is None:
-        raise SystemExit(
-            f"{path.name}: unsupported image type {path.suffix!r}; "
-            f"expected one of {sorted(MEDIA_TYPES)}"
-        )
-    return ImageInput(role=role, media_type=media_type, data=path.read_bytes())
+    try:
+        return image_from_path(path, role)
+    except UnknownDocumentError as e:
+        raise SystemExit(str(e)) from e
 
 
 def main(argv: list[str] | None = None) -> int:

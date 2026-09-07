@@ -105,6 +105,64 @@ DOCUMENT_ROLES: dict[str, str] = {
 }
 
 
+# Loading an image from a path, in ONE place.
+#
+# The cache key covers each image's role, so the role a file is given must be
+# the same wherever it is computed. It was briefly not: the generator script
+# inferred the role from the filename while the precondition test defaulted
+# every image to "payslip", so a roster's entry could never be found by the
+# test that demanded it. Both now call the same function.
+
+MEDIA_TYPES_BY_SUFFIX: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+# A filename is the only hint about what a document is, and the role changes
+# what the reader is told the image shows. An unguessable name is an error, not
+# a silent default.
+ROLE_HINTS: dict[str, tuple[str, ...]] = {
+    "payslip": ("payslip", "slip", "pay"),
+    "roster": ("roster", "timesheet", "schedule", "hours", "whatsapp"),
+    "ket": ("ket", "terms", "contract"),
+}
+
+
+class UnknownDocumentError(ValueError):
+    """A file whose role cannot be determined from its name."""
+
+
+def role_for_filename(path: Path) -> str:
+    name = path.stem.lower()
+    for role, hints in ROLE_HINTS.items():
+        if any(h in name for h in hints):
+            return role
+    raise UnknownDocumentError(
+        f"cannot tell what {path.name} is from its name. Rename it to contain one of "
+        f"{sorted(h for hs in ROLE_HINTS.values() for h in hs)}, or give the role explicitly."
+    )
+
+
+def image_from_path(path: Path, role: str | None = None) -> ImageInput:
+    """Read an image off disk as the readers will see it. The role is inferred
+    from the filename unless given."""
+    suffix = path.suffix.lower()
+    media_type = MEDIA_TYPES_BY_SUFFIX.get(suffix)
+    if media_type is None:
+        raise UnknownDocumentError(
+            f"{path.name}: unsupported image type {suffix!r}; "
+            f"expected one of {sorted(MEDIA_TYPES_BY_SUFFIX)}"
+        )
+    return ImageInput(
+        role=role or role_for_filename(path),
+        media_type=media_type,
+        data=path.read_bytes(),
+    )
+
+
 @dataclass(frozen=True)
 class ImageInput:
     """One document. `data` is the raw bytes; the base64 encoding happens at the

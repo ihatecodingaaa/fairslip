@@ -24,6 +24,7 @@ from fairslip.extract import (
     ImageInput,
     cache_entry_path,
     default_readers,
+    image_from_path,
     load_cache_entry,
 )
 
@@ -53,12 +54,12 @@ def demo_images() -> list[Path]:
     )
 
 
-def as_image_input(path: Path, role: str = "payslip") -> ImageInput:
-    return ImageInput(
-        role=role,
-        media_type=MEDIA_TYPES[path.suffix.lower()],
-        data=path.read_bytes(),
-    )
+def as_image_input(path: Path) -> ImageInput:
+    """Uses the same loader the generator script uses, so the role - which is
+    part of the cache key - cannot differ between the thing that writes an entry
+    and the thing that demands one. This defaulted every image to "payslip"
+    once, which made a roster's entry permanently unfindable."""
+    return image_from_path(path)
 
 
 def test_the_cache_directory_exists_once_there_is_artwork_to_cache() -> None:
