@@ -1312,10 +1312,13 @@ CPF_REPORT_NOT_BUILT = NotBuilt(
             'require a longer time to investigate."'
         ),
         (
-            'On timing, CPF Board says only: "Please note the likelihood of recovery '
-            'for any non/underpayment of CPF contributions beyond one year is low." '
-            "That is a statement about likelihood, not a deadline, and FairSlip does "
-            "not present it as one."
+            "On timing, CPF Board says only this - and the second half of the "
+            "sentence is the part that matters, so it is quoted whole: "
+            '"Please note the likelihood of recovery for any non/underpayment of '
+            "CPF contributions beyond one year is low as the parties\u2019 "
+            "recollection of the facts or availability of evidence may diminish "
+            'over time." That is a statement about EVIDENCE going stale, not a '
+            "deadline, and FairSlip does not present it as one."
         ),
     ),
 )

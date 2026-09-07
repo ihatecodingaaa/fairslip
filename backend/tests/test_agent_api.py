@@ -749,3 +749,46 @@ def test_no_user_visible_backend_string_assumes_a_pronoun() -> None:
     gendered = re.compile(r"\b(she|her|hers|he|him|his)\b", re.IGNORECASE)
     for s in strings:
         assert not gendered.search(s), f"gendered pronoun in: {s!r}"
+
+
+# Verified in a browser on 7 Sept 2026 against
+# https://www.cpf.gov.sg/service/article/how-can-i-lodge-a-report-for-non-payment-or-underpayment-of-cpf-contributions
+# (page "Last updated 12 Mar 2026"). The page is client-rendered and returns
+# nothing to curl, which is why these were the last unverified quotes in the
+# product. Substrings copied from the rendered text, character for character.
+CPF_PAGE_SENTENCES = (
+    (
+        "all available supporting documents to support your claim "
+        "(e.g. pay slips and employment contract)."
+    ),
+    "Claims made without any supporting documents would require a longer time to investigate.",
+    (
+        "Please note the likelihood of recovery for any non/underpayment of CPF contributions "
+        "beyond one year is low as the parties’ recollection of the facts or availability of "
+        "evidence may diminish over time."
+    ),
+)
+
+
+@pytest.mark.parametrize("sentence", CPF_PAGE_SENTENCES)
+def test_every_cpf_quote_on_the_escalation_screen_is_on_the_published_page(
+    sentence: str,
+) -> None:
+    """Pins the quotes to what the page actually says.
+
+    The third one shipped TRUNCATED: it stopped at "beyond one year is low." with
+    a full stop, which reads as a bare limitation period. The clause that follows
+    names the reason - evidence going stale - and is the half that shows it is
+    not a deadline. A quotation cut at a point that changes its meaning is not a
+    quotation."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    known = " ".join(body["not_built"][0]["what_is_known"])
+    assert sentence in known
+
+
+def test_the_truncated_form_of_the_cpf_timing_quote_never_ships() -> None:
+    """The specific regression: a full stop after "is low"."""
+    body = client.post("/agent/escalation", json={"level": 4}).json()
+    known = " ".join(body["not_built"][0]["what_is_known"])
+    assert "beyond one year is low." not in known
+    assert "beyond one year is low as the parties" in known

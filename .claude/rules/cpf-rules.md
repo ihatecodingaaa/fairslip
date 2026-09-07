@@ -42,7 +42,13 @@ starting from the day after the due date", minimum "$5".
 
 Time limit for recovering under-paid CPF - THERE IS NO PUBLISHED DEADLINE:
 > "Please note the likelihood of recovery for any non/underpayment of CPF contributions
-> beyond one year is low."
+> beyond one year is low as the parties’ recollection of the facts or availability of
+> evidence may diminish over time."
+
+Quoted WHOLE deliberately. An earlier version stopped at "is low." and put a full stop there,
+which reads as a bare limitation period; the clause that follows names the reason - evidence
+going stale - and is the half that shows it is not a deadline. Verified in a browser on
+7 Sept 2026 (the page is client-rendered and returns nothing to curl).
 https://www.cpf.gov.sg/service/article/how-can-i-lodge-a-report-for-non-payment-or-underpayment-of-cpf-contributions
 Page "Last updated 12 Mar 2026". Verified 7 Sept 2026.
 That sentence is about LIKELIHOOD, not entitlement. An earlier version of the project brief

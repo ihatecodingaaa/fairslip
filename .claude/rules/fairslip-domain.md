@@ -83,7 +83,9 @@ managing-employment-disputes page (last updated 26 March 2026).
 
 CPF HAS NO EQUIVALENT DEADLINE, and this file previously said it did. CPF Board's page says
 only, verbatim: "Please note the likelihood of recovery for any non/underpayment of CPF
-contributions beyond one year is low." That is a statement about ODDS, not a limitation
+contributions beyond one year is low as the parties’ recollection of the facts or
+availability of evidence may diminish over time." That is a statement about ODDS - and about
+evidence going stale, which is what the second half says - not a limitation
 period, and CPF's enforcement page states no limitation period at all. Never render it as a
 deadline; if it is shown, quote it. See docs/debt.md, contested-secondary-source.
 
