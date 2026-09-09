@@ -386,3 +386,55 @@ def test_the_text_size_control_still_applies_on_paper() -> None:
         "the print base is not in a paper unit; px on paper is the printer's "
         "guess at a screen"
     )
+
+
+# ------------------- claim 5: before a result, the sheet is one page
+
+CHECK_PAGE = REPO / "frontend" / "app" / "check" / "page.tsx"
+ESTABLISH = REPO / "frontend" / "app" / "check" / "EstablishStage.tsx"
+
+
+def test_a_sheet_with_no_figures_on_it_says_so_and_carries_what_there_is() -> None:
+    """Five pages whose first line reads "Nothing has been worked out yet" is
+    not a take-away, it is a printout of a form. The pre-result sheet states
+    where the check got to and stops."""
+    src = _sheet_source()
+    assert "export function PrintPreResult(" in src, "no pre-result sheet"
+    body = _component("PrintPreResult")
+    assert 'className="print-only' in body, "the pre-result sheet is not print-only"
+    assert "No calculation has been performed yet." in body
+    for needed in ("Evidence received", "Readers", "Read from the documents", "Still to be answered"):
+        assert needed in body, f"the pre-result sheet does not record {needed!r}"
+
+
+def test_the_pre_result_sheet_replaces_the_form_rather_than_joining_it() -> None:
+    """It is only worth one page if the four pages it replaces stop printing."""
+    src = CHECK_PAGE.read_text(encoding="utf-8")
+    assert re.search(r"\{!breakdown && \(\s*<PrintPreResult", src), (
+        "PrintPreResult is not gated on there being no breakdown"
+    )
+    assert 'breakdown ? "" : "print-hide"' in src, (
+        "the establish stage still prints in full before a result exists"
+    )
+
+
+def test_a_disclosure_that_holds_printable_evidence_is_not_a_details_element() -> None:
+    """The two-reader readings are collapsed on screen and MUST reach the paper.
+
+    A closed <details> prints as its summary, so the mechanism matters: the
+    region is hidden by a class inside `@media screen`, which stops applying the
+    moment the medium is paper.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    block = re.search(r"@media screen \{(.*?)\n\}", css, re.DOTALL)
+    assert block, "no @media screen block defining the collapsed state"
+    assert ".screen-collapsed" in block.group(1), (
+        ".screen-collapsed is not defined inside @media screen; if it applies to "
+        "print as well, the readings are off the sheet"
+    )
+    est = ESTABLISH.read_text(encoding="utf-8")
+    assert "screen-collapsed" in est, "the establish stage does not use it"
+    assert "<ReaderComparison" in est, "the comparison is no longer rendered at all"
+    assert "aria-expanded={open}" in est and "aria-controls={uid}" in est, (
+        "the disclosure does not announce its state"
+    )

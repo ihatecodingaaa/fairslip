@@ -287,6 +287,9 @@ class WorkerFieldOut(BaseModel):
     # two places to read the same sentence from.
     prompt_i18n: dict[str, str]
     why: str
+    # The same boundary in one line, for the default view. `why` is the
+    # argument; this is the label on it. Both ship from extract_schema.py.
+    why_short: str
     required_for: list[str]  # "pay" and/or "cpf"
     answer_type: str  # "decimal" | "choice" | "date"
     choices: list[ChoiceOut]

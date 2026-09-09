@@ -24,6 +24,7 @@ from fairslip.extract_schema import (
     WORKER_ONLY_FIELDS,
     WORKER_PROMPTS,
     WORKER_WHY,
+    WORKER_WHY_SHORT,
     choices_for,
 )
 from fairslip.rules import PayInputs
@@ -95,6 +96,9 @@ def test_every_worker_field_has_a_question_and_a_reason_it_is_asked() -> None:
     """`why` is not decoration. It is the boundary itself, stated to the worker."""
     assert set(WORKER_PROMPTS) == set(WORKER_ONLY_FIELDS)
     assert set(WORKER_WHY) == set(WORKER_ONLY_FIELDS)
+    # The short form is not optional decoration either: it is what the default
+    # view shows, so a field without one would be asked with no reason at all.
+    assert set(WORKER_WHY_SHORT) == set(WORKER_ONLY_FIELDS)
 
 
 def test_no_copy_string_is_empty() -> None:
@@ -103,6 +107,7 @@ def test_no_copy_string_is_empty() -> None:
         ("FIELD_LABELS", FIELD_LABELS),
         ("WORKER_PROMPTS", WORKER_PROMPTS),
         ("WORKER_WHY", WORKER_WHY),
+        ("WORKER_WHY_SHORT", WORKER_WHY_SHORT),
     ):
         for field, text in table.items():
             assert text.strip(), f"{name}[{field}] is empty"
@@ -112,7 +117,7 @@ def test_no_copy_string_uses_a_forbidden_word() -> None:
     """The UI copy contract, enforced where the copy actually lives. These words
     assert a conclusion FairSlip has not established. See CLAUDE.md."""
     forbidden = ("owed", "underpaid", "breach", "illegal", "entitled", "resolved")
-    for table in (READER_HINTS, FIELD_LABELS, WORKER_PROMPTS, WORKER_WHY):
+    for table in (READER_HINTS, FIELD_LABELS, WORKER_PROMPTS, WORKER_WHY, WORKER_WHY_SHORT):
         for field, text in table.items():
             lowered = text.lower()
             for word in forbidden:
@@ -125,6 +130,11 @@ def test_net_paid_says_why_it_is_not_read_from_the_payslip() -> None:
     why = WORKER_WHY["net_paid"].lower()
     assert "payslip" in why
     assert "bank" in why
+    # And in the line that is actually on screen by default, which is the one a
+    # worker reads at the moment they are asked for the figure.
+    short = WORKER_WHY_SHORT["net_paid"].lower()
+    assert "payslip" in short
+    assert "bank" in short
 
 
 # --------------------------------------------------------------------------

@@ -209,6 +209,28 @@ WORKER_WHY: dict[str, str] = {
 }
 
 
+# The SAME boundary, in one line, for the default view of the question.
+#
+# WORKER_WHY is the argument and stays exactly as it is - it is the reason a
+# field is asked rather than read, and the screen still shows it, one tap away
+# under "Why FairSlip asks this". But six of those paragraphs stacked above six
+# input boxes is a wall a worker reads past on the way to answering, and the
+# thing they need at the moment of answering is which rule the answer feeds.
+#
+# Two strings, one boundary, both from this module: a screen that wrote its own
+# short version would be restating the reason a field is asked, which is the
+# defect WORKER_WHY exists here to prevent. Held to the same coverage,
+# non-empty and forbidden-word rules by tests/test_extract_schema.py.
+WORKER_WHY_SHORT: dict[str, str] = {
+    "net_paid": "The payslip's printed net is a different fact. This one comes from your bank.",
+    "days_per_week": "Needed for the daily-rate formula.",
+    "is_workman": "Changes the overtime salary ceiling.",
+    "rest_day_requested_by": "Changes the rest-day calculation.",
+    "residency": "Needed for CPF rules.",
+    "date_of_birth": "Needed for the CPF age band.",
+}
+
+
 # --------------------------------------------------------------------------
 # How a worker answers each worker-only field.
 #

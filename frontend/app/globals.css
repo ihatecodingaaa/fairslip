@@ -436,6 +436,28 @@ input[type="date"]::-webkit-calendar-picker-indicator:focus-visible {
   display: none;
 }
 
+/*
+ * COLLAPSED ON THE SCREEN, PRESENT ON THE PAPER.
+ *
+ * A disclosure whose contents belong on the printed sheet cannot be a
+ * <details>: a closed <details> prints as its summary and nothing else, so
+ * folding the two-reader table away on screen would have taken the readings off
+ * the sheet a worker carries into an NGO office. That sheet is the artefact this
+ * product exists to produce, and the readings are half of what makes it
+ * evidence.
+ *
+ * So the disclosure is a button and a region, and the region is hidden with THIS
+ * class rather than with `hidden` or a <details>. `display: none` inside a
+ * screen-only media query means the region is out of the accessibility tree
+ * while the button says aria-expanded="false", and back on the page - open or
+ * not - the moment the medium is paper.
+ */
+@media screen {
+  .screen-collapsed {
+    display: none;
+  }
+}
+
 @media print {
   /*
    * The print token set. It overrides the high-contrast set as well as the

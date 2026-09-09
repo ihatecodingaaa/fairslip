@@ -39,16 +39,16 @@ import {
   type Refusal,
 } from "@/lib/api";
 import { AppShell } from "../ui/AppShell";
-import { EngineMark } from "../ui/EngineMark";
 import { Footer } from "../ui/Footer";
 import { T, useT } from "../ui/Prefs";
-import { PrintMasthead } from "../ui/PrintSheet";
+import { PrintMasthead, PrintPreResult } from "../ui/PrintSheet";
 import { AgentPanel } from "./AgentPanel";
 import { DOCUMENTS, EvidenceStage, EvidenceStrip } from "./EvidenceStage";
 import { EstablishStage } from "./EstablishStage";
 import { ReconcileStage } from "./ReconcileStage";
-import { ReaderStrip } from "./ReaderStrip";
+import { EvidenceFlow } from "./EvidenceFlow";
 import { payInputsFrom, restDayVerdict, unresolvedFields } from "./facts";
+import { countFields } from "./ReaderComparison";
 import type { Key } from "@/lib/i18n";
 
 type Phase = "collect" | "reading" | "reconciled";
@@ -204,6 +204,28 @@ export default function CheckPage() {
 
       <PrintMasthead computedAt={computedAt} />
 
+      {/* BEFORE THERE IS A RESULT, THE SHEET IS ONE PAGE.
+          The pre-result screen is a picker, six unanswered questions and a
+          transcription table, and it printed as five pages of empty form. What a
+          worker actually needs on paper at that point is where they got to, so
+          that is what prints - and everything below is print-hidden until the
+          engine has run. Once it has, the full evidence pack prints exactly as
+          it always did. */}
+      {!breakdown && (
+        <PrintPreResult
+          documents={documents}
+          readers={extract?.readers ?? []}
+          total={extract?.read_fields.length ?? 0}
+          established={
+            extract
+              ? countFields(extract.read_fields, answers).agreed +
+                countFields(extract.read_fields, answers).confirmed
+              : 0
+          }
+          unresolved={unresolved}
+        />
+      )}
+
       {/* print-hide: the masthead above IS this heading on paper - same
           dictionary key, one line up - and a document that opens with its title
           twice reads as two documents stapled together. */}
@@ -218,14 +240,6 @@ export default function CheckPage() {
         <h1 className="text-page font-semibold tracking-tight">
           <T k="check.title" />
         </h1>
-        {!breakdown && (
-          <>
-            <p className="max-w-measure mt-2 text-lead text-ink-2">
-              <T k="check.intro" />
-            </p>
-            <EngineMark className="mt-4" />
-          </>
-        )}
         <StageBar reached={stageReached} current={breakdown ? 2 : extract ? 1 : 0} />
       </header>
 
@@ -288,6 +302,24 @@ export default function CheckPage() {
                 reading={phase === "reading"}
                 canRead={chosen.some((d) => d.required)}
               />
+              {/* UNDER THE CARDS, NOT ABOVE THEM. Three documents converging on
+                  two readers, on a set of facts, on a figure - the shape of what
+                  this screen is about to do, in the place two paragraphs and an
+                  engine mark used to describe it. Above the cards it pushed the
+                  button that starts the product 500px down the page; here it is
+                  the thing you read once the evidence is in. */}
+              <div className="mt-10">
+                <EvidenceFlow
+                  docs={DOCUMENTS.map((d) => ({
+                    label: d.label,
+                    present: Boolean(files[d.role]),
+                  }))}
+                  reading={phase === "reading"}
+                  extract={null}
+                  answers={answers}
+                  checked={false}
+                />
+              </div>
             </div>
           ) : (
             <EvidenceStrip files={files} onReopen={() => setReopened(true)} />
@@ -295,15 +327,27 @@ export default function CheckPage() {
         </div>
 
         {extract && phase === "reconciled" && (
-          <div id="stage-establish" className="mt-8 grid gap-8">
-            <ReaderStrip extract={extract} headingRef={establishRef} />
+          <div
+            id="stage-establish"
+            className={`mt-8 grid gap-8 ${breakdown ? "" : "print-hide"}`}
+          >
+            {/* The same diagram that stood above the picker, now carrying what
+                happened: which reader answered, and how much of the month the
+                two of them settled between them. It replaces the reader strip
+                here - the strip's cache and latency detail is one tap away
+                inside "View exactly what both readers returned". */}
+            <div className="print-hide">
+              <EvidenceFlow
+                docs={DOCUMENTS.map((d) => ({ label: d.label, present: Boolean(files[d.role]) }))}
+                reading={false}
+                extract={extract}
+                answers={answers}
+                checked={breakdown !== null}
+                headingRef={establishRef}
+              />
+            </div>
             <EstablishStage
-              fields={extract.read_fields}
-              readers={extract.readers}
-              workerFields={extract.worker_fields}
-              cpfOnly={extract.cpf_only_fields}
-              agreed={extract.agreed_count}
-              total={extract.read_field_count}
+              extract={extract}
               answers={answers}
               restDay={restDayVerdict(extract, answers)}
               onAnswer={(name, value) => setAnswers((a) => ({ ...a, [name]: value }))}

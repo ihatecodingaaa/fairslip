@@ -185,6 +185,100 @@ export function PrintMasthead({ computedAt }: { computedAt: string | null }) {
 }
 
 /**
+ * Page one, and the only page, when nothing has been worked out yet.
+ *
+ * A worker can reach the print dialog at any moment, and before the engine has
+ * run the screen is a file picker, six unanswered questions and a table of
+ * transcriptions. Printed, that came to five pages whose first line said
+ * "Nothing has been worked out yet" - four and a half pages of empty form
+ * fields and repeated provider names, carried out of the building by someone who
+ * wanted the one page that says where they had got to.
+ *
+ * So the pre-result sheet is this instead: what was read, who read it, how much
+ * of the month that settled, what is still open by name, and the sentence that
+ * matters most on it. Every figure is counted from the same response the screen
+ * renders; there is no second copy of anything.
+ *
+ * THE POST-RESULT SHEET IS UNCHANGED. Once a breakdown exists the full evidence
+ * pack prints exactly as before - readings, comparison, worker answers, the
+ * arithmetic and its provenance - because that sheet IS the artefact and its
+ * contract is not what was wrong here.
+ */
+export function PrintPreResult({
+  documents,
+  readers,
+  total,
+  established,
+  unresolved,
+}: {
+  documents: { name: string }[];
+  readers: { provider: string; model: string; ok: boolean }[];
+  /** Read fields the response carried, and how many of them are settled. Counted
+   * by the caller with the one function the screen's own tally uses. */
+  total: number;
+  established: number;
+  /** The fields still waiting, by the label the worker sees. */
+  unresolved: { label: string }[];
+}) {
+  return (
+    <section className="print-only mb-4 border-b border-line-strong pb-3">
+      <h2 className="text-body font-semibold">Where this check has got to</h2>
+
+      <p className="mt-2 text-body font-semibold">No calculation has been performed yet.</p>
+      <p className="max-w-measure mt-1 text-meta">
+        This page records what was read and what is still open. It carries no figures for this
+        month, because none have been worked out. The rest of the screen at this point is a set
+        of questions waiting to be answered, and questions with no answers in them are not
+        evidence of anything.
+      </p>
+
+      <dl className="mt-3 grid gap-2">
+        <div>
+          <dt className="text-meta font-semibold uppercase tracking-wide">Evidence received</dt>
+          <dd className="text-meta">
+            {documents.length === 0
+              ? "None."
+              : documents.map((d) => d.name).join(", ")}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-meta font-semibold uppercase tracking-wide">Readers</dt>
+          <dd className="text-meta">
+            {readers.length === 0
+              ? "Not called."
+              : readers
+                  .map((r) => `${r.provider} (${r.model}) — ${r.ok ? "answered" : "did not answer"}`)
+                  .join("; ")}
+          </dd>
+        </div>
+        {/* TWO DIFFERENT POPULATIONS, SAID SEPARATELY. The first pair counts the
+            fields a reader was shown; the second counts everything the engine is
+            still waiting on, which also includes the questions no reader is ever
+            shown. Printed as one sentence they read as a contradiction - "6
+            read, 4 established, 5 still open" - because they were never counting
+            the same set. */}
+        <div>
+          <dt className="text-meta font-semibold uppercase tracking-wide">Read from the documents</dt>
+          <dd className="text-meta">
+            {total} fields, of which {established} are established.
+          </dd>
+        </div>
+        <div>
+          <dt className="text-meta font-semibold uppercase tracking-wide">
+            Still to be answered before anything can be worked out
+          </dt>
+          <dd className="text-meta">
+            {unresolved.length === 0
+              ? "Nothing. The engine has not been asked to run."
+              : `${unresolved.length}: ${unresolved.map((f) => f.label).join(", ")}.`}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+/**
  * "Save or print this."
  *
  * window.print() and nothing else: no second render, no server round trip, no

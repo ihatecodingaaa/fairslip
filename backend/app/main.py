@@ -152,6 +152,7 @@ from fairslip.extract_schema import (
     WORKER_PROMPTS,
     WORKER_PROMPTS_I18N,
     WORKER_WHY,
+    WORKER_WHY_SHORT,
     choices_for,
 )
 from fairslip.rules import (
@@ -329,6 +330,16 @@ def _to_pay_inputs(body: PayInputsIn) -> PayInputs:
 
 
 def _fact_value_out(v: object) -> object:
+    # NOTHING ESTABLISHED IS NOT THE STRING "None".
+    #
+    # A MISSING fact carries `value=None`, and the fall-through below used to
+    # str() it - so the wire said "None", a five-character string that any screen
+    # rendering a fact's value would print as though it were one. FactValue
+    # already admits null, which is the type expressing "unknown" rather than
+    # substituting a default that reads as a real value (.claude/rules/honesty.md).
+    # It surfaced the day a screen first rendered the value of an unsettled field.
+    if v is None:
+        return None
     if isinstance(v, (bool, int, str)):
         return v
     if isinstance(v, Decimal):
@@ -678,6 +689,7 @@ def _worker_fields_out() -> list[WorkerFieldOut]:
             prompt=WORKER_PROMPTS[name],
             prompt_i18n=WORKER_PROMPTS_I18N.get(name, {}),
             why=WORKER_WHY[name],
+            why_short=WORKER_WHY_SHORT[name],
             required_for=(["cpf"] if name in CPF_ONLY_FIELDS else ["pay"]),
             answer_type=ANSWER_TYPES[name],
             choices=(

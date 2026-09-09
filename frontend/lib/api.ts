@@ -227,6 +227,10 @@ export type WorkerField = {
   prompt_i18n: Record<string, string>;
   /** Why no reader was shown this field. Ships from the backend. */
   why: string;
+  /** The same boundary in one line, for the default view. `why` is the argument
+   * and stays one tap away; this is what the question carries beside it. Also
+   * from the backend, for the same reason `why` is. */
+  why_short: string;
   required_for: string[];
   answer_type: "decimal" | "choice" | "date";
   choices: Choice[];

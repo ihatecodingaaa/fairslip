@@ -9,6 +9,7 @@ outage is a reader outage, and neither is dressed as a reading.
 from __future__ import annotations
 
 import base64
+from decimal import Decimal
 
 import pytest
 
@@ -486,3 +487,21 @@ def test_cache_state_agrees_with_the_per_reader_flags(readers, tmp_path) -> None
     hits = sum(1 for r in out["readers"] if r["cache"] == "HIT")
     expected = "HIT" if hits == len(out["readers"]) else "MISS" if hits == 0 else "PARTIAL"
     assert out["cache_state"] == expected
+
+
+def test_an_unestablished_fact_carries_null_and_not_the_word_none() -> None:
+    """`value=None` means nothing was established. Serialised with str() it
+    became "None" - a five-character string a screen prints like a reading, in
+    the one place the product must not put a value that looks real.
+
+    FactValue admits null, so the type can say "unknown" without inventing a
+    stand-in. .claude/rules/honesty.md, third bullet.
+    """
+    from app.main import _fact_value_out
+
+    assert _fact_value_out(None) is None
+    # And the values that ARE established still cross the wire unchanged.
+    assert _fact_value_out("1200.00") == "1200.00"
+    assert _fact_value_out(True) is True
+    assert _fact_value_out(Decimal(8)) == "8"
+    assert _fact_value_out({"a": Decimal(8)}) == {"a": "8"}
