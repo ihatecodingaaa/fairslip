@@ -31,13 +31,15 @@ import type { Key } from "@/lib/i18n";
 import { usePrefs, useT } from "../../ui/Prefs";
 import { stamp } from "../../ui/PrintSheet";
 import { REASON_WORDS } from "../reasons";
-import type { ReportModel, ReportRow } from "./model";
+import type { ModuleId, ReportModel, ReportRow } from "./model";
 
 export function ReportPreview({ model }: { model: ReportModel }) {
   const t = useT();
   const { lang } = usePrefs();
   const label = (code: string) => t(REASON_WORDS[code] ?? ("employer.reasonUnknown" as Key));
-  const has = (id: string) => model.modules.includes(id as never);
+  // TYPED, so a mistyped module id fails the build rather than silently
+  // rendering nothing. `as never` compiled for any string.
+  const has = (id: ModuleId) => model.modules.includes(id);
 
   return (
     <article className="min-w-0 bg-surface px-5 py-6 text-ink sm:px-8 sm:py-8 print:px-0 print:py-0">
@@ -72,10 +74,16 @@ export function ReportPreview({ model }: { model: ReportModel }) {
         {/* THE CAREFUL SENTENCE. "matched the FairSlip rule engine" is what was
             established; "were paid correctly" is not, and would be a claim about
             employees rather than about rows against a scope. */}
+        {/* `coverage.matched` IS COUNTED BY THE ENGINE. This read
+            `checked - exceptions` in two renderers - here and in the Markdown -
+            which is a figure the browser derived, duplicated, inside the
+            artefact most likely to be forwarded without context. It was correct
+            for the three outcomes that exist today and would have gone silently
+            wrong on a fourth. */}
         <p className="max-w-measure mt-3 text-body text-ink-2">
-          {model.coverage.checked - model.coverage.exceptions} checked rows matched the FairSlip
-          rule engine. The {model.coverage.refused} rows that were not checked were not computed
-          at all, and are in no total below.
+          {model.coverage.matched} checked rows matched the FairSlip rule engine. The{" "}
+          {model.coverage.refused} rows that were not checked were not computed at all, and are
+          in no total below.
         </p>
       </Section>
 
@@ -241,10 +249,13 @@ export function ReportPreview({ model }: { model: ReportModel }) {
           <dl className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
             <Meta label="Schema version" value={model.schema_version} />
             <Meta label="Generated" value={model.generated_at} />
-            <Meta label="Source file" value={model.source.before_filename ?? "—"} />
+            <Meta label="First file" value={model.source.before_filename ?? "—"} />
             {model.source.after_filename && (
               <Meta label="Corrected file" value={model.source.after_filename} />
             )}
+            {/* Which of the two produced the rows above. It read "Source file:
+                the first file" while every row came from the corrected one. */}
+            <Meta label="Figures in this pack are from" value={model.source.figures_from ?? "—"} />
             <Meta label="Audience preset" value={model.audience} />
             <Meta label="Identity shown" value={PRIVACY_SENTENCE[model.privacy]} />
           </dl>

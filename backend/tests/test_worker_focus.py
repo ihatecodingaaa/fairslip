@@ -129,8 +129,12 @@ def test_the_sequence_answers_nothing_by_itself() -> None:
     calls = re.findall(r"onAnswer\((.*?)\)", src)
     assert calls, "focus mode never calls onAnswer; the scan is not reaching it"
     for call in calls:
-        assert "question.name" in call or "name" in call, (
-            f"onAnswer({call}) does not pass a field the worker was asked about"
+        # ONE CLAUSE, NOT TWO. This read `"question.name" in call or "name" in
+        # call`, and "name" is a substring of "question.name" - so the second
+        # clause subsumed the first and matched any identifier containing
+        # "name". The disjunction made the assertion unfalsifiable.
+        assert "question.name" in call, (
+            f"onAnswer({call}) does not pass the field the worker was asked about"
         )
 
 

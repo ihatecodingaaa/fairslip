@@ -282,12 +282,18 @@ def test_the_workbook_writes_values_and_never_a_formula() -> None:
 
 
 def test_the_workbook_leaves_an_uncomputed_cell_empty_rather_than_zero() -> None:
+    """A TAUTOLOGY REMOVED. This read `"return null" in num or "null" in num`,
+    and the slice starts at `function num(m: Money | null): number | null {` -
+    so the right-hand clause was true of any body at all, including one that
+    returned 0. The test was named for a defect it could not detect."""
     src = source(EXPORTS)
     num = _declaration(src, "function num(")
-    assert "return null" in num or "null" in num, (
+    body = num[num.index("{") :]
+    assert "return null" in body, (
         "num() does not return null for a missing amount, so a refused row's cell "
         "becomes 0 and sums, averages and charts as a row that came out level"
     )
+    assert "return 0" not in body, "num() returns a zero for a missing amount"
 
 
 def test_the_excel_dependency_is_imported_only_when_a_workbook_is_asked_for() -> None:
@@ -406,3 +412,55 @@ def _preset(name: str) -> str:
     body = rest if not ends else rest[: min(ends)]
     assert body.count("\n") > 2, f"the {name} preset sliced to nothing"
     return body
+
+
+# ------------------------------------ the pack does not do its own arithmetic
+
+
+def test_no_renderer_derives_a_coverage_figure_from_two_other_counts() -> None:
+    """`checked - exceptions` reached BOTH the print sheet and the Markdown.
+
+    It was correct for the three outcomes that exist, duplicated rather than
+    shared, and sat under two module headers promising nothing is computed
+    there. The engine now ships `matched`. This is the guard that was missing:
+    the previous one only forbade `reduce(` over money, so a single-line
+    subtraction of two counts walked straight past it.
+    """
+    for path, src in report_sources().items():
+        for i, line in enumerate(src.splitlines(), start=1):
+            # THE OPTIONAL `model.` PREFIX IS THE WHOLE POINT. Without it this
+            # pattern did not match `model.coverage.checked -
+            # model.coverage.exceptions`, which is the exact line the test was
+            # written for - a guard that would have let its own defect through.
+            for a, b in re.findall(
+                r"((?:\w+\.)?(?:coverage|totals|counts)\.\w+)\s*[-+]\s*"
+                r"((?:\w+\.)?(?:coverage|totals|counts)\.\w+)",
+                line,
+            ):
+                raise AssertionError(
+                    f"{path.name}:{i} derives a figure from {a} and {b}. The engine "
+                    f"ships the count it needs; a renderer that computes one is a "
+                    f"second source of truth inside an exported document."
+                )
+
+
+def test_the_matched_count_comes_from_the_engine() -> None:
+    src = source(MODEL)
+    assert "matched: result.matched" in src, (
+        "the report model does not carry the engine's own matched count"
+    )
+    preview = source(PREVIEW)
+    assert "model.coverage.matched" in preview, "the pack does not render the engine's count"
+
+
+def test_the_pack_names_which_file_its_figures_came_from() -> None:
+    """With a comparison open the pack IS the corrected run - its coverage, its
+    rows, its totals - and the header used to name the first file. A reader of
+    the JSON attributed those rows to a file that produced none of them."""
+    src = source(MODEL)
+    assert "figures_from" in src, "the model does not record which run it was built from"
+    assert "figures_from: comparison ? afterFilename : beforeFilename" in src, (
+        "figures_from does not follow the run the pack was actually built from"
+    )
+    for path in (PREVIEW, EXPORTS):
+        assert "figures_from" in source(path), f"{path.name} does not say which file"

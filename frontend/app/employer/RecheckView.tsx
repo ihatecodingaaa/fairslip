@@ -36,13 +36,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   money,
+  type EmployerFinding,
   type EmployerRecheckOut,
   type RecheckRow,
   type RecheckState,
 } from "@/lib/api";
 import type { Key } from "@/lib/i18n";
 import { T, useT } from "../ui/Prefs";
-import { OutcomeMark, outcomeWord } from "./outcomeMark";
+import { OutcomeMark, outcomeWord, type MarkKind } from "./outcomeMark";
 import { REASON_WORDS } from "./reasons";
 
 /**
@@ -277,27 +278,69 @@ function Pair({ labelKey, value }: { labelKey: Key; value: number }) {
 }
 
 /**
- * Every state, with the transition drawn.
+ * What each state ACTUALLY FIXES about the two outcomes - and where it fixes
+ * nothing.
  *
- * `▲ → ●` is the whole finding in two glyphs, and the pair is built from the
- * outcomes the state IMPLIES rather than from a lookup written twice - so a
- * state and its picture cannot drift apart.
+ * SEVEN OF THE TEN SETTLE BOTH SIDES. RESOLVED is EXCEPTION then OK by
+ * definition; there is no other way to be RESOLVED. Those pairs are safe to
+ * draw from the state alone.
+ *
+ * THREE OF THEM SETTLE ONLY ONE SIDE, and the first version of this table
+ * invented the other. A row that LEFT the payroll may have matched or may have
+ * been an exception; so may a new joiner; so may a row that stopped being
+ * checkable. All three were drawn with a filled disc - the "matched" glyph - so
+ * the summary asserted about those rows exactly what fairslip/employer.py's own
+ * docstring says must not be said of them: that the difference recorded against
+ * a departed employee is "unaccounted for, not fixed".
+ *
+ * It was true of the fictional roster, which draws its leaver from the rows that
+ * matched, and false the first time a real payroll drops an employee who had a
+ * difference against them. `null` here means the state fixes nothing on that
+ * side, and `transitionFor` then asks the rows.
  */
-const TRANSITION: Record<
-  RecheckState,
-  [("OK" | "EXCEPTION" | "REFUSED") | null, ("OK" | "EXCEPTION" | "REFUSED") | null]
-> = {
+const IMPLIED: Record<RecheckState, [MarkKind | null, MarkKind | null]> = {
   STILL_MATCHED: ["OK", "OK"],
   RESOLVED: ["EXCEPTION", "OK"],
   STILL_EXCEPTION: ["EXCEPTION", "EXCEPTION"],
   NEW_EXCEPTION: ["OK", "EXCEPTION"],
-  NEWLY_REFUSED: ["OK", "REFUSED"],
+  // Was OK or EXCEPTION before - the state does not say which.
+  NEWLY_REFUSED: [null, "REFUSED"],
   STILL_REFUSED: ["REFUSED", "REFUSED"],
   NEWLY_CHECKED_MATCHED: ["REFUSED", "OK"],
   NEWLY_CHECKED_EXCEPTION: ["REFUSED", "EXCEPTION"],
-  REMOVED: ["OK", null],
-  ADDED: [null, "OK"],
+  // Any outcome before; genuinely absent after.
+  REMOVED: [null, "ABSENT"],
+  // Genuinely absent before; any outcome after.
+  ADDED: ["ABSENT", null],
 };
+
+/**
+ * The pair to draw beside a state's count.
+ *
+ * Where the state fixes a side, that is what is drawn. Where it does not, the
+ * ROWS are asked: if every row in the group agrees, their shared outcome is
+ * drawn - which is a fact about those rows, not a guess - and if they disagree,
+ * or there are none, the VARIES mark says so instead of picking one.
+ */
+function transitionFor(rows: RecheckRow[], state: RecheckState): [MarkKind, MarkKind] {
+  const implied = IMPLIED[state];
+  const inState = rows.filter((r) => r.state === state);
+  return [
+    sideFor(implied[0], inState.map((r) => r.before_outcome)),
+    sideFor(implied[1], inState.map((r) => r.after_outcome)),
+  ];
+}
+
+function sideFor(
+  implied: MarkKind | null,
+  seen: (EmployerFinding["outcome"] | null)[],
+): MarkKind {
+  if (implied) return implied;
+  const distinct = new Set<MarkKind>(seen.map((o) => o ?? "ABSENT"));
+  // One value means every row in the group agrees, so drawing it states a fact
+  // about all of them. Zero means an empty group and nothing to state.
+  return distinct.size === 1 ? [...distinct][0] : "VARIES";
+}
 
 function TransitionList({
   result,
@@ -313,7 +356,7 @@ function TransitionList({
     <ul aria-label={t("recheck.heading")} className="grid gap-1 sm:grid-cols-2">
       {ORDER.map((state) => {
         const n = result.counts[state] ?? 0;
-        const [before, after] = TRANSITION[state];
+        const [before, after] = transitionFor(result.rows, state);
         const on = active === state;
         return (
           <li key={state}>
@@ -415,7 +458,7 @@ function RowGrids({
                     className={`mark-in rounded-full ${
                       isSel ? "outline outline-2 outline-offset-2 outline-ink" : ""
                     }`}
-                    style={{ animationDelay: `${Math.min(i * 1.2, 360)}ms` }}
+                    style={{ ["--mark-delay" as string]: `${Math.min(i * 1.2, 360)}ms` } as React.CSSProperties}
                   >
                     <OutcomeMark outcome={outcome} dim={dim} />
                   </button>
@@ -447,10 +490,12 @@ function StateRows({
   const shown = rows.filter((r) =>
     filterState !== null ? r.state === filterState : NOTABLE.has(r.state),
   );
+  const [limit, setLimit] = useState(60);
   if (shown.length === 0) return null;
   return (
+    <>
     <ul className="mt-8 divide-y divide-line border-t border-line-strong">
-      {shown.slice(0, 60).map((r) => (
+      {shown.slice(0, limit).map((r) => (
         <li key={r.employee_account_no}>
           <button
             type="button"
@@ -490,6 +535,20 @@ function StateRows({
         </li>
       ))}
     </ul>
+    {/* SAID, NOT SILENT. Selecting "matched in both runs" showed 60 of 280 with
+        nothing on the screen admitting it - the same truncation the X-ray's own
+        row list already declares. A list that quietly stops is a list a reader
+        believes they have finished. */}
+    {shown.length > limit && (
+      <button
+        type="button"
+        onClick={() => setLimit((n) => n + 100)}
+        className="tap-sm mt-3 rounded-sm border border-control bg-surface px-4 py-2 text-meta font-semibold text-ink hover:border-ink"
+      >
+        <T k="employer.showMore" vars={{ n: shown.length - limit }} />
+      </button>
+    )}
+    </>
   );
 }
 

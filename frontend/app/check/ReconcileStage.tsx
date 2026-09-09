@@ -69,11 +69,17 @@ export function ReconcileStage({
   /** An answer has been edited since these figures were worked out, so what is
    * on screen below no longer matches what produced them. */
   stale?: boolean;
-  /** Which of this component's two halves the SCREEN is showing. Both are
-   * always in the DOM - the printed sheet is this markup narrowed, and it
-   * carries the arithmetic whether or not anyone opened that tab. See
+  /** Which of this component's two halves the SCREEN is showing, or neither.
+   *
+   * NEITHER IS A REAL STATE. This was `"summary" | "trail"`, so selecting the
+   * evidence or the follow-through tab still left the summary panel displayed -
+   * two `role="tabpanel"` regions visible at once, while the summary tab
+   * carried `aria-selected={false}`. The tablist stopped describing the screen.
+   *
+   * Both halves stay in the DOM either way: the printed sheet is this markup
+   * narrowed and carries them whether or not anyone opened the tab. See
    * check/ResultLenses.tsx. */
-  lens: "summary" | "trail";
+  lens: "summary" | "trail" | "neither";
   /** Tracing a figure is a move to the money trail, and the page owns which
    * lens is on screen - so the button asks rather than reaching for it. */
   onTrace: () => void;
@@ -367,6 +373,28 @@ export function ReconcileStage({
             </ul>
           </div>
 
+        </div>
+      </section>
+
+      {/* ------------------------------------------------- flags and refusals */}
+      {/* DELIBERATELY OUTSIDE `pack-detail`, and this is the reason the class
+          exists on a section rather than on the whole result.
+
+          These are FINDINGS AND REFUSALS, not arithmetic. One of them is the
+          engine's own `NOT_COVERED_BY_PART4: OT and rest-day rules may not
+          apply` - so a one-page sheet that dropped them would put a difference
+          in a worker's hand with the sentence that qualifies it removed, and
+          nothing on the paper to say a qualification had been removed. That is
+          the exact class ScreenOnly and PRINT_OMITTED exist to prevent, and a
+          single hand-written omission note is not a substitute for it.
+
+          The waterfall and the component list above ARE arithmetic and stay in
+          the short sheet's omissions, where the note names them. */}
+      <section aria-labelledby="findings-heading" className="mt-10">
+        <h2 id="findings-heading" className="sr-only">
+          <T k="result.flags" />
+        </h2>
+        <div className="rounded-lg border border-line-strong bg-surface shadow-card">
           {breakdown.flags.length > 0 && (
             <div className="border-b border-line px-5 py-4">
               <h3 className="text-body font-semibold uppercase tracking-wide text-ink-3">

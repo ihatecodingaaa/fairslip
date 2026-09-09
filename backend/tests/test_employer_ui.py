@@ -218,6 +218,54 @@ def test_the_reason_bars_render_the_engines_own_total() -> None:
     )
 
 
+def test_no_surface_derives_a_figure_from_two_backend_fields() -> None:
+    """The other half of the rule, and the half that was missing.
+
+    `test_nothing_sums_money_across_reasons_or_rows` below forbids `reduce(`
+    over rows. It says nothing about a single-line `a - b` on two fields the
+    backend already sent - which is how `coverage.checked - coverage.exceptions`
+    reached two renderers of the review pack. A count is not money, but it is
+    still a figure this side did not establish.
+    """
+    pattern = re.compile(
+        r"(?:result|model|summary|coverage|totals|counts)\.\w+(?:\.\w+)?\s*[-+]\s*"
+        r"(?:result|model|summary|coverage|totals|counts)\.\w+"
+    )
+    for path, src in employer_sources().items():
+        for i, line in enumerate(src.splitlines(), start=1):
+            hit = pattern.search(line)
+            assert not hit, (
+                f"{path.name}:{i} derives a figure from two backend fields: "
+                f"{hit.group(0)!r}. Ask the engine for it."
+            )
+
+
+def test_the_transition_summary_invents_no_outcome() -> None:
+    """THREE OF THE TEN STATES DO NOT FIX BOTH OUTCOMES.
+
+    A row that left the payroll may have matched or may have been an exception;
+    so may a joiner; so may a row that stopped being checkable. The first
+    version of this table hardcoded "OK" for all three and drew the filled disc -
+    the "checked, and it agreed" glyph - over rows the engine never said that of.
+    It was true only because the fictional roster draws its leaver from matched
+    rows.
+    """
+    src = source(RECHECK)
+    implied = re.search(r"const IMPLIED: Record<RecheckState.*?\n\};", src, re.DOTALL)
+    assert implied, "the implied-outcome table was not found"
+    for state in ("NEWLY_REFUSED", "REMOVED", "ADDED"):
+        entry = re.search(rf"{state}: \[(.*?)\]", implied.group(0))
+        assert entry, f"{state} is missing from the implied table"
+        assert "null" in entry.group(1), (
+            f"{state} claims both outcomes, but the state does not fix both - "
+            f"{entry.group(1)!r}"
+        )
+    assert "function transitionFor(" in src, (
+        "the summary no longer derives its pair from the rows"
+    )
+    assert '"VARIES"' in src, "there is no mark for a group whose rows disagree"
+
+
 def test_nothing_sums_money_across_reasons_or_rows() -> None:
     """The headline, the bridge and the per-reason totals are all engine fields.
 

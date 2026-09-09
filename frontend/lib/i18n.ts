@@ -333,7 +333,7 @@ const en = {
   /* One question at a time. Nothing here promises the sequence will answer
      anything for the worker, because it does not - see check/FocusMode.tsx. */
   "focus.counter": "Question {i} of {n}",
-  "focus.settledSoFar": "{n} of {t} facts settled so far.",
+  "focus.settledSoFar": "{n} of {t} facts from your documents are settled so far.",
   "focus.remaining": "{n} still to answer. Nothing is filled in for you.",
   "focus.viewAll": "View all questions",
   "focus.oneAtATime": "One question at a time",
@@ -356,7 +356,7 @@ const en = {
   "pack.lede": "Everything on this page, on paper: the figure, what it was worked out from, and what could not be established.",
   "pack.howMuch": "How much to include",
   "pack.simple": "One page",
-  "pack.simpleWhat": "The figure, what the published rules give, what reached your bank, and what nobody could establish.",
+  "pack.simpleWhat": "The figure, what the published rules give, what reached your bank, and every flag the engine raised.",
   "pack.detailed": "Everything",
   "pack.detailedWhat": "The one page, plus every reading, every answer you gave, and every formula with its sources.",
   "pack.print": "Print / Save as PDF",
@@ -367,7 +367,7 @@ const en = {
   "pack.notLegal": "It is not legal advice, and not a determination by MOM, TADM or CPF Board.",
   "pack.whatItIs": "It is your evidence, organised - so the person you show it to can see where each figure came from.",
   "pack.simpleOmitTitle": "Not on this sheet:",
-  "pack.simpleOmit": "the two readers' full transcriptions, the line-by-line arithmetic, and what happens next. Print the full pack to include them.",
+  "pack.simpleOmit": "the two readers' full transcriptions, the answers you gave, the line-by-line arithmetic, and what happens next. The engine's flags and what it could not work out are on this sheet. Print the full pack to include the rest.",
 
   /* The state machine and the mandate ladder. Node names are the machine's own
      enum values and are never translated - they are its vocabulary. */
@@ -806,7 +806,7 @@ const zh: Partial<Record<Key, string>> = {
   "report.exportFailed": "文件未能写入。",
   /* ------------------------------------------------------------- focus mode */
   "focus.counter": "第 {i} 题，共 {n} 题",
-  "focus.settledSoFar": "已确定 {t} 项事实中的 {n} 项。",
+  "focus.settledSoFar": "文件中的 {t} 项事实已确定 {n} 项。",
   "focus.remaining": "还有 {n} 项待回答。系统不会替您填写。",
   "focus.viewAll": "查看全部问题",
   "focus.oneAtATime": "逐题作答",
@@ -826,7 +826,7 @@ const zh: Partial<Record<Key, string>> = {
   "pack.lede": "本页的全部内容，印在纸上：金额、依据，以及无法确定的部分。",
   "pack.howMuch": "包含多少内容",
   "pack.simple": "一页",
-  "pack.simpleWhat": "金额、公布规则应给的数额、实际到账的数额，以及无人能确定的事项。",
+  "pack.simpleWhat": "金额、公布规则应给的数额、实际到账的数额，以及引擎提出的每一项标记。",
   "pack.detailed": "全部",
   "pack.detailedWhat": "上述一页，加上两位读取器的全部读数、您给出的每个答案，以及每条公式及其来源。",
   "pack.print": "打印／另存为 PDF",
@@ -837,7 +837,7 @@ const zh: Partial<Record<Key, string>> = {
   "pack.notLegal": "这不是法律意见，也不是人力部、TADM 或公积金局的裁定。",
   "pack.whatItIs": "这是把您的证据整理好——让您出示的对象能看清每个数字的来源。",
   "pack.simpleOmitTitle": "本页未包含：",
-  "pack.simpleOmit": "两位读取器的完整读数、逐行的计算过程，以及后续步骤。若需包含，请打印完整版本。",
+  "pack.simpleOmit": "两位读取器的完整读数、您给出的答案、逐行的计算过程，以及后续步骤。引擎的标记与其无法算出的部分仍印在本页。其余内容请打印完整版本。",
 
   "machine.heading": "代理接下来可以做什么，不可以做什么",
   "machine.verdicts": "核查的判定",
@@ -1267,7 +1267,7 @@ const bn: Partial<Record<Key, string>> = {
   "report.exportFailed": "ফাইলটি লেখা হয়নি।",
   /* ------------------------------------------------------------- focus mode */
   "focus.counter": "প্রশ্ন {i} / {n}",
-  "focus.settledSoFar": "{t}টির মধ্যে {n}টি তথ্য এ পর্যন্ত নিশ্চিত হয়েছে।",
+  "focus.settledSoFar": "আপনার নথির {t}টি তথ্যের মধ্যে {n}টি এ পর্যন্ত নিশ্চিত হয়েছে।",
   "focus.remaining": "আরও {n}টি বাকি। আপনার হয়ে কিছুই পূরণ করা হয় না।",
   "focus.viewAll": "সব প্রশ্ন দেখুন",
   "focus.oneAtATime": "একবারে একটি প্রশ্ন",
@@ -1287,7 +1287,7 @@ const bn: Partial<Record<Key, string>> = {
   "pack.lede": "এই পাতার সবকিছু কাগজে: অঙ্কটি, কী থেকে তা এল, এবং কী নিশ্চিত করা যায়নি।",
   "pack.howMuch": "কতটা রাখবেন",
   "pack.simple": "এক পাতা",
-  "pack.simpleWhat": "অঙ্কটি, প্রকাশিত নিয়ম যা দেয়, আপনার ব্যাঙ্কে যা পৌঁছেছে, এবং যা কেউ নিশ্চিত করতে পারেনি।",
+  "pack.simpleWhat": "অঙ্কটি, প্রকাশিত নিয়ম যা দেয়, আপনার ব্যাঙ্কে যা পৌঁছেছে, এবং ইঞ্জিন যে সব চিহ্ন তুলেছে।",
   "pack.detailed": "সবকিছু",
   "pack.detailedWhat": "ওই এক পাতা, সঙ্গে দুই রিডারের প্রতিটি পাঠ, আপনার দেওয়া প্রতিটি উত্তর, এবং উৎসসহ প্রতিটি সূত্র।",
   "pack.print": "প্রিন্ট / PDF হিসেবে সংরক্ষণ",
@@ -1298,7 +1298,7 @@ const bn: Partial<Record<Key, string>> = {
   "pack.notLegal": "এটি আইনি পরামর্শ নয়, এবং MOM, TADM বা CPF Board-এর সিদ্ধান্তও নয়।",
   "pack.whatItIs": "এটি আপনার প্রমাণ, গুছিয়ে রাখা - যাতে যাঁকে দেখাবেন তিনি প্রতিটি অঙ্কের উৎস দেখতে পান।",
   "pack.simpleOmitTitle": "এই পাতায় নেই:",
-  "pack.simpleOmit": "দুই রিডারের পূর্ণ প্রতিলিপি, ধাপে ধাপে হিসাব, এবং এরপর কী। সেগুলি চাইলে পূর্ণ প্যাকটি প্রিন্ট করুন।",
+  "pack.simpleOmit": "দুই রিডারের পূর্ণ প্রতিলিপি, আপনার দেওয়া উত্তর, ধাপে ধাপে হিসাব, এবং এরপর কী। ইঞ্জিনের চিহ্ন ও যা সে বের করতে পারেনি তা এই পাতাতেই আছে। বাকিগুলির জন্য পূর্ণ প্যাকটি প্রিন্ট করুন।",
 
   "machine.heading": "এজেন্ট এরপর কী করতে পারে, আর কী পারে না",
   "machine.verdicts": "যাচাইয়ের রায়",
@@ -1725,7 +1725,7 @@ const ta: Partial<Record<Key, string>> = {
   "report.exportFailed": "கோப்பு எழுதப்படவில்லை.",
   /* ------------------------------------------------------------- focus mode */
   "focus.counter": "கேள்வி {i} / {n}",
-  "focus.settledSoFar": "{t}-இல் {n} உண்மைகள் இதுவரை உறுதி ஆகியுள்ளன.",
+  "focus.settledSoFar": "உங்கள் ஆவணங்களின் {t} உண்மைகளில் {n} இதுவரை உறுதி ஆகியுள்ளன.",
   "focus.remaining": "இன்னும் {n} பதிலளிக்க வேண்டும். உங்களுக்காக எதுவும் நிரப்பப்படுவதில்லை.",
   "focus.viewAll": "எல்லாக் கேள்விகளையும் பார்",
   "focus.oneAtATime": "ஒரு நேரத்தில் ஒரு கேள்வி",
@@ -1745,7 +1745,7 @@ const ta: Partial<Record<Key, string>> = {
   "pack.lede": "இந்தப் பக்கத்தில் உள்ள அனைத்தும் காகிதத்தில்: தொகை, அது எதிலிருந்து வந்தது, எது உறுதி செய்யப்படவில்லை.",
   "pack.howMuch": "எவ்வளவு சேர்ப்பது",
   "pack.simple": "ஒரு பக்கம்",
-  "pack.simpleWhat": "தொகை, வெளியிடப்பட்ட விதிகள் தருவது, உங்கள் வங்கிக்கு வந்தது, யாராலும் உறுதி செய்ய முடியாதவை.",
+  "pack.simpleWhat": "தொகை, வெளியிடப்பட்ட விதிகள் தருவது, உங்கள் வங்கிக்கு வந்தது, மற்றும் இயந்திரம் எழுப்பிய ஒவ்வொரு கொடியும்.",
   "pack.detailed": "அனைத்தும்",
   "pack.detailedWhat": "அந்த ஒரு பக்கம், மேலும் இரு வாசிப்பாளர்களின் ஒவ்வொரு வாசிப்பு, நீங்கள் அளித்த ஒவ்வொரு பதில், ஆதாரங்களுடன் ஒவ்வொரு வாய்ப்பாடு.",
   "pack.print": "அச்சிடு / PDF ஆகச் சேமி",
@@ -1756,7 +1756,7 @@ const ta: Partial<Record<Key, string>> = {
   "pack.notLegal": "இது சட்ட ஆலோசனை அல்ல; MOM, TADM அல்லது CPF Board-இன் தீர்ப்பும் அல்ல.",
   "pack.whatItIs": "இது உங்கள் சான்று, ஒழுங்குபடுத்தப்பட்டது - நீங்கள் காட்டுபவர் ஒவ்வொரு தொகையின் மூலத்தையும் காண.",
   "pack.simpleOmitTitle": "இந்தத் தாளில் இல்லை:",
-  "pack.simpleOmit": "இரு வாசிப்பாளர்களின் முழு எழுத்துப்பெயர்ப்பு, வரிவாரியான கணக்கு, அடுத்து என்ன. அவை வேண்டுமெனில் முழுத் தொகுப்பை அச்சிடுங்கள்.",
+  "pack.simpleOmit": "இரு வாசிப்பாளர்களின் முழு எழுத்துப்பெயர்ப்பு, நீங்கள் அளித்த பதில்கள், வரிவாரியான கணக்கு, அடுத்து என்ன. இயந்திரத்தின் கொடிகளும் அது கணக்கிட முடியாதவையும் இந்தத் தாளிலேயே உள்ளன. மற்றவற்றுக்கு முழுத் தொகுப்பை அச்சிடுங்கள்.",
 
   "machine.heading": "முகவர் அடுத்து என்ன செய்யலாம், என்ன செய்ய முடியாது",
   "machine.verdicts": "சரிபார்ப்பின் தீர்ப்புகள்",

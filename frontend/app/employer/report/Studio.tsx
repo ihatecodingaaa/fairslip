@@ -33,7 +33,7 @@ import type {
 import type { Key } from "@/lib/i18n";
 import { T, useT } from "../../ui/Prefs";
 import { REASON_WORDS } from "../reasons";
-import { downloadBlob, downloadText } from "../svgExport";
+import { downloadBlob, downloadText } from "../../ui/download";
 import {
   csvRowCount,
   toCsv,

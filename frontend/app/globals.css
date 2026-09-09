@@ -408,6 +408,34 @@ input[type="date"]::-webkit-calendar-picker-indicator:focus-visible {
     transition-delay: revert !important;
     scroll-behavior: revert !important;
   }
+
+  /*
+   * THE REVEAL ONLY EXISTS WHERE MOTION IS WELCOME, AND IT HAS TO SHOUT TO BE
+   * HEARD. It was written as a plain `@utility` and it never ran once.
+   *
+   * The reset above is `* { animation-duration: 0.01ms !important }`, and the
+   * no-preference block "restores" it with `revert !important`. `revert` in the
+   * AUTHOR origin rolls a property back to the USER-AGENT value - which for
+   * `animation-duration` is 0s - so it discarded the utility's own declaration
+   * rather than reinstating it. Measured in the browser: every mark computed to
+   * `animation-duration: 0s` and `animation-delay: 0s` on a machine that welcomes
+   * motion, with the inline per-mark delay present in the style attribute and
+   * defeated. The staggered reveal was dead code that looked alive.
+   *
+   * So the animation is declared HERE, inside the no-preference block, on a class
+   * selector with `!important`: same origin, same importance as the `*` reset, and
+   * specificity (0,1,0) beats (0,0,0). Outside this block `.mark-in` sets nothing
+   * at all, which is exactly right - a mark that is simply there.
+   *
+   * THE DELAY TRAVELS AS A CUSTOM PROPERTY. An inline `style` cannot carry
+   * `!important`, so a per-mark `animationDelay` would lose to the reset every
+   * time. Custom properties are not touched by it, so the component sets
+   * `--mark-delay` and this rule spends it.
+   */
+  .mark-in {
+    animation: fairslip-mark-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both !important;
+    animation-delay: var(--mark-delay, 0ms) !important;
+  }
 }
 
 /*
@@ -432,10 +460,6 @@ input[type="date"]::-webkit-calendar-picker-indicator:focus-visible {
     opacity: 1;
     transform: none;
   }
-}
-
-@utility mark-in {
-  animation: fairslip-mark-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 /*

@@ -783,17 +783,84 @@ def test_every_timing_property_is_in_both_motion_blocks(prop: str) -> None:
     )
 
 
-def test_the_payroll_reveal_holds_its_end_state() -> None:
-    """`fill-mode: both`, so a collapsed duration lands the mark at `to` - which
-    is what makes "renders instantly" true rather than "renders invisible"."""
+def _mark_in_rule() -> str:
+    """The one rule that animates a payroll mark, wherever it is declared."""
     css = CSS.read_text(encoding="utf-8")
-    utility = re.search(r"@utility mark-in \{(.*?)\}", css, re.DOTALL)
-    assert utility, "the mark-in utility was not found"
-    assert "fairslip-mark-in" in utility.group(1)
-    assert "both" in utility.group(1), (
+    rule = re.search(r"\n  \.mark-in \{(.*?)\n  \}", css, re.DOTALL)
+    assert rule, ".mark-in is not declared anywhere in globals.css"
+    return rule.group(1)
+
+
+def test_the_reveal_is_declared_only_where_motion_is_welcome() -> None:
+    """IT HAS TO BE INSIDE THE no-preference BLOCK, and it has to be the ONLY
+    place `.mark-in` says anything.
+
+    Outside that block the class must set nothing at all, so a machine that asked
+    for reduced motion - or a browser too old to be asked - gets a mark that is
+    simply there. Declaring it globally and relying on the `*` reset to cancel it
+    is what failed before: the reset uses `!important`, which no un-important
+    declaration and no inline style can outrank.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    occurrences = [m.start() for m in re.finditer(r"\.mark-in\s*\{", css)]
+    assert len(occurrences) == 1, (
+        f".mark-in is declared {len(occurrences)} times; there must be exactly one, "
+        f"inside the no-preference block"
+    )
+    block = re.search(
+        r"@media \(prefers-reduced-motion: no-preference\) \{(.*?)\n\}\n",
+        css,
+        re.DOTALL,
+    )
+    assert block, "the no-preference block was not found"
+    assert ".mark-in" in block.group(1), (
+        "the reveal is declared outside the no-preference block, so it runs on a "
+        "machine that asked not to see motion"
+    )
+    assert "@utility mark-in" not in css, (
+        "the reveal is back as a plain utility, which the `*` reset cancels - it "
+        "computed to `animation-duration: 0s` on every machine and the staggered "
+        "reveal was dead code that looked alive"
+    )
+
+
+def test_the_reveal_outranks_the_global_reset() -> None:
+    """The reset is `* { ... !important }`. An exception to it must be `!important`
+    too, on a selector with higher specificity, or it never applies."""
+    rule = _mark_in_rule()
+    assert "!important" in rule, (
+        "the reveal is not !important, so the `*` reset cancels it - measured in "
+        "the browser as animation-duration: 0s on every mark"
+    )
+    assert "fairslip-mark-in" in rule
+
+
+def test_the_per_mark_delay_travels_as_a_custom_property() -> None:
+    """An inline `style` cannot carry `!important`, so a per-mark
+    `animationDelay` loses to the reset every time. Custom properties are not
+    touched by it."""
+    rule = _mark_in_rule()
+    assert "var(--mark-delay" in rule, (
+        "the reveal does not read a custom property for its delay"
+    )
+    for name in ("PayrollConstellation.tsx", "RecheckView.tsx"):
+        src = (REPO / "frontend" / "app" / "employer" / name).read_text(encoding="utf-8")
+        assert "--mark-delay" in src, f"{name} does not set the delay custom property"
+        assert "animationDelay:" not in src, (
+            f"{name} sets animationDelay inline again, which the `*` reset outranks"
+        )
+
+
+def test_the_payroll_reveal_holds_its_end_state() -> None:
+    """`fill-mode: both`, so a mark is invisible during its own delay and stays
+    put afterwards - and so a machine with reduced motion, where the rule never
+    applies at all, simply shows the mark."""
+    rule = _mark_in_rule()
+    assert "both" in rule, (
         "the reveal does not use fill-mode: both, so a mark is unstyled before "
         "its delay and after its duration"
     )
+    css = CSS.read_text(encoding="utf-8")
     frames = re.search(r"@keyframes fairslip-mark-in \{(.*?)\n\}", css, re.DOTALL)
     assert frames, "the reveal keyframes were not found"
     assert "opacity: 1" in frames.group(1), "the reveal does not end fully visible"

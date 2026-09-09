@@ -18,7 +18,6 @@
  */
 
 import { money, type Money } from "@/lib/api";
-import { REASON_WORDS } from "../reasons";
 import type { ReportModel, ReportRow } from "./model";
 
 /* -------------------------------------------------------------------- CSV */
@@ -119,8 +118,13 @@ export function toMarkdown(model: ReportModel, labelFor: (code: string) => strin
 
   h(1, model.title);
   p(`Generated ${model.generated_at}.`);
-  if (model.source.before_filename) p(`Source file: \`${model.source.before_filename}\``);
+  if (model.source.before_filename) p(`First file: \`${model.source.before_filename}\``);
   if (model.source.after_filename) p(`Corrected file: \`${model.source.after_filename}\``);
+  // WHICH OF THE TWO PRODUCED THE ROWS BELOW. With a comparison open, every
+  // figure in this pack is the corrected file's, and the header used to name
+  // the first one.
+  if (model.source.figures_from)
+    p(`Figures in this pack are from: \`${model.source.figures_from}\``);
 
   // COVERAGE FIRST AND ALWAYS. Every figure below is a claim about the checked
   // rows, and this is the sentence that says which ones those are.
@@ -130,7 +134,7 @@ export function toMarkdown(model: ReportModel, labelFor: (code: string) => strin
       `${model.coverage.exceptions} exceptions · ${model.coverage.refused} not checked.`,
   );
   p(
-    `${model.coverage.checked - model.coverage.exceptions} checked rows matched the FairSlip rule engine. ` +
+    `${model.coverage.matched} checked rows matched the FairSlip rule engine. ` +
       `The ${model.coverage.refused} rows that were not checked were not computed at all, and are in no total below.`,
   );
 
@@ -284,6 +288,7 @@ export async function toWorkbook(
     [text("Coverage", { fontWeight: "bold" })],
     [text("Rows read", LABEL), number(model.coverage.rows_read)],
     [text("Checked", LABEL), number(model.coverage.checked)],
+    [text("Matched", LABEL), number(model.coverage.matched)],
     [text("Exceptions", LABEL), number(model.coverage.exceptions)],
     [text("Not checked", LABEL), number(model.coverage.refused)],
     [
@@ -477,8 +482,12 @@ export async function toWorkbook(
       data: [
         [text("Schema version", LABEL), text(model.schema_version)],
         [text("Generated", LABEL), text(model.generated_at)],
-        [text("Source file", LABEL), text(model.source.before_filename ?? "")],
+        [text("First file", LABEL), text(model.source.before_filename ?? "")],
         [text("Corrected file", LABEL), text(model.source.after_filename ?? "")],
+        [
+          text("Figures in this pack are from", LABEL),
+          text(model.source.figures_from ?? ""),
+        ],
         [text("Audience preset", LABEL), text(model.audience)],
         [text("Identity shown", LABEL), text(model.privacy)],
       ],
@@ -489,10 +498,3 @@ export async function toWorkbook(
 
   return writeXlsxFile(sheets).toBlob();
 }
-
-/** The plain-words label for an engine reason code, given a translator.
- *
- * Passed in rather than imported so the renderers stay pure and a test can hand
- * them a known map. REASON_WORDS is re-exported here so the caller does not have
- * to reach past this module for it. */
-export { REASON_WORDS };

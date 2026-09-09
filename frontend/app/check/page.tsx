@@ -295,7 +295,9 @@ export default function CheckPage() {
             documents={documents}
             headingRef={resultRef}
             stale={edited}
-            lens={lens === "trail" ? "trail" : "summary"}
+            lens={
+              lens === "trail" ? "trail" : lens === "summary" ? "summary" : "neither"
+            }
             onTrace={() => setLens("trail")}
           />
         </section>

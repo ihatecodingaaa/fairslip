@@ -316,18 +316,23 @@ def build_corrected_rows() -> list[dict[str, str]]:
     from fairslip.employer import Outcome, check_row
 
     rng = random.Random(CORRECTION_SEED)
-    rows = [dict(r) for r in build_rows()]
+    original = build_rows()
+    rows = [dict(r) for r in original]
 
     # Which rows the check calls exceptions - asked of the ENGINE, not tracked
     # by hand while building. If the engine's verdict on a row changes, this
     # follows it instead of drifting away from it.
     exceptions = [
-        i for i, r in enumerate(rows) if check_row(r, i + 1).outcome is Outcome.EXCEPTION
+        i for i, r in enumerate(original) if check_row(r, i + 1).outcome is Outcome.EXCEPTION
     ]
-    assert len(exceptions) == SEEDED_EXCEPTIONS, (
-        f"the roster now yields {len(exceptions)} exceptions, not {SEEDED_EXCEPTIONS}; "
-        f"the corrected file's counts are derived from this and would be wrong"
-    )
+    # A BARE `assert` DISAPPEARS UNDER `python -O`, and this one is the guard that
+    # keeps "we seeded eleven and it found eleven" from drifting into a sentence
+    # nobody checks. Raised explicitly so the demo cannot be built wrong quietly.
+    if len(exceptions) != SEEDED_EXCEPTIONS:
+        raise AssertionError(
+            f"the roster now yields {len(exceptions)} exceptions, not {SEEDED_EXCEPTIONS}; "
+            f"the corrected file's counts are derived from this and would be wrong"
+        )
 
     # 1. Fix all but the last two, by writing what the engine says the row owes.
     #    The employer's payroll system would have recomputed it; here the engine
@@ -340,11 +345,28 @@ def build_corrected_rows() -> list[dict[str, str]]:
         band = band_for(dob, RELEVANT_MONTH)
         rows[i]["contribution_detail_amount"] = f"{cpf_contribution(ow, band, residency).total:.2f}"
 
-    # 2. Break one row that was correct. A plain amount error: off by an amount
-    #    that is no other band's answer, so it is reported as a mismatch rather
-    #    than mistaken for a missed age band.
+    # 2. Break one row that was correct IN THE ORIGINAL FILE.
+    #
+    #    `correct_rows` is computed against the roster BEFORE step 1, and that is
+    #    the whole point. Recomputing it here - against `rows`, which step 1 has
+    #    already fixed - puts the nine just-corrected rows into the candidate
+    #    pool, and three different demos fall out of that depending on where the
+    #    seed lands:
+    #
+    #      - breaking a just-resolved row gives STILL_EXCEPTION, not
+    #        NEW_EXCEPTION, and CORRECTED's counts are then wrong;
+    #      - breaking the Work Permit row, whose correct amount is 0.00, gives
+    #        -29.00, which _decimal rejects as negative - so the row becomes
+    #        UNREADABLE_ROW and the demo reports a REFUSAL where it promised a
+    #        new exception;
+    #      - taking the leaver from a resolved row drops RESOLVED to 8 and makes
+    #        REMOVED land on a row that had a difference against it.
+    #
+    #    None of those happens under the current seed. All three are one seed
+    #    change away, and the comments here claimed the safe version was what the
+    #    code did.
     correct_rows = [
-        i for i, r in enumerate(rows) if check_row(r, i + 1).outcome is Outcome.OK
+        i for i, r in enumerate(original) if check_row(r, i + 1).outcome is Outcome.OK
     ]
     broken = correct_rows[len(correct_rows) // 2]
     rows[broken]["contribution_detail_amount"] = (
@@ -354,7 +376,7 @@ def build_corrected_rows() -> list[dict[str, str]]:
     # 3. One leaver. Chosen from the rows that MATCHED, so the demo's headline
     #    counts are not disturbed by an exception silently leaving the file -
     #    which would itself be a finding, and a different one.
-    leaver = correct_rows[0]
+    leaver = next(i for i in correct_rows if i != broken)
     del rows[leaver]
 
     # 4. One new joiner, correct by construction: a new employee is not an

@@ -37,7 +37,7 @@ import { T, useT } from "../ui/Prefs";
 // transition summary. Two copies would eventually disagree, and a recheck
 // whose "after" triangle means something other than its "before" one is a
 // comparison between two vocabularies.
-import { FILL, MARK } from "./outcomeMark";
+import { MARK, OutcomeMark } from "./outcomeMark";
 
 export function PayrollConstellation({
   findings,
@@ -160,22 +160,14 @@ export function PayrollConstellation({
                  keyframe's note in globals.css. Capped so the last mark of a
                  three-hundred-row file lands well inside half a second, and
                  collapsed entirely under prefers-reduced-motion. */
-              style={{ animationDelay: `${Math.min(i * 1.6, 420)}ms` }}
+              style={{ ["--mark-delay" as string]: `${Math.min(i * 1.6, 420)}ms` } as React.CSSProperties}
             >
-              <svg
-                viewBox="0 0 16 16"
-                aria-hidden
-                className={`h-5 w-5 ${dim ? "text-ink-3" : ""}`}
-                fill="none"
-                stroke="none"
-              >
-                <g
-                  className={`${FILL[f.outcome]} ${dim ? "fill-line" : ""}`}
-                  strokeWidth="1.6"
-                >
-                  {MARK[f.outcome].path}
-                </g>
-              </svg>
+              {/* The shared component, not a second copy of the same <svg>.
+                  Two dimming strategies had grown apart: this stacked
+                  `fill-line` ON TOP of the outcome's own fill, so which won was
+                  stylesheet order rather than intent, and a dimmed REFUSED kept
+                  its undimmed stroke. OutcomeMark REPLACES the fill instead. */}
+              <OutcomeMark outcome={f.outcome} dim={dim} className="h-5 w-5" />
             </button>
           );
         })}
@@ -188,11 +180,7 @@ export function PayrollConstellation({
       <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
         {(["OK", "EXCEPTION", "REFUSED"] as const).map((outcome) => (
           <li key={outcome} className="flex items-center gap-2">
-            <svg viewBox="0 0 16 16" aria-hidden className="h-4 w-4" fill="none" stroke="none">
-              <g className={FILL[outcome]} strokeWidth="1.6">
-                {MARK[outcome].path}
-              </g>
-            </svg>
+            <OutcomeMark outcome={outcome} />
             <span className="text-meta text-ink-2">
               <T k={MARK[outcome].word} />
             </span>

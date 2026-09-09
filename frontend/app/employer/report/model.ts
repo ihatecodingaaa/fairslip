@@ -156,10 +156,27 @@ export type ReportModel = {
   modules: ModuleId[];
   title: string;
 
-  source: { before_filename: string | null; after_filename: string | null };
+  source: {
+    before_filename: string | null;
+    after_filename: string | null;
+    /** THE FILE THE ROWS IN THIS PACK CAME FROM.
+     *
+     * Not decoration. When there is a comparison, the pack's coverage, totals
+     * and every row are the CORRECTED file's - so a header naming the first
+     * file attributed those rows to a file that produced none of them, and the
+     * JSON carried that as its machine-readable source. This names the run. */
+    figures_from: string | null;
+  };
 
   /** ALWAYS PRESENT. See the note at the head of this file. */
-  coverage: { rows_read: number; checked: number; exceptions: number; refused: number };
+  coverage: {
+    rows_read: number;
+    checked: number;
+    exceptions: number;
+    refused: number;
+    /** Counted by the engine. See lib/api.ts EmployerCheckOut.matched. */
+    matched: number;
+  };
 
   headline: Money;
   totals: EmployerCheckOut["totals"];
@@ -292,13 +309,19 @@ export function buildReport({
     modules: ordered,
     title: comparison ? "Payroll review — before and after" : "Payroll review",
 
-    source: { before_filename: beforeFilename, after_filename: afterFilename },
+    source: {
+      before_filename: beforeFilename,
+      after_filename: afterFilename,
+      // The pack is built from the second run whenever there is one.
+      figures_from: comparison ? afterFilename : beforeFilename,
+    },
 
     coverage: {
       rows_read: result.rows_read,
       checked: result.checked,
       exceptions: result.exceptions,
       refused: result.refused,
+      matched: result.matched,
     },
 
     headline: result.total_difference,

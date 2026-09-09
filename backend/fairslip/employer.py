@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import csv
 import io
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import Enum
@@ -301,11 +301,20 @@ class EmployerCheck:
     checked: int
     exceptions: int
     refused: int
+    # HOW MANY CHECKED ROWS AGREED. Shipped rather than left to be worked out,
+    # because `checked - exceptions` is the kind of subtraction a screen does
+    # once and an export does again - and the review pack, which is the artefact
+    # most likely to be read by someone who was not there, had two independent
+    # copies of it. It is the OK count, not a derivation of two other counts, so
+    # a fourth Outcome cannot silently make it wrong.
+    matched: int
     total_difference: Decimal
-    reasons: tuple[ReasonAggregate, ...] = field(default=())
-    totals: CheckedTotals = field(
-        default=CheckedTotals(0, Decimal(0), Decimal(0), Decimal(0))
-    )
+    # NO DEFAULTS. `CheckedTotals(0, 0, 0, 0)` on a run that has findings would
+    # say "nothing was checked, and the difference is zero" - a placeholder that
+    # reads as a real result, which .claude/rules/honesty.md forbids by name.
+    # `_summarise` is the only constructor and always supplies both.
+    reasons: tuple[ReasonAggregate, ...]
+    totals: CheckedTotals
 
 
 # ---------------------------------------------------------------- the parse
@@ -563,6 +572,7 @@ def _summarise(findings: list[Finding]) -> EmployerCheck:
     exceptions = [f for f in findings if f.outcome is Outcome.EXCEPTION]
     refused = [f for f in findings if f.outcome is Outcome.REFUSED]
     checked = [f for f in findings if f.outcome is not Outcome.REFUSED]
+    matched = [f for f in findings if f.outcome is Outcome.OK]
 
     # rows and money per reason, in one pass over the rows that carry one.
     counts: dict[str, int] = {}
@@ -594,6 +604,7 @@ def _summarise(findings: list[Finding]) -> EmployerCheck:
         checked=len(checked),
         exceptions=len(exceptions),
         refused=len(refused),
+        matched=len(matched),
         # The sum of the differences on the rows that WERE checked. Refused rows
         # contribute nothing, because nothing was computed for them.
         total_difference=sum((f.difference or Decimal(0) for f in exceptions), Decimal(0)),

@@ -783,6 +783,10 @@ export type EmployerCheckOut = {
   checked: number;
   exceptions: number;
   refused: number;
+  /** The checked rows that agreed. COUNTED BY THE ENGINE, not derived here:
+   * `checked - exceptions` is the kind of subtraction a screen does once and an
+   * export does again, and the review pack had two independent copies of it. */
+  matched: number;
   total_difference: Money;
   reasons: ReasonAggregate[];
   totals: CheckedTotals;

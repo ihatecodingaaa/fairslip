@@ -1,5 +1,5 @@
 /**
- * A chart, downloaded as the file it already is.
+ * A chart, serialised as the file it already is.
  *
  * THIS EXPORTS THE RENDERED ELEMENT, NOT A REBUILD OF IT. The alternative -
  * generating a second SVG from the same data at download time - is a second
@@ -67,20 +67,8 @@ export function svgToText(svg: SVGSVGElement | null): string | null {
   return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
 }
 
-/** Hand a string to the browser as a file. Nothing is uploaded anywhere. */
-export function downloadText(text: string, filename: string, mime: string) {
-  const blob = new Blob([text], { type: mime });
-  downloadBlob(blob, filename);
-}
-
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoked on the next tick: revoking synchronously races the click in Safari.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
+// The two download helpers used to live here. They moved to app/ui/download.ts
+// when the worker's evidence pack needed them: a JSON of a worker's own facts
+// has nothing to do with serialising a chart, and importing this module to get
+// them said that it did. No re-export is left behind - a pass-through would
+// keep the misleading dependency alive while looking like tidiness.

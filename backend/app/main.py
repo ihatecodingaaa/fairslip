@@ -138,6 +138,7 @@ from fairslip.employer import (
     SPEC_ROUNDING_A,
     SPEC_ROUNDING_B,
     SPEC_SOURCE,
+    EmployerCheck,
     check_csv,
     recheck,
 )
@@ -1578,6 +1579,16 @@ def employer_demo_csv() -> Response:
     )
 
 
+async def _read_csv(file: UploadFile, which: str) -> str:
+    raw = await file.read()
+    if len(raw) > 5_000_000:
+        raise InvalidInputError(f"the {which} file is larger than 5 MB")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise InvalidInputError(f"the {which} file is not UTF-8 text") from e
+
+
 @app.post("/employer/check", response_model=EmployerCheckOut)
 async def employer_check(file: UploadFile) -> EmployerCheckOut:
     """Every row checked against the engine, or visibly refused.
@@ -1587,13 +1598,7 @@ async def employer_check(file: UploadFile) -> EmployerCheckOut:
     never examined and why - a refusal that is merely absent from the list is a
     row silently passed as clean.
     """
-    raw = await file.read()
-    if len(raw) > 5_000_000:
-        raise InvalidInputError("the file is larger than 5 MB")
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as e:
-        raise InvalidInputError("the file is not UTF-8 text") from e
+    text = await _read_csv(file, "uploaded")
 
     try:
         result = check_csv(text)
@@ -1603,13 +1608,14 @@ async def employer_check(file: UploadFile) -> EmployerCheckOut:
     return _employer_check_out(result)
 
 
-def _employer_check_out(result) -> EmployerCheckOut:
+def _employer_check_out(result: EmployerCheck) -> EmployerCheckOut:
     """The engine's run, on the wire. Nothing is computed here."""
     return EmployerCheckOut(
         rows_read=result.rows_read,
         checked=result.checked,
         exceptions=result.exceptions,
         refused=result.refused,
+        matched=result.matched,
         total_difference=_money(result.total_difference),
         reasons=[
             ReasonAggregateOut(
@@ -1664,16 +1670,6 @@ def employer_demo_csv_corrected() -> Response:
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="fairslip-demo-roster-corrected.csv"'},
     )
-
-
-async def _read_csv(file: UploadFile, which: str) -> str:
-    raw = await file.read()
-    if len(raw) > 5_000_000:
-        raise InvalidInputError(f"the {which} file is larger than 5 MB")
-    try:
-        return raw.decode("utf-8-sig")
-    except UnicodeDecodeError as e:
-        raise InvalidInputError(f"the {which} file is not UTF-8 text") from e
 
 
 @app.post("/employer/recheck", response_model=EmployerRecheckOut)

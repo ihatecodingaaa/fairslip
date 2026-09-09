@@ -34,8 +34,8 @@
  */
 
 import type { ExtractOut, PayBreakdown, PayInputs } from "@/lib/api";
-import { T, useT } from "../ui/Prefs";
-import { downloadText } from "../employer/svgExport";
+import { T } from "../ui/Prefs";
+import { downloadText } from "../ui/download";
 
 export type PackPreset = "simple" | "detailed";
 
@@ -59,7 +59,6 @@ export function EvidencePack({
   documents: { role: string; name: string }[];
   computedAt: string | null;
 }) {
-  const t = useT();
 
   function downloadFacts() {
     /* WHAT THE RESPONSE CARRIED, AND NOTHING ELSE.
@@ -190,8 +189,6 @@ export function EvidencePack({
           <T k="pack.whatItIs" />
         </p>
       </div>
-
-      <span className="sr-only">{t("pack.heading")}</span>
     </section>
   );
 }

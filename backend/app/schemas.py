@@ -839,6 +839,10 @@ class EmployerCheckOut(BaseModel):
     checked: int
     exceptions: int
     refused: int
+    # The checked rows that agreed. See fairslip/employer.EmployerCheck.matched:
+    # it is counted, not derived from `checked - exceptions`, so no screen or
+    # export has to do that subtraction for itself.
+    matched: int
     total_difference: Money
     reasons: list[ReasonAggregateOut]
     totals: CheckedTotalsOut

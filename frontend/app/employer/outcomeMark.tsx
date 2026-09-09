@@ -51,6 +51,27 @@ export const ABSENT = {
   fill: "stroke-missing-line",
 };
 
+/** MORE THAN ONE OUTCOME, in a summary row that stands for several rows.
+ *
+ * Not a fourth status: no single row is ever this. It exists because three of
+ * the ten recheck states do NOT fix both outcomes - a row that left the payroll
+ * may have matched or may have been an exception, and so may a new joiner, and
+ * so may a row that stopped being checkable. Drawing a filled disc for those
+ * was the summary asserting "matched" about rows the engine never said that of.
+ *
+ * Two dots rather than one: it reads as "several" at a glance, it is not any of
+ * the three silhouettes, and it survives greyscale like the rest of them. */
+const VARIES_PATH = (
+  <>
+    <circle cx="5" cy="8" r="1.9" />
+    <circle cx="11" cy="8" r="1.9" />
+  </>
+);
+
+/** What a mark can stand for: an outcome, a row absent from that file, or a
+ * group whose rows do not agree. */
+export type MarkKind = EmployerFinding["outcome"] | "ABSENT" | "VARIES";
+
 /** A mark that is still present and no longer emphasised.
  *
  * A COLOUR TOKEN, NOT AN OPACITY. Opacity composites past every contrast
@@ -59,19 +80,23 @@ export const ABSENT = {
  * changes token, and the token it changes to is one the suite measures. */
 const DIMMED = "fill-line stroke-line";
 
-/** One mark, at the size the caller needs. `outcome` of null is ABSENT. */
+/** One mark, at the size the caller needs. `null` is ABSENT. */
 export function OutcomeMark({
   outcome,
   className = "h-4 w-4",
   dim = false,
 }: {
-  outcome: EmployerFinding["outcome"] | null;
+  outcome: MarkKind | null;
   className?: string;
   /** Still drawn, no longer emphasised. Never used to remove a row. */
   dim?: boolean;
 }) {
-  const shape = outcome ? MARK[outcome] : ABSENT;
-  const fill = dim ? DIMMED : outcome ? FILL[outcome] : ABSENT.fill;
+  const kind: MarkKind = outcome ?? "ABSENT";
+  const shape =
+    kind === "ABSENT" ? ABSENT : kind === "VARIES" ? { path: VARIES_PATH } : MARK[kind];
+  const base =
+    kind === "ABSENT" ? ABSENT.fill : kind === "VARIES" ? "fill-ink-3" : FILL[kind];
+  const fill = dim ? DIMMED : base;
   return (
     <svg viewBox="0 0 16 16" aria-hidden className={className} fill="none" stroke="none">
       <g className={fill} strokeWidth="1.6">
@@ -81,7 +106,10 @@ export function OutcomeMark({
   );
 }
 
-/** The word for an outcome, or for a row that is not in the file. */
+/** The word for an outcome, or for a row that is not in the file.
+ *
+ * Takes a row's own outcome, never a summary mark: VARIES describes a GROUP and
+ * no single row is ever it, so there is deliberately no word for it here. */
 export function outcomeWord(outcome: EmployerFinding["outcome"] | null): Key {
   return outcome ? MARK[outcome].word : ABSENT.word;
 }

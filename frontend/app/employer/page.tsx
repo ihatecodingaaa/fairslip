@@ -70,7 +70,8 @@ import { ReasonBars } from "./ReasonBars";
 import { RecheckView } from "./RecheckView";
 import { ReportStudio } from "./report/Studio";
 import { REASON_WORDS } from "./reasons";
-import { downloadText, svgToText } from "./svgExport";
+import { svgToText } from "./svgExport";
+import { downloadText } from "../ui/download";
 import { VarianceSkyline, type SkylineOrder } from "./VarianceSkyline";
 
 /** The four questions this run can be asked. One is on screen at a time. */
@@ -88,6 +89,11 @@ export default function EmployerPage() {
   const [schema, setSchema] = useState<EmployerSchemaOut | null>(null);
   const [result, setResult] = useState<EmployerCheckOut | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  /* WHICH REQUEST THE REFUSAL CAME FROM. Recorded when it arrives rather
+     than inferred from other state afterwards: the first version read it off
+     `afterName`, which the refusal path itself clears, so the recheck wording
+     could never appear. */
+  const [refusalOf, setRefusalOf] = useState<"check" | "recheck" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -127,6 +133,7 @@ export default function EmployerPage() {
   async function run(file: File) {
     setBusy(true);
     setRefusal(null);
+    setRefusalOf(null);
     setError(null);
     setFileName(file.name);
     setBeforeFile(file);
@@ -151,6 +158,10 @@ export default function EmployerPage() {
       } else {
         setResult(null);
         setRefusal(r.refusal);
+        setRefusalOf("check");
+        // SAID, NOT ONLY SHOWN. The success path announces; without this the
+        // banner is silent to a screen reader while a sighted reader sees it.
+        setAnnounce(r.refusal.detail);
       }
     } catch (e) {
       setResult(null);
@@ -160,23 +171,51 @@ export default function EmployerPage() {
     }
   }
 
+  /* THE RESPONSE HAS TO BE CHECKED BEFORE IT IS TREATED AS A FILE.
+     Without `res.ok`, a 500 or an HTML error page was handed to /employer/check
+     as a CSV, which then refused it with "the file is missing columns this check
+     needs: uen, payment_type, ..." - and the screen blamed the user's file for a
+     server failure. An error path swallowed into a wrong attribution is worse
+     than an error path that says nothing. */
+  async function fetchDemoCsv(url: string, filename: string): Promise<File | null> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      setError(
+        `The demo file could not be fetched: HTTP ${res.status} from ${url}. ` +
+          `Nothing was checked, and this is not a problem with any payroll file.`,
+      );
+      return null;
+    }
+    return new File([await res.text()], filename, { type: "text/csv" });
+  }
+
   async function runDemo() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(EMPLOYER_DEMO_CSV);
-      const text = await res.text();
-      await run(new File([text], "fairslip-demo-roster.csv", { type: "text/csv" }));
+      const file = await fetchDemoCsv(EMPLOYER_DEMO_CSV, "fairslip-demo-roster.csv");
+      if (!file) return;
+      await run(file);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
       setBusy(false);
     }
   }
 
   async function runRecheck(after: File) {
-    if (!beforeFile) return;
+    if (!beforeFile) {
+      // Unreachable while the invite only renders under a result - but a bare
+      // `return` here left the caller's `busy` true and the button reading
+      // "Checking..." for ever, which is the one behaviour a dead branch must
+      // not have.
+      setError("The first file is no longer in this browser. Check it again before comparing.");
+      setBusy(false);
+      return;
+    }
     setBusy(true);
     setRefusal(null);
+    setRefusalOf(null);
     setError(null);
     setAfterName(after.name);
     try {
@@ -190,10 +229,19 @@ export default function EmployerPage() {
         );
       } else {
         setRecheckResult(null);
+        // THE NAME GOES WITH THE COMPARISON. It was set before the request and
+        // left behind on refusal, so opening the review pack afterwards printed
+        // "roster.csv -> corrected.csv" in the header of a pack that contains no
+        // before/after section and whose every figure comes from the first run.
+        // The JSON export carried that as its machine-readable `source`.
+        setAfterName(null);
         setRefusal(r.refusal);
+        setRefusalOf("recheck");
+        setAnnounce(r.refusal.detail);
       }
     } catch (e) {
       setRecheckResult(null);
+      setAfterName(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -204,13 +252,15 @@ export default function EmployerPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(EMPLOYER_DEMO_CSV_CORRECTED);
-      const text = await res.text();
-      await runRecheck(
-        new File([text], "fairslip-demo-roster-corrected.csv", { type: "text/csv" }),
+      const file = await fetchDemoCsv(
+        EMPLOYER_DEMO_CSV_CORRECTED,
+        "fairslip-demo-roster-corrected.csv",
       );
+      if (!file) return;
+      await runRecheck(file);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
       setBusy(false);
     }
   }
@@ -250,8 +300,20 @@ export default function EmployerPage() {
         </p>
       )}
       {refusal && (
-        <div className="mt-6 rounded-sm border border-attention-line bg-attention-bg px-4 py-3">
-          <p className="text-body font-semibold text-attention-fg">The file was not checked.</p>
+        <div
+          role="alert"
+          className="mt-6 rounded-sm border border-attention-line bg-attention-bg px-4 py-3"
+        >
+          {/* WHICH THING WAS REFUSED. On a recheck both files WERE checked - it
+              is the comparison between them that was refused, because the rows
+              could not be told apart. The old heading said "The file was not
+              checked" either way, which is false of that case and sends an
+              employer looking at the wrong thing. */}
+          <p className="text-body font-semibold text-attention-fg">
+            {refusalOf === "recheck"
+              ? "The two files were not compared."
+              : "The file was not checked."}
+          </p>
           <p className="mt-1 font-mono text-meta text-attention-fg">{refusal.detail}</p>
         </div>
       )}
@@ -259,12 +321,20 @@ export default function EmployerPage() {
       {!result && <UploadPanel onPick={run} onDemo={runDemo} busy={busy} />}
 
       {result && studio && (
+        /* THE FILENAMES HAVE TO NAME THE RUN THE ROWS CAME FROM.
+           `result` here is the AFTER run whenever a comparison exists - its
+           coverage, its rows, its totals - so labelling it with the FIRST file's
+           name attributed every row to a file that produced none of them, in the
+           pack and in its JSON. The model now records `figures_from` - the file
+           the rows in this pack actually came from - and `afterFilename` is null
+           when there is no comparison, so a pack with no before/after section
+           cannot name a corrected file at all. */
         <ReportStudio
           result={recheckResult ? recheckResult.after_summary : result}
           comparison={recheckResult}
           schema={schema}
           beforeFilename={fileName}
-          afterFilename={afterName}
+          afterFilename={recheckResult ? afterName : null}
           onLeave={() => setStudio(false)}
         />
       )}
@@ -274,7 +344,10 @@ export default function EmployerPage() {
           result={recheckResult}
           beforeName={fileName}
           afterName={afterName}
-          onLeave={() => setRecheckResult(null)}
+          onLeave={() => {
+            setRecheckResult(null);
+            setAfterName(null);
+          }}
           onBuildPack={() => setStudio(true)}
         />
       )}
