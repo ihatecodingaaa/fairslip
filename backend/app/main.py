@@ -407,14 +407,61 @@ def _money(x: Decimal) -> Money:
     return Money.of(x)
 
 
-def _breakdown_out(bd: PayBreakdown) -> PayBreakdownOut:
-    return PayBreakdownOut(
-        components=[
+PROVENANCE_NOTE = (
+    "Which facts produced each line is read off that line's own recorded inputs - the "
+    "provenance string of every fact the engine consumed - and matched against the facts "
+    "this request supplied. There is no list anywhere of what depends on what. A string "
+    "carried by more than one fact identifies neither, and is reported as unresolved "
+    "rather than attributed to a guess."
+)
+
+
+def _fact_by_source(body: PayInputsIn) -> dict[str, str]:
+    """provenance string -> the ONE field that carries it.
+
+    A string carried by two facts is absent from this mapping. That is the whole
+    point: it cannot say which fact a line depends on, and the alternative -
+    picking the first - is how a dependency view comes to report green because
+    it has been blinded rather than because the graph is sound.
+    """
+    carriers: dict[str, list[str]] = {}
+    for name in PayInputs.__dataclass_fields__:
+        f = getattr(body, name)
+        if f is not None:
+            carriers.setdefault(f.source, []).append(name)
+    return {src: names[0] for src, names in carriers.items() if len(names) == 1}
+
+
+def _breakdown_out(bd: PayBreakdown, body: PayInputsIn) -> PayBreakdownOut:
+    by_source = _fact_by_source(body)
+
+    def resolve(component_inputs: tuple[str, ...]) -> tuple[list[str], list[str]]:
+        fields: list[str] = []
+        unresolved: list[str] = []
+        for src in component_inputs:
+            name = by_source.get(src)
+            if name is None:
+                unresolved.append(src)
+            else:
+                fields.append(name)
+        return fields, unresolved
+
+    components: list[ComponentOut] = []
+    for c in bd.components:
+        fields, unresolved = resolve(c.inputs)
+        components.append(
             ComponentOut(
-                label=c.label, amount=_money(c.amount), formula=c.formula, inputs=list(c.inputs)
+                label=c.label,
+                amount=_money(c.amount),
+                formula=c.formula,
+                inputs=list(c.inputs),
+                input_fields=fields,
+                unresolved_inputs=unresolved,
             )
-            for c in bd.components
-        ],
+        )
+
+    return PayBreakdownOut(
+        components=components,
         expected_gross=_money(bd.expected_gross),
         deductions_total=_money(bd.deductions_total),
         expected_net=_money(bd.expected_net),
@@ -423,6 +470,7 @@ def _breakdown_out(bd: PayBreakdown) -> PayBreakdownOut:
         flags=list(bd.flags),
         cpf_ordinary_wage=_money(bd.expected_gross),
         cpf_ordinary_wage_basis=OW_BASIS,
+        provenance_note=PROVENANCE_NOTE,
     )
 
 
@@ -461,7 +509,7 @@ def health() -> dict[str, str]:
 def compute(body: PayInputsIn) -> PayBreakdownOut:
     """Employment Act pack. Refuses (400 UNESTABLISHED_INPUT) if any fact it touches
     was not agreed by both readers or confirmed by the worker."""
-    return _breakdown_out(compute_expected(_to_pay_inputs(body)))
+    return _breakdown_out(compute_expected(_to_pay_inputs(body)), body)
 
 
 @app.post("/cpf", response_model=CpfOut)

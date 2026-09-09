@@ -21,7 +21,6 @@
  * same reason.
  */
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   API_BASE,
@@ -35,7 +34,8 @@ import {
   type RulePack,
 } from "@/lib/api";
 import { LANGS, coverage as dictionaryCoverage } from "@/lib/i18n";
-import { Controls } from "../ui/Controls";
+import { AppShell } from "../ui/AppShell";
+import { EngineMark } from "../ui/EngineMark";
 import { KindChip, OutcomeChip } from "../ui/CoverageChip";
 import { T, useT } from "../ui/Prefs";
 import { QuotedInEnglish } from "../ui/QuotedInEnglish";
@@ -64,21 +64,14 @@ export default function Scale() {
   }, []);
 
   return (
-    <div className="flex-1 bg-canvas text-ink">
-      <main className="mx-auto max-w-3xl px-5 py-10">
-        <Controls />
-
+    <AppShell width="reading">
+      <>
         <header className="mb-8">
-          <Link
-            href="/"
-            className="tap-sm inline-flex items-center rounded-sm text-body font-medium text-brand-fg underline"
-          >
-            <T k="scale.back" />
-          </Link>
-          <h1 className="mt-4 text-page font-semibold tracking-tight">
+          <h1 className="text-page font-semibold tracking-tight">
             <T k="scale.title" />
           </h1>
-          {pack && <p className="max-w-measure mt-3 text-body text-ink-2">{pack.note}</p>}
+          {pack && <p className="max-w-measure mt-3 text-lead text-ink-2">{pack.note}</p>}
+          <EngineMark className="mt-4" />
         </header>
 
         {transportError && (
@@ -176,8 +169,8 @@ export default function Scale() {
             <T k="footer.engines" /> {API_BASE || "same origin"}
           </p>
         </footer>
-      </main>
-    </div>
+      </>
+    </AppShell>
   );
 }
 

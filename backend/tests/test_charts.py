@@ -37,6 +37,33 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent.parent
 CHART = REPO / "frontend" / "app" / "check" / "Waterfall.tsx"
 
+# WHERE MONEY IS DRAWN: derived, not listed.
+#
+# This module used to name one file, because there was one chart. The design pass
+# added four more surfaces that render amounts - the money trail, its inspector,
+# the change-a-fact panel, the reconciliation and the employer summary - and a
+# rule enforced on one of six drawing surfaces is a rule the next one is written
+# without.
+#
+# So the set is COMPUTED from the frontend: every file that calls money() is held
+# to claim 1. A new screen is covered the moment it renders its first amount,
+# which is the only way this stays true of a codebase that is still growing.
+#
+# lib/api.ts is excluded because it DEFINES money(); its "call" is the signature.
+MONEY_DEFINITION = REPO / "frontend" / "lib" / "api.ts"
+
+
+def money_drawing_files() -> list[Path]:
+    roots = [REPO / "frontend" / "app", REPO / "frontend" / "lib"]
+    out = []
+    for root in roots:
+        for path in sorted(root.rglob("*.ts*")):
+            if path == MONEY_DEFINITION:
+                continue
+            if "money(" in _strip_comments(path.read_text(encoding="utf-8")):
+                out.append(path)
+    return out
+
 
 def _strip_comments(src: str) -> str:
     """Read the code, not the prose about it.
@@ -69,23 +96,46 @@ def money_arguments() -> list[str]:
     return [m.group(1) for m in _MONEY_ARG.finditer(chart_source())]
 
 
-def test_the_chart_calls_money_at_all() -> None:
-    """Otherwise every assertion below passes by examining nothing."""
+def _drawing_money_arguments() -> list[tuple[str, str]]:
+    """(file, argument) for every money() call on every surface that draws one."""
+    out: list[tuple[str, str]] = []
+    for path in money_drawing_files():
+        src = _strip_comments(path.read_text(encoding="utf-8"))
+        for m in _MONEY_ARG.finditer(src):
+            out.append((path.relative_to(REPO / "frontend").as_posix(), m.group(1)))
+    return out
+
+
+def test_the_scan_finds_the_surfaces_that_draw_money() -> None:
+    """Otherwise the assertions below pass by examining nothing.
+
+    The floor is deliberately low and the NAMES are what is asserted: the two
+    that must always be here are the arithmetic view and the trail, because they
+    are the two pictures of the same reconciliation.
+    """
+    found = {p.name for p in money_drawing_files()}
     assert money_arguments(), f"no money() calls found in {CHART}; this suite proves nothing"
+    for required in ("Waterfall.tsx", "ProofGraph.tsx"):
+        assert required in found, f"{required} renders no amount; the scan is not reaching it"
+    assert len(found) >= 4, f"only {sorted(found)} draw money; the scan is not reaching the app"
 
 
-@pytest.mark.parametrize("arg", sorted(set(money_arguments())))
-def test_every_displayed_figure_is_an_engine_field_not_an_expression(arg: str) -> None:
+@pytest.mark.parametrize(
+    "where,arg", sorted(set(_drawing_money_arguments())), ids=lambda v: str(v)
+)
+def test_every_displayed_figure_is_an_engine_field_not_an_expression(
+    where: str, arg: str
+) -> None:
     """money() takes a field. It never takes arithmetic.
 
-    This is the whole difference between a chart that reports what an engine
-    said and a chart that does sums of its own and presents them in the same
+    This is the whole difference between a surface that reports what an engine
+    said and one that does sums of its own and presents them in the same
     typeface.
     """
     assert _FIELD.match(arg), (
-        f"money({arg}) renders a figure this file computed. Only a Money the "
-        f"backend built may be displayed - a bar's LENGTH may be derived, the "
-        f"number beside it may not."
+        f"{where}: money({arg}) renders a figure that file computed. Only a Money "
+        f"the backend built may be displayed - a bar's LENGTH may be derived, a "
+        f"node's POSITION may be derived, the number beside it may not."
     )
 
 
@@ -206,6 +256,48 @@ def test_no_component_label_is_hardcoded_in_the_chart(label: str) -> None:
         f'the chart contains the literal "{label}". Components must come from '
         f"breakdown.components, in the order the engine returned them."
     )
+
+
+def test_the_money_trail_names_only_money_fields_the_breakdown_carries() -> None:
+    """The trail's money layer, held to the schema exactly as the waterfall is.
+
+    proof.ts names three derived amounts - the gross, the net and the difference -
+    and draws a box for each. Rename one in the schema and, without this, the
+    trail draws one box fewer and still looks like a finished trail: the same
+    failure the waterfall's own version of this test exists to prevent, on the
+    picture that replaced it as the hero.
+
+    `deductions_total` and `net_paid` are Money fields the trail deliberately
+    does NOT give a money box, because they are FACTS on the way in rather than
+    amounts the engine derived - and they appear once, in the facts layer. That
+    exclusion is named here rather than left as a silence.
+    """
+    proof = _strip_comments(
+        (REPO / "frontend" / "app" / "check" / "proof.ts").read_text(encoding="utf-8")
+    )
+    declared = re.search(r"export type MoneyField =([^;]+);", proof)
+    assert declared, "MoneyField not found in proof.ts"
+    named = set(re.findall(r'"(\w+)"', declared.group(1)))
+    assert named, "MoneyField declares no fields"
+
+    fields = breakdown_fields()
+    missing = named - fields
+    assert not missing, (
+        f"the money trail names {sorted(missing)}, which are not Money fields on "
+        f"PayBreakdownOut. Either the schema was renamed and the trail was not, or "
+        f"the trail is naming something that does not exist."
+    )
+
+    a_fact_not_an_amount = {"deductions_total", "net_paid", "cpf_ordinary_wage"}
+    undrawn = fields - named - a_fact_not_an_amount
+    assert not undrawn, (
+        f"PayBreakdownOut carries {sorted(undrawn)} and the trail gives it no box. "
+        f"Add it, or name it in `a_fact_not_an_amount` with a reason."
+    )
+
+    # And each one is actually built into a node, not merely declared in a type.
+    for name in sorted(named):
+        assert f'field: "{name}"' in proof, f"MoneyField {name} is declared and never drawn"
 
 
 def test_the_chart_refuses_rather_than_drawing_a_partial_bar() -> None:

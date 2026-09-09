@@ -43,9 +43,19 @@
   --text-title: 1.5rem;
   --text-page: 2rem;
   --text-hero: 3rem;
-  /* The hero is one line of digits and never wraps, so it takes no script
-     multiplier - a taller line here would only push the figure off centre. */
+  /* ONE STEP ABOVE THE HERO, AND ONLY FOR THE ANSWER.
+     The possible difference is the sentence this whole product exists to say,
+     and at 48px it sat at the same weight as a page heading. 64px is the size
+     at which it stops being a figure in a card and becomes the thing the screen
+     is about. It is used at >=640px only - `text-hero sm:text-display` - because
+     at 390px and 150% text size a 64px step is 96px, which no seven-character
+     amount fits on a phone. */
+  --text-display: 4rem;
+  /* The hero and the display are one line of digits and never wrap, so they take
+     no script multiplier - a taller line here would only push the figure off
+     centre. */
   --text-hero--line-height: 1;
+  --text-display--line-height: 1;
 
   /* One stack, four scripts. The browser resolves per GLYPH, so a line reading
      "Rahim / রহিম" takes its Latin from Noto Sans and only the Bengali
@@ -73,10 +83,20 @@
   --color-ink-2: #3f3f46; /* secondary text */
   --color-ink-3: #56565f; /* metadata, formulas, provenance */
 
-  --color-canvas: #eceef1; /* the page behind the cards */
-  --color-surface: #ffffff; /* a card */
-  --color-muted: #f5f6f7; /* a panel inside a card */
-  --color-sunken: #e4e6ea; /* a chip fill, a disabled control */
+  /* THREE SURFACES AND NO MORE: the page, a sheet on it, a panel inside that.
+     A fourth would invite card-inside-card-inside-tinted-card, which is the
+     look this design is trying not to have.
+
+     WARM, not cool grey. The product's own metaphor is paper - the take-away
+     sheet is the artefact a worker carries into an NGO office - and the previous
+     canvas (#eceef1) read as an admin console. Every ratio these values
+     participate in was recomputed with test_design_tokens.py's own contrast
+     function before the change: each one holds or improves (worst foreground
+     6.25 -> 6.45, worst boundary 3.01 -> 3.10). */
+  --color-canvas: #f4f1ec; /* the page behind the sheets */
+  --color-surface: #ffffff; /* a sheet */
+  --color-muted: #faf8f5; /* a panel inside a sheet */
+  --color-sunken: #eae6df; /* a chip fill, a disabled control */
 
   /* `line` is a hairline BETWEEN items inside a group that is already bounded
      by a 3:1 edge. It carries no information a heading does not, so 1.4.11
@@ -84,7 +104,7 @@
      listed as decorative there, with its measured ratio, rather than left
      looking like an oversight. `line-strong` and `control` do carry a
      boundary, and both are asserted. */
-  --color-line: #dcdee2;
+  --color-line: #e2ded7;
   --color-line-strong: #868992; /* card edges, chip borders */
   --color-control: #6f7280; /* input and select borders */
 

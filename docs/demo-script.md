@@ -8,6 +8,34 @@ serve. Both were lines Lucas would have said out loud, in a pitch about not asse
 system has not established. Check every beat against the actual surface after any change that
 touches a surface - the check is `/demo-check`, and it takes two minutes.
 
+> ## ⚠ 9 SEPTEMBER 2026: THE SURFACES BELOW WERE REDESIGNED. RE-RUN `/demo-check` BEFORE
+> REHEARSING FROM THIS FILE.
+>
+> Every ENGINE, every endpoint, every figure and every refusal is unchanged - $62.24, $23,
+> 11 exceptions, 7 refused rows, the mandate ladder and all four verdicts still come from the
+> same code and still say the same things. What moved is where a presenter POINTS. This file
+> has not been re-timed or re-walked against the new screens, so treat each beat's TARGET as
+> unverified until it has been:
+>
+> - **The control row is gone from the top of every page.** Language, text size and contrast
+>   now live behind a **Display** button in the header. The setup step "the control row at the
+>   top of /check reads English / Normal / Normal" is corrected in place below; `?reset=1`
+>   itself is unchanged and still the whole procedure.
+> - **/check is staged.** After the engine runs, the difference and its trail move to the TOP
+>   of the page and the evidence moves below them. Beats that scroll down to the result now
+>   scroll UP to it, and the reader comparison is further down than it was.
+> - **The money trail is new** and is the hero of the reconciliation: documents, readers,
+>   established facts, rules, money, difference, with the lines between them. The 0:35 beat
+>   that points at the component list has a stronger target now.
+> - **Change-a-fact moved into the trail.** It is no longer a panel at the bottom: select a
+>   fact, and its own panel offers to vary it. The Q&A move at "Want to change any number on
+>   that roster?" needs its clicks re-walked.
+> - **The agent's state machine is behind a disclosure** ("See what FairSlip is allowed to
+>   do"), so the Q&A move that shows it needs one extra click.
+> - **/employer leads with a grid of 300 marks**, one per row, before the lists.
+>
+> Nothing here is a reason to change what is SAID. It is a list of what to re-point at.
+
 TIMED AGAINST PRODUCTION, three runs, 7 Sept 2026. The SYSTEM contributes 3.1-3.8 seconds to
 the whole scripted run and nothing it does takes longer than 1.3s, so there is no dead air to
 cut - every remaining second is a person typing or talking. The one measurable wait is the
@@ -227,8 +255,10 @@ on the screen. On stage that is the whole demo in a language you cannot read.
 
 This used to be a procedure - read three controls, click the wrong ones, or open DevTools and
 remove a storage key. Warming the deployment is already a twenty-second procedure at 09:55; a
-second one is the one that gets skipped. If you want to confirm it worked, the control row at
-the top of /check reads English / Normal / Normal.
+second one is the one that gets skipped. If you want to confirm it worked, the page is in
+English - the nav reads Worker / Employer - and opening **Display** in the header shows
+English / Normal / Normal selected. (Corrected 9 Sept 2026: those three controls were a row
+across the top of every page and are now inside that button. `?reset=1` is unchanged.)
 
 Then: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with
 network disabled; printed handwritten payslip in Jaydon's hand; phone camera tested under the

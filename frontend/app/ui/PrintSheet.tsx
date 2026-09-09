@@ -94,9 +94,9 @@ const PRINT_OMITTED = [
     why: "It shows which states the agent can reach at the mandate level currently set on screen, and that level is a control, not a fact about this month. On paper the control is gone and the diagram would be a picture of a setting nobody can see or change.",
   },
   {
-    id: "impact",
-    label: "the change-a-fact re-run",
-    why: "It answers what the engine would return if one fact were different. Those figures are hypothetical by construction, and a hypothetical printed beside a real one, in the same type, stops being marked as one.",
+    id: "money-trail",
+    label: "the money trail and its inspector",
+    why: "It is an interactive diagram of the same figures printed below: which documents were read, what each reader said, which facts each amount was built from. Every one of those is on this sheet in words already. It also holds the change-a-fact re-run, which answers what the engine would return if one fact were different - and those figures are hypothetical by construction, so a hypothetical printed beside a real one, in the same type, would stop being marked as one.",
   },
 ] as const;
 

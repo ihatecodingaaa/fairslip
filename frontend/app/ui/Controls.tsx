@@ -1,17 +1,29 @@
 "use client";
 
 /**
- * Language, text size and contrast - one row, above everything.
+ * Language, text size and contrast - and the sentence that has to sit beside
+ * them.
  *
  * Language is offered in ENDONYMS. A worker who cannot read English cannot find
  * their language in a list that says "Bengali", and a list of flags would be
  * worse: Bengali is spoken in two countries and Tamil in four, so a flag states
  * a nationality the reader never gave us.
  *
- * The disclosure about who produced these translations appears HERE, attached
- * to the control that caused it, in the language just chosen - not in a footer.
- * It is only shown once a non-English language is selected, because in English
- * nothing has been translated and there is nothing to disclose.
+ * WHY THIS FILE EXPORTS TWO THINGS.
+ *
+ * The disclosure about who produced these translations is a caveat with exactly
+ * one owner - backend/tests/test_inclusion.py's CAVEAT_OWNERS names this file,
+ * and requires it to gate on language, because the rule once lived as an inline
+ * `&&` at one call site and as nothing at a second. See docs/debt.md,
+ * unearned-caveat.
+ *
+ * The radios now live inside a disclosure in the app shell, which a reader
+ * closes after choosing. The caveat must not close with them: a reader who
+ * switches to Bengali and taps away has still been handed model-produced
+ * translations, and that is true for as long as the interface is in Bengali, not
+ * for as long as a popover is open. So the caveat is a SECOND export from THIS
+ * file, rendered persistently by the shell. One file, one owner, one language
+ * gate - and the sentence outlives the panel that caused it.
  */
 
 import { LANGS, coverage } from "@/lib/i18n";
@@ -26,15 +38,14 @@ const SIZES: { value: Scale; key: "ctl.textSize.1" | "ctl.textSize.2" | "ctl.tex
 export function Controls() {
   const { lang, setLang, scale, setScale, hc, setHighContrast } = usePrefs();
   const t = useT();
-  const cov = coverage(lang);
 
   return (
-    // print-hide, on every page that mounts it: language, text size and
-    // contrast are choices about a screen. What they CHANGED is on the paper -
-    // the words are in the chosen language and set at the chosen size - so the
-    // controls have done their work by the time anything is printed.
-    <section aria-label={t("ctl.heading")} className="print-hide mb-6">
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-4 rounded-lg border border-line-strong bg-surface p-4 shadow-card">
+    // print-hide: language, text size and contrast are choices about a screen.
+    // What they CHANGED is on the paper - the words are in the chosen language
+    // and set at the chosen size - so the controls have done their work by the
+    // time anything is printed.
+    <section aria-label={t("ctl.heading")} className="print-hide">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
         <Group label={<T k="ctl.language" />}>
           {LANGS.map((l) => (
             <Choice
@@ -76,24 +87,38 @@ export function Controls() {
           />
         </Group>
       </div>
-
-      {lang !== "en" && (
-        <div className="mt-2 rounded-lg border border-attention-line bg-attention-bg px-4 py-3">
-          <p className="max-w-measure text-meta text-attention-fg">
-            <T k="ctl.disclosure" />
-          </p>
-          <p className="mt-2 max-w-measure text-meta text-attention-fg">
-            <T k="ctl.untranslatedLegend" />
-          </p>
-          {/* Counted, not estimated. A progress claim about a translation is a
-              claim like any other, and this one is derived from the dictionary
-              rather than rounded up by whoever wrote the copy. */}
-          <p className="mt-2 font-mono text-meta text-attention-fg">
-            {cov.done}/{cov.total}
-          </p>
-        </div>
-      )}
     </section>
+  );
+}
+
+/**
+ * The caveat, and the only place it may be written.
+ *
+ * Returns null in English, where nothing has been translated and there is no
+ * boundary to explain - the same rule, for the same reason, as
+ * ui/QuotedInEnglish.tsx.
+ */
+export function TranslationDisclosure() {
+  const { lang } = usePrefs();
+  const cov = coverage(lang);
+  if (lang === "en") return null;
+  return (
+    <div className="print-hide border-b border-attention-line bg-attention-bg">
+      <div className="mx-auto max-w-6xl px-5 py-3">
+        <p className="max-w-measure text-meta text-attention-fg">
+          <T k="ctl.disclosure" />
+        </p>
+        <p className="mt-2 max-w-measure text-meta text-attention-fg">
+          <T k="ctl.untranslatedLegend" />
+        </p>
+        {/* Counted, not estimated. A progress claim about a translation is a
+            claim like any other, and this one is derived from the dictionary
+            rather than rounded up by whoever wrote the copy. */}
+        <p className="mt-2 font-mono text-meta text-attention-fg">
+          {cov.done}/{cov.total}
+        </p>
+      </div>
+    </div>
   );
 }
 

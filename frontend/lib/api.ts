@@ -25,7 +25,19 @@ export type Component = {
   label: string;
   amount: Money;
   formula: string;
+  /** The provenance STRING of every fact the engine consumed for this amount. */
   inputs: string[];
+  /** The same thing as field NAMES, resolved by the backend against the facts the
+   * request supplied. This is the edge record the money trail draws from - see
+   * app/check/proof.ts. It is not a list of what depends on what: it is what
+   * each amount recorded about itself, matched to the request that produced it.
+   * backend/tests/test_provenance.py holds it, on both sides of the wire. */
+  input_fields: string[];
+  /** A provenance string that identified no single supplied fact - which happens
+   * when two facts share a source string, and means the edge cannot be
+   * attributed. Rendered, never dropped: the alternative is a trail that looks
+   * complete with an edge silently missing. */
+  unresolved_inputs: string[];
 };
 
 export type PayBreakdown = {
@@ -38,6 +50,8 @@ export type PayBreakdown = {
   flags: string[];
   cpf_ordinary_wage: Money;
   cpf_ordinary_wage_basis: string;
+  /** How the backend arrived at `input_fields`, in words a screen can show. */
+  provenance_note: string;
 };
 
 export type CpfResult = {

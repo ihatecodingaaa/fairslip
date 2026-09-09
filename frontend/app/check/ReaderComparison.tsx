@@ -179,16 +179,10 @@ export function ReaderComparison({
   fields,
   readers,
   answers,
-  children,
 }: {
   fields: ReadField[];
   readers: ReaderInfo[];
   answers: Record<string, string>;
-  /** The answer box for one field, rendered under its row. Passed in rather
-   * than built here: this component compares readings, and what a worker is
-   * asked to do about a disagreement belongs to the screen that owns the
-   * answers. */
-  children?: (field: ReadField) => React.ReactNode;
 }) {
   const t = useT();
   const uid = useId();
@@ -262,7 +256,6 @@ export function ReaderComparison({
           <tbody className="divide-y divide-line">
             {fields.map((f) => {
               const status = effectiveStatus(f, answers[f.name] ?? "");
-              const box = children?.(f);
               return (
                 // TWO ROWS PER FIELD, and that is a 390px decision.
                 //
@@ -335,7 +328,6 @@ export function ReaderComparison({
                     <p className="max-w-measure break-words text-meta text-ink-3">
                       {f.fact.source}
                     </p>
-                    {box && <div className="mt-2">{box}</div>}
                   </td>
                 </tr>
                 </Fragment>

@@ -20,6 +20,27 @@
                        |
         agent.py: mandate-bounded follow-through (draft -> approve -> track -> verify -> escalate)
 
+## The trail: which fact produced which amount
+
+The UI draws that pipeline with the worker's own figures in it, and every edge in the
+drawing is a relation one of the engines recorded - never one a screen inferred.
+
+`Component.inputs` is the engine's record: the provenance STRING of every fact it consumed.
+`POST /compute` resolves those strings against the facts the REQUEST supplied and returns
+`ComponentOut.input_fields` (the field names) alongside them. That resolution happens once,
+in the API, because the request is the only place both halves are present.
+
+Two rules follow, and both are tested (backend/tests/test_provenance.py):
+
+- **Nothing is dropped.** `len(input_fields) + len(unresolved_inputs) == len(inputs)`.
+- **Nothing is guessed.** A source string carried by more than one fact identifies neither,
+  so it is reported in `unresolved_inputs` and attributed to nothing. `/impact` refuses the
+  whole run in that case; `/compute` is a weaker claim and reports it instead.
+
+THERE IS NO FIELD-TO-COMPONENT MAP, on either side of the wire, and a test scans both for
+one. A screen that resolved its own edges would be a second source of truth about what
+depends on what - which is the defect the impact view already has a name for.
+
 ## Extraction rules
 
 - Both readers get the same image and the same JSON schema. Neither sees the other's output.

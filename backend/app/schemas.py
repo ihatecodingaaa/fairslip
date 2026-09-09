@@ -60,6 +60,30 @@ class ComponentOut(BaseModel):
     amount: Money
     formula: str
     inputs: list[str]
+    # WHICH FACTS PRODUCED THIS AMOUNT, resolved by the server.
+    #
+    # `inputs` is the engine's own record: the provenance STRING of every fact the
+    # component consumed. A screen that wants to draw the trail needs the field
+    # NAMES, and matching string to name is a resolution only the caller's request
+    # can perform - the request is the only place both are present. It is done
+    # here, once, next to the engine output, rather than in a browser, so there is
+    # no second place that knows what depends on what. /impact matches on the same
+    # strings for the same reason.
+    #
+    # One entry out per entry in `inputs`, so nothing is silently dropped:
+    # len(input_fields) + len(unresolved_inputs) == len(inputs), asserted in
+    # backend/tests/test_provenance.py.
+    input_fields: list[str]
+    # A provenance string that does not identify exactly ONE supplied fact.
+    #
+    # Nothing requires Fact.source to be distinct - it even defaults to "" - and
+    # a source shared by two facts cannot say which of them a line depends on.
+    # /impact refuses the whole run in that case, because its claim is "these
+    # lines did not move, and here is why". This response is weaker and does not
+    # need to refuse: it names the string it could not attribute and attributes
+    # it to nothing. Guessing either fact would be the same defect one level
+    # down. See docs/debt.md, detector-blinded-by-a-shared-key.
+    unresolved_inputs: list[str]
 
 
 class PayBreakdownOut(BaseModel):
@@ -74,6 +98,10 @@ class PayBreakdownOut(BaseModel):
     # engine reconstructed. CPF Board: contributions are payable on overtime pay.
     cpf_ordinary_wage: Money
     cpf_ordinary_wage_basis: str
+    # How input_fields above was arrived at, in words a screen can show. The
+    # trail a reader is looking at is only worth anything if it can say where
+    # its edges came from.
+    provenance_note: str
 
 
 class CpfRequest(BaseModel):

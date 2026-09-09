@@ -440,6 +440,82 @@ def test_the_gate_component_returns_nothing_at_all_in_english() -> None:
     )
 
 
+# ------------------------------ 6. the dictionary is the interface's own words
+
+
+def english_keys() -> list[str]:
+    """Every key the English dictionary declares, in file order."""
+    src = I18N_TS.read_text(encoding="utf-8")
+    block = re.search(r"^const en = \{(.*?)^\} as const;", src, re.DOTALL | re.MULTILINE)
+    assert block, "the English dictionary was not found in lib/i18n.ts"
+    keys = re.findall(r'^  "([^"]+)":', block.group(1), re.MULTILINE)
+    assert len(keys) > 50, f"only {len(keys)} keys parsed; the dictionary's shape changed"
+    return keys
+
+
+def _interface_sources() -> str:
+    """Every file that could render a key, except the dictionary itself."""
+    root = REPO / "frontend"
+    parts = []
+    for path in list((root / "app").rglob("*.ts*")) + list((root / "lib").rglob("*.ts")):
+        if path.name == "i18n.ts":
+            continue
+        parts.append(path.read_text(encoding="utf-8"))
+    assert parts, "no interface sources found; this test would pass by examining nothing"
+    return "\n".join(parts)
+
+
+def test_every_dictionary_key_is_rendered_somewhere() -> None:
+    """A key nothing renders is a string the interface does not say.
+
+    THIS IS NOT TIDINESS. The language switcher reports translation coverage as
+    `done/total`, /scale renders the same count under "the rest of the interface,
+    counted from the dictionary", and both denominators are the size of THIS
+    dictionary. An orphaned key inflates the total, so the product understates
+    how translated it is - a claim about itself that is not true, made by the
+    mechanism built to keep such claims honest.
+
+    It is also the wired-mechanism-does-nothing class in its other direction: a
+    key with four translations beside it and no call site is four translations
+    that reach no screen. That is exactly how `machine.wouldUnlock` came to sit in
+    the dictionary in four languages while the panel printed the same sentence as
+    an English literal.
+
+    A key counts as rendered when its quoted name appears anywhere in the app or
+    lib - `<T k="...">`, `t("...")`, or a record of keys, all of which are how the
+    interface actually reaches them.
+    """
+    blob = _interface_sources()
+    orphans = [k for k in english_keys() if f'"{k}"' not in blob]
+    assert not orphans, (
+        "dictionary keys that no file renders: "
+        + ", ".join(orphans)
+        + ". Render them or delete them - with their translations. Every one of "
+        "them is counted in the coverage figure the language switcher shows."
+    )
+
+
+@pytest.mark.parametrize("lang", offered_languages())
+def test_no_translation_exists_for_a_key_english_does_not_declare(lang: str) -> None:
+    """The other direction: a translation of a key that no longer exists.
+
+    It cannot be rendered and it cannot be counted, so it is a fifth of a
+    kilobyte of Bengali that looks like coverage and is not. TypeScript catches
+    this for the `Partial<Record<Key, string>>` blocks it can see - but only
+    while the key is spelled the same in both, which is what a rename breaks.
+    """
+    src = I18N_TS.read_text(encoding="utf-8")
+    block = re.search(
+        rf"^const {lang}: Partial<Record<Key, string>> = \{{(.*?)^\}};",
+        src,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert block, f"the {lang} dictionary was not found"
+    declared = set(english_keys())
+    stray = [k for k in re.findall(r'^  "([^"]+)":', block.group(1), re.MULTILINE) if k not in declared]
+    assert not stray, f"{lang} translates keys English does not declare: {stray}"
+
+
 # ------------------------------------------- the two-reader comparison (2a)
 
 COMPARISON = REPO / "frontend" / "app" / "check" / "ReaderComparison.tsx"

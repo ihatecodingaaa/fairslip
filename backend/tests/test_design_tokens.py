@@ -455,14 +455,31 @@ def test_no_spacing_step_falls_off_the_grid_in_any_app_file() -> None:
 # ------------------------------------------------------- the scale itself
 
 
-def test_the_type_scale_is_six_steps_with_a_14px_floor() -> None:
-    """The count is the evidence the scale exists; the floor is the evidence it
-    is a scale for people rather than for a designer's eye."""
+# The type scale, by name, smallest first. NAMED rather than counted: the
+# previous version of this test asserted `len(steps) == 6`, which is a fact about
+# how many steps happened to exist rather than about which ones the design has -
+# so it went red when the display step was added and would have stayed green if
+# `hero` had been silently renamed. Adding a step is a decision, and it is made
+# here.
+TYPE_SCALE: tuple[str, ...] = ("meta", "body", "lead", "title", "page", "hero", "display")
+
+
+def test_the_type_scale_is_the_named_set_and_nothing_else() -> None:
+    """A closed scale, in order, with a 14px floor.
+
+    The floor is the evidence it is a scale for people rather than for a
+    designer's eye: this screen is read by people with low vision and by a room
+    five to fifteen metres from a projector.
+    """
     css = CSS.read_text(encoding="utf-8")
     steps = re.findall(r"^\s*--text-([a-z0-9]+):\s*([0-9.]+)rem;", css, re.MULTILINE)
-    assert len(steps) == 6, f"expected 6 type steps, found {len(steps)}: {steps}"
-    smallest = min(float(v) for _, v in steps)
-    assert smallest >= 0.875, f"smallest step is {smallest}rem; the floor is 0.875rem (14px)"
+    assert [name for name, _ in steps] == list(TYPE_SCALE), (
+        f"the type scale is {[n for n, _ in steps]}, expected {list(TYPE_SCALE)}. A step "
+        f"added, removed or renamed is a design decision; make it here as well."
+    )
+    sizes = [float(v) for _, v in steps]
+    assert sizes[0] >= 0.875, f"smallest step is {sizes[0]}rem; the floor is 0.875rem (14px)"
+    assert sizes == sorted(sizes), f"the steps are not in ascending order: {steps}"
 
 
 def test_there_is_one_shadow_and_two_radii() -> None:
@@ -566,17 +583,19 @@ def test_every_colour_token_is_actually_used_somewhere() -> None:
 #                        The entry records the RATIO AND WHERE IT WAS TAKEN, so
 #                        it is evidence rather than an opinion. A new one may
 #                        not be added without one.
-MEASURED_OPACITY: dict[str, str] = {
-    "app/check/AgentPanel.tsx:opacity-80": (
-        "the verify arithmetic line inside a verdict card. axe-core 4.13 found no "
-        "contrast violation on /check state 3 and state 4, 8 Sept, after the two "
-        "opacity-70 uses were removed"
-    ),
-    "app/check/ImpactRadius.tsx:opacity-80": (
-        "the before/after detail under a moved component. Same axe run, same states, "
-        "no violation"
-    ),
-}
+# EMPTY, AND THAT IS THE END STATE THE RULE ABOVE WAS AIMING AT.
+#
+# Both entries were removed rather than re-measured. The design pass rewrote the
+# two panels that carried them - the before/after detail under a moved component,
+# and the arithmetic line inside a verdict card - and in both the dimming was
+# doing work a colour token does better and this module can hold to a ratio.
+#
+# The registry stays, because the exemption has to remain expressible: a future
+# opacity on text is allowed only with a measurement, and an empty dict is what
+# "no exemptions currently claimed" looks like. The non-vacuity guard is
+# test_no_opacity_dims_text_outside_the_disabled_state, which still finds the
+# `disabled:` uses and would fail if the scan stopped seeing anything at all.
+MEASURED_OPACITY: dict[str, str] = {}
 
 _OPACITY = re.compile(r"(?<![\w:-])(?:(\w+):)?opacity-(\d+)")
 
@@ -638,9 +657,14 @@ def test_every_measured_opacity_entry_still_describes_a_real_use() -> None:
     )
 
 
-@pytest.mark.parametrize("entry", sorted(MEASURED_OPACITY))
-def test_every_measured_opacity_entry_says_where_it_was_measured(entry: str) -> None:
-    """"It looks fine" is what the removed ones looked like too."""
-    note = MEASURED_OPACITY[entry]
-    assert "axe" in note.lower(), f"{entry}: the note does not name the tool that measured it"
-    assert len(note) >= 60, f"{entry}: the note is too short to be a measurement"
+def test_every_measured_opacity_entry_says_where_it_was_measured() -> None:
+    """"It looks fine" is what the removed ones looked like too.
+
+    A loop rather than a parametrize, because the registry is currently empty and
+    an empty parametrize is a SKIP - a yellow line in the gate for a rule that is
+    being followed perfectly. The vacuity this would otherwise hide is covered by
+    the test above, which fails if the scan stops seeing any opacity at all.
+    """
+    for entry, note in sorted(MEASURED_OPACITY.items()):
+        assert "axe" in note.lower(), f"{entry}: the note does not name the tool that measured it"
+        assert len(note) >= 60, f"{entry}: the note is too short to be a measurement"

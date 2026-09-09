@@ -239,10 +239,27 @@ def test_the_ladder_reads_the_served_table_and_says_where_the_worker_is() -> Non
     """
     src = PANEL.read_text(encoding="utf-8")
     assert "mandate.levels.map" in src, "the ladder does not read the served table"
-    assert "you are here" in src, "the ladder does not say where the worker is"
-    assert "raising to here would unlock" in src, "the ladder does not say what a rung buys"
     assert "no_authentication_notice" in src, "the notice is not where the level is set"
     assert len(MANDATE_TABLE) == 5
+
+    # THROUGH THE DICTIONARY, NOT AS LITERALS. Both sentences were English
+    # strings hardcoded in the panel while the same words sat unused in
+    # lib/i18n.ts under keys with Mandarin, Bengali and Tamil beside them - so a
+    # worker reading the interface in Bengali was told the level they were on in
+    # English. The assertion is the same one it always was, asked one layer down:
+    # the panel renders the key, and the key still says it in words.
+    i18n = (
+        Path(__file__).resolve().parent.parent.parent / "frontend" / "lib" / "i18n.ts"
+    ).read_text(encoding="utf-8")
+    for key, must_say in (
+        ("machine.youAreHere", "you are here"),
+        ("machine.wouldUnlock", "raising to here would unlock"),
+    ):
+        assert f'k="{key}"' in src, f"the ladder does not render {key}"
+        assert f'"{key}": "{must_say}"' in i18n, (
+            f"{key} no longer says {must_say!r} in English, so the ladder no longer "
+            f"says where the worker is or what a rung buys"
+        )
 
 
 def test_the_diagram_and_the_ladder_are_not_two_controls() -> None:

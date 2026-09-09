@@ -21,6 +21,7 @@
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { useEffect, useState } from "react";
 import { ScreenOnly } from "../ui/PrintSheet";
+import { T } from "../ui/Prefs";
 import { QuotedInEnglish } from "../ui/QuotedInEnglish";
 import { AgentMachine } from "./AgentMachine";
 import { CpfOverlapBar } from "./Waterfall";
@@ -152,9 +153,11 @@ export function AgentPanel() {
   };
 
   return (
-    <section className="mt-8 rounded-lg border border-line-strong bg-surface p-5">
-      <h2 className="text-lead font-semibold text-ink">What happens next</h2>
-      <p className="max-w-measure mt-1 text-body text-ink-2">
+    <section aria-labelledby="agent-heading">
+      <h2 id="agent-heading" className="text-title font-semibold text-ink">
+        What happens next
+      </h2>
+      <p className="max-w-measure mt-2 text-lead text-ink-2">
         FairSlip can help you raise this. What it may do is limited to what you allow, and it
         never contacts your employer itself.
       </p>
@@ -201,23 +204,28 @@ export function AgentPanel() {
           all, over a field only one diagram needs. */}
       {mandate?.machine && (
         <ScreenOnly id="agent-machine">
-          <AgentMachine
-            machine={mandate.machine}
-            level={level}
-            current={
-              verdict
-                ? verdict.verdict
-                : sent
-                  ? "SENT"
-                  : draft
-                    ? "MESSAGE_DRAFTED"
-                    : "DISCREPANCY_FOUND"
-            }
-          />
+          <details className="mt-6 rounded-lg border border-line-strong bg-surface px-5 py-4">
+            <summary className="tap-sm cursor-pointer text-body font-semibold text-ink">
+              See what FairSlip is allowed to do, and what it is not
+            </summary>
+            <AgentMachine
+              machine={mandate.machine}
+              level={level}
+              current={
+                verdict
+                  ? verdict.verdict
+                  : sent
+                    ? "SENT"
+                    : draft
+                      ? "MESSAGE_DRAFTED"
+                      : "DISCREPANCY_FOUND"
+              }
+            />
+          </details>
         </ScreenOnly>
       )}
 
-      <div className="print-hide mt-5 flex flex-wrap gap-2">
+      <div className="print-hide mt-6 flex flex-wrap gap-2">
         <Action
           label="Draft a message"
           onClick={doDraft}
@@ -405,7 +413,7 @@ function MandateSelector({
   }
   return (
     <div className="mt-4">
-      <h3 className="text-body font-semibold text-ink">What you are allowing</h3>
+      <h3 className="text-lead font-semibold text-ink">What you are allowing</h3>
       {/*
         A RADIO GROUP, not five toggles.
         Five <button aria-pressed> told a screen reader there were five
@@ -453,11 +461,13 @@ function MandateSelector({
                     its own - and "what raising it would unlock" was not said at
                     all, so the ladder had no reason to be a ladder. */}
                 {picked && (
-                  <span className="text-meta font-semibold">&#9654; you are here</span>
+                  <span className="text-meta font-semibold">
+                    &#9654; <T k="machine.youAreHere" />
+                  </span>
                 )}
                 {l.level > level && (
                   <span className="text-meta font-semibold text-ink-2">
-                    raising to here would unlock
+                    <T k="machine.wouldUnlock" />
                   </span>
                 )}
               </span>
@@ -465,7 +475,7 @@ function MandateSelector({
                 className={`mt-1 block text-meta ${picked ? "text-on-solid" : "text-ink-2"}`}
               >
                 {l.action_detail.length === 0 ? (
-                  "FairSlip may do nothing beyond showing you the figures."
+                  <T k="machine.nothingBeyond" />
                 ) : (
                   <>
                     May:{" "}
@@ -482,7 +492,13 @@ function MandateSelector({
                         <span className={a.built ? "" : "line-through"}>
                           {ACTION_WORDS[a.name] ?? a.name}
                         </span>
-                        {!a.built && " (not built yet)"}
+                        {!a.built && (
+                          <>
+                            {" ("}
+                            <T k="machine.notBuiltShort" />
+                            {")"}
+                          </>
+                        )}
                       </span>
                     ))}
                   </>
@@ -1017,7 +1033,7 @@ function VerdictCard({ v, personaName }: { v: VerifyOut; personaName: string }) 
         </dl>
       )}
 
-      <p className="mt-2 font-mono text-meta opacity-80">{v.arithmetic}</p>
+      <p className="mt-2 font-mono text-meta">{v.arithmetic}</p>
     </div>
   );
 }
