@@ -37,9 +37,18 @@ touches a surface - the check is `/demo-check`, and it takes two minutes.
 > Nothing here is a reason to change what is SAID. It is a list of what to re-point at.
 
 TIMED AGAINST PRODUCTION, three runs, 7 Sept 2026. The SYSTEM contributes 3.1-3.8 seconds to
-the whole scripted run and nothing it does takes longer than 1.3s, so there is no dead air to
-cut - every remaining second is a person typing or talking. The one measurable wait is the
-extraction, 1.0-1.3s on the committed cache against 9.06s live, so run it cached.
+the whole scripted run and, apart from the extraction, nothing it does takes longer than 1.3s -
+every remaining second is a person typing or talking.
+
+THE EXTRACTION IS NOW THE ONE REAL WAIT, AND IT IS DELIBERATE. Those runs were timed at
+1.0-1.3s on the committed cache, which is what a replay costs; the demo no longer runs that
+way. `FAIRSLIP_READER_MODE=live` calls both models for real, so budget ROUGHLY 8-15 SECONDS
+and plan to talk through it. That range is read off measurements already on record, not from a
+rehearsal of this configuration: production /extract took 9.06s and 3.76s live
+(docs/debt.md, fast-is-not-cached), and single live calls on 7 Sept were 12.4s for
+`claude-haiku-4-5` and 8.6s for `gpt-5.6-luna` (docs/reader-models.md). /extract runs the two
+concurrently, so the wall time is the slower of the two, not their sum. RE-TIME IT IN
+REHEARSAL and correct this line with what you actually see.
 
 RE-MEASURED AGAINST PRODUCTION 8 Sept 2026, three runs, same harness. Warm: 3.8s and 4.3s of
 system time, extraction 1.24s and 1.30s - the 7 Sept figures hold. The FIRST run of the day
@@ -260,9 +269,39 @@ English - the nav reads Worker / Employer - and opening **Display** in the heade
 English / Normal / Normal selected. (Corrected 9 Sept 2026: those three controls were a row
 across the top of every page and are now inside that button. `?reset=1` is unchanged.)
 
-Then: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with
-network disabled; printed handwritten payslip in Jaydon's hand; phone camera tested under the
-room's lighting; audio cached; fallback video on a hidden slide and on your phone.
+Then: laptop on hotspot; backend and frontend up; **`FAIRSLIP_READER_MODE=live` set on the
+backend and confirmed** (see below); `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` present and each
+proven by one live extraction; cache committed to the repo and verified with network disabled,
+as the EMERGENCY path only; printed handwritten payslip in Jaydon's hand; phone camera tested
+under the room's lighting; audio cached; fallback video on a hidden slide and on your phone.
+
+### The reader mode, and why the demo runs `live`
+
+The claim being made on stage is that TWO INDEPENDENT MODELS read the worker's document. A
+replayed answer cannot support it, so the demo runs the mode that cannot replay:
+
+| Mode | What happens | Use it for |
+|---|---|---|
+| `live` | both models called; a failure is shown as the failure it was | **THE DEMO.** Nothing else. |
+| `live_then_cache` | both called; an entry stands in only for a call that FAILED | production default |
+| `cache` | no model called at all | **EMERGENCY ONLY** - see below |
+
+CONFIRM IT ON THE SCREEN, NOT FROM MEMORY. After the extraction the reader strip says, per
+reader, "called live" with that reader's real latency in milliseconds. If either reader says
+"from cache" or "live call failed - replayed from cache", YOU ARE NOT IN THE MODE YOU THINK
+YOU ARE IN, and the sentence about two models reading the document is not available to you.
+
+### EMERGENCY ONLY: the room has no network
+
+Set `FAIRSLIP_READER_MODE=cache` and reload. Both readings are then replayed from entries
+committed to the repo and NO MODEL IS CALLED. The screen says so - "replayed from the
+committed cache - no model was called" - and so must you.
+
+SAY, IF YOU HAVE TO USE IT: "the network is down, so this is replaying readings we recorded
+earlier - the models are not being called right now." That sentence costs you the live-reading
+claim and keeps every other beat. NEVER present a cached run as a live reading; the product's
+whole argument is that it does not assert what it has not established, and doing it on stage
+would refute the thesis more effectively than any judge could.
 
 0:00  Jaydon holds up the slip. Lucas: "This is Mei Ling's payslip. She works F&B on $1,200
       basic. Her hours are in WhatsApp. One question: does it add up?"
@@ -276,8 +315,15 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
 
 0:10  Photograph the slip live, THEN attach the roster - the rest-day beat needs both, and
       with the payslip alone the screen says "neither reader found this" instead.
-      >>> CLICK "Read my documents". <<<  Nothing happens until you do. 1.0-1.3s on the
-      committed cache, so keep talking through it; it is 9s if it ever goes live.
+      >>> CLICK "Read my documents". <<<  Nothing happens until you do. IN `live` THIS IS THE
+      LONG BEAT - budget roughly 8-15s for the two models, and keep talking through it. Fill
+      it with the sentence that explains what is happening: "two different companies' models
+      are reading the same photograph right now, separately, and neither can see the other's
+      answer."
+
+      THEN POINT AT THE READER STRIP AND READ THE LATENCIES OFF IT. Each reader says "called
+      live" and the milliseconds it actually took, for this request. That is the proof the
+      wait was real work rather than a spinner, and it is worth the five seconds it costs.
 
       WHAT APPEARS IS NOW A COMPARISON, NOT A LIST. Read the strip off the screen:
 
@@ -329,6 +375,14 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
 
       Narrate the reason once while Jaydon types: "None of these is on any document. A model
       asked anyway would return a guess that looks exactly like a reading."
+
+      WARNING, AND IT IS NEW: EVERYTHING IN THIS BEAT DESCRIBES WHAT THE COMMITTED CACHE
+      PRODUCES. Running `live`, the readings are whatever the two models say TODAY, and no
+      rehearsal can guarantee they will land the same way. DO NOT NAME AN OUTCOME BEFORE THE
+      SCREEN SHOWS IT - say "let's see where they disagree", read what is actually there, and
+      pick your example from that. If the live run reproduces the cached one, the narration
+      below is correct as written; if it does not, the fields have moved and the reasoning
+      still holds. Re-run this beat in rehearsal, `live`, at least twice, and note what varies.
 
       WHY THIS BEAT AND NOT OT HOURS: on the committed cache both readers AGREE on 18 OT hours.
       The genuinely unestablished fields are `rest_day_hours` and `normal_daily_hours`, both

@@ -57,6 +57,8 @@
 import type { ReactNode } from "react";
 import { BCP47, type Lang } from "@/lib/i18n";
 import { T, usePrefs, useT } from "./Prefs";
+import { printedSource } from "../check/readerSource";
+import type { ReaderInfo } from "@/lib/api";
 
 /**
  * Every region the paper drops, and the words that stand in its place.
@@ -212,7 +214,11 @@ export function PrintPreResult({
   unresolved,
 }: {
   documents: { name: string }[];
-  readers: { provider: string; model: string; ok: boolean }[];
+  /** The full reading, not a narrowed shape. It was {provider, model, ok},
+   * and `ok` is true of a reading replayed after a failed call - so the
+   * sheet could print that a model answered a document it never saw. The
+   * provenance a printed record needs travels on `source` and `live_error`. */
+  readers: ReaderInfo[];
   /** Read fields the response carried, and how many of them are settled. Counted
    * by the caller with the one function the screen's own tally uses. */
   total: number;
@@ -244,10 +250,17 @@ export function PrintPreResult({
         <div>
           <dt className="text-meta font-semibold uppercase tracking-wide">Readers</dt>
           <dd className="text-meta">
+            {/* THIS SHEET IS THE ONE A WORKER CARRIES TO A COUNTER, so where a
+                reading came from is part of the record, not a screen detail.
+                It said "answered" off `r.ok`, and a reading replayed after a
+                failed call is `ok` - so a printed sheet could state that a model
+                answered a document it never saw. `printedSource` names the four
+                states in words that survive being read on paper, with no colour
+                and no tooltip to carry the meaning. */}
             {readers.length === 0
               ? "Not called."
               : readers
-                  .map((r) => `${r.provider} (${r.model}) — ${r.ok ? "answered" : "did not answer"}`)
+                  .map((r) => `${r.provider} (${r.model}) — ${printedSource(r)}`)
                   .join("; ")}
           </dd>
         </div>

@@ -28,6 +28,7 @@ import { T, useT } from "../ui/Prefs";
 import { StatusChip } from "../ui/StatusChip";
 import { ImpactRefusal, ImpactResult, WhatIfForm, isVariable } from "./ImpactRadius";
 import { LAYERS, factValueText, type Proof, type ProofNode } from "./proof";
+import { SOURCE_LABEL_KEY, answeredKey, requestLatencyMs } from "./readerSource";
 import type { Key } from "@/lib/i18n";
 
 export type Hypothetical = {
@@ -254,23 +255,39 @@ function ReaderBody({ node }: { node: ProofNode }) {
       <Field label="Model">
         <span className="font-mono">{r.model}</span>
       </Field>
-      <Field label={<T k="lens.status" />}>
-        <span>{r.ok ? t("check.answered") : t("check.didNotAnswer")}</span>
-      </Field>
+      {/* Said only where a MODEL either answered or did not. A replayed reading
+          is `ok` and has values, so an `ok`-driven chip printed "answered" for a
+          reading the model never gave - see readerSource.ts, answeredKey. */}
+      {answeredKey(r) && (
+        <Field label={<T k="lens.status" />}>
+          <span>{t(answeredKey(r)!)}</span>
+        </Field>
+      )}
+      {/* The wording comes from readerSource.ts, which the reader strip also
+          uses. Two components deciding separately what "live" means is how one
+          of them comes to say it about a replay. */}
       <Field label="Path">
-        <span>{r.cache === "HIT" ? t("check.fromCache") : t("check.calledLive")}</span>
+        <span>{t(SOURCE_LABEL_KEY[r.source])}</span>
       </Field>
-      {/* A time is only shown for a live call, because only then does it describe
-          THIS request. `latency_ms` on a hit is the latency recorded when the
-          entry was generated. See docs/debt.md, cached-path-wearing-a-live-timing. */}
-      {r.cache !== "HIT" && r.latency_ms !== null && (
+      {/* A time is only shown for a call that happened, because only then does
+          it describe THIS request. The entry's own generation latency has its
+          own name and never reaches a screen. See docs/debt.md,
+          cached-path-wearing-a-live-timing. */}
+      {requestLatencyMs(r) !== null && (
         <Field label="Took">
-          <span className="font-mono">{r.latency_ms} ms</span>
+          <span className="font-mono">{requestLatencyMs(r)} ms</span>
         </Field>
       )}
       {r.error && (
         <Field label="Error">
           <span className="text-danger-fg">{r.error}</span>
+        </Field>
+      )}
+      {/* A fallback reading HAS values and is `ok`. Without this line nothing on
+          this panel would say the model was asked and did not answer. */}
+      {r.source === "FALLBACK_CACHE" && r.live_error && (
+        <Field label="Live call">
+          <span className="text-attention-fg">{r.live_error}</span>
         </Field>
       )}
     </dl>

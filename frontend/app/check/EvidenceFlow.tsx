@@ -32,6 +32,7 @@ import type { ExtractOut } from "@/lib/api";
 import type { Key } from "@/lib/i18n";
 import { T, useT } from "../ui/Prefs";
 import { countFields } from "./ReaderComparison";
+import { SOURCE_LABEL_KEY, TONE_CLASS, isLive, sourceTone } from "./readerSource";
 
 type Doc = { label: Key; present: boolean };
 
@@ -109,12 +110,14 @@ export function EvidenceFlow({
               {extract.readers.slice(0, 2).map((r) => (
                 <li key={r.key} className="flex flex-wrap items-baseline gap-x-2">
                   <span className="text-meta font-semibold text-ink">{r.provider}</span>
-                  <span
-                    className={`text-meta font-semibold ${
-                      r.ok ? "text-agreed-fg" : "text-danger-fg"
-                    }`}
-                  >
-                    {r.ok ? `✓ ${t("check.answered")}` : `✕ ${t("check.didNotAnswer")}`}
+                  {/* This tile is the smallest place provenance appears, which
+                      is exactly where a fallback would have gone unremarked: it
+                      branched on `ok`, and a replayed reading is `ok`, so it
+                      showed "✓ answered" for a model that failed. It now says
+                      what the source says, in the same words as the strip. */}
+                  <span className={`text-meta font-semibold ${TONE_CLASS[sourceTone(r)]}`}>
+                    {isLive(r) ? "✓ " : r.source === "NONE" ? "✕ " : "! "}
+                    {t(SOURCE_LABEL_KEY[r.source])}
                   </span>
                 </li>
               ))}

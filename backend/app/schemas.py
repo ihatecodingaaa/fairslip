@@ -184,6 +184,12 @@ class RefusalOut(BaseModel):
         # Coverage copy broke the UI copy contract. Distinct from the above: the
         # claims still hold, the words describing them do not.
         "COVERAGE_COPY",
+        # The deployment is misconfigured - FAIRSLIP_READER_MODE is set to
+        # something that is not a mode. Nothing is wrong with the request and
+        # the caller cannot fix it, so this is the one refusal served as a 500.
+        # Refused rather than defaulted: running under a policy nobody chose,
+        # and saying nothing about it, is the failure /extract exists to avoid.
+        "INVALID_CONFIG",
     ]
     detail: str
     required_level: int | None = None
@@ -235,22 +241,45 @@ class ExtractRequest(BaseModel):
 
 
 class ReaderInfoOut(BaseModel):
-    """One reader, and whether it actually answered. `ok=False` with an `error`
-    is a first-class outcome: it means nothing this reader was asked is
-    established, and the screen must be able to say which reader was down."""
+    """One reader, what produced its answer, and what that cost.
+
+    `ok=False` with an `error` is a first-class outcome: nothing this reader was
+    asked is established, and the screen must be able to say which reader was
+    down and why.
+
+    `source` IS THE PROVENANCE, and it is the only field on this wire that
+    describes it. The previous pair - `cache: "HIT"|"MISS"` plus `from_cache` -
+    could not distinguish a deliberate replay from a fallback after a failed
+    call, and "MISS" decorated a live success and a live failure alike. Both are
+    gone from the wire rather than kept beside `source`: a coarser second
+    description is the one a screen reaches for when it wants a boolean, and it
+    is the one that can hide a failed live attempt.
+    """
 
     key: str
     label: str
     model: str
     provider: str
     ok: bool
+    # "LIVE" this model was called for this request and answered; "CACHE" no
+    # model call produced this reading; "FALLBACK_CACHE" a live call was
+    # attempted, FAILED, and a committed entry was replayed; "NONE" nothing read.
+    source: str
     error: str | None = None
-    latency_ms: int | None = None
-    from_cache: bool
-    # "HIT" - replayed from an entry committed to the repo; "MISS" - no entry
-    # existed and this reading was made live. `cache_key` names the entry that
-    # was looked for either way, so a miss can be acted on, not merely noticed.
-    cache: str
+    # Whether a model was called for this request - true even when it failed.
+    live_attempted: bool
+    # What the live call raised. Present on FALLBACK_CACHE too, where the
+    # reading HAS values: a fallback never hides the attempt that failed.
+    live_error: str | None = None
+    # The call made for THIS request, successful or failed. The only duration
+    # that describes what the viewer just waited for.
+    live_latency_ms: int | None = None
+    # Recorded when the committed entry was generated, on another day against
+    # another network. Never describes this request, and a test asserts it
+    # reaches no screen. See docs/debt.md, cached-path-wearing-a-live-timing.
+    entry_latency_ms: int | None = None
+    # The entry corresponding to this reader and these images, computed from the
+    # inputs. An absent one can be generated rather than merely noticed.
     cache_key: str
 
 
@@ -303,11 +332,22 @@ class ExtractOut(BaseModel):
     # disagree about what "all agreed" means.
     agreed_count: int
     read_field_count: int
-    # Which path this response came down. Aggregated once in the backend so the
-    # screen cannot decide for itself what "cached" means. A miss is reported,
-    # never inferred from a timing.
-    cache_state: str  # "HIT" | "PARTIAL" | "MISS"
-    cache_note: str
+    # The policy this request ran under: "live" | "live_then_cache" | "cache".
+    # Echoed so a screen and an operator can see which one was in force rather
+    # than inferring it from what happened to come back.
+    reader_mode: str
+    # Which path this response came down, aggregated once in the backend so the
+    # screen cannot decide for itself what "cached" means, and so a fast
+    # response is never mistaken for a cached one.
+    #   LIVE | CACHE | FALLBACK_CACHE - every reading shares that source
+    #   MIXED  - the readings do not share one source (one live, one fallback)
+    #   NONE   - nothing was read at all
+    reading_state: str
+    # One clause per reader, GENERATED from the readings rather than written per
+    # branch. With three sources and two readers the hand-written branches
+    # cannot stay true, and a generated note cannot claim what the readings do
+    # not carry. See docs/debt.md, hand-written-summary-of-a-computed-state.
+    reading_note: str
     # Fields the Employment Act engine never receives. Served so the screen's
     # compute gate and its input assembler derive from ONE constant: they
     # drifted, and the gate blocked on a field the assembler then deleted.

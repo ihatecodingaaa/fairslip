@@ -137,12 +137,19 @@ from fairslip.employer import (
     check_csv,
 )
 from fairslip.extract import (
-    CACHE_HIT,
     DOCUMENT_ROLES,
+    MODE_LIVE_THEN_CACHE,
+    READER_MODE_ENV,
+    SOURCE_CACHE,
+    SOURCE_FALLBACK_CACHE,
+    SOURCE_LIVE,
+    SOURCE_NONE,
     ImageInput,
+    ReaderModeError,
     default_readers,
-    read_with_cache,
+    read_for_request,
     reconcile,
+    resolve_reader_mode,
 )
 from fairslip.extract_schema import (
     ANSWER_TYPES,
@@ -242,6 +249,18 @@ async def _draft_error(_: Request, exc: DraftError) -> JSONResponse:
 @app.exception_handler(InvalidInputError)
 async def _invalid(_: Request, exc: InvalidInputError) -> JSONResponse:
     return _refusal("INVALID_INPUT", str(exc))
+
+
+@app.exception_handler(ReaderModeError)
+async def _bad_reader_mode(_: Request, exc: ReaderModeError) -> JSONResponse:
+    """FAIRSLIP_READER_MODE is set to something that is not a mode. A 500,
+    not a 400: nothing is wrong with the request, and the caller cannot fix it.
+    Refused rather than defaulted - running under a mode nobody chose, and
+    saying nothing, is the failure this endpoint exists to avoid."""
+    return JSONResponse(
+        status_code=500,
+        content=RefusalOut(error="INVALID_CONFIG", detail=str(exc)).model_dump(),
+    )
 
 
 @app.exception_handler(CoverageError)
@@ -702,35 +721,79 @@ def _worker_fields_out() -> list[WorkerFieldOut]:
     ]
 
 
-def _cache_state(readings: tuple) -> tuple[str, str]:
+def _reading_clause(r, mode: str) -> str:
+    """What happened to ONE reader, in a sentence built from that reader's own
+    record. Every clause below is reachable only from the source it describes,
+    so the note cannot say a model was called on a path where none was."""
+    who = f"{r.label}"
+    if r.source == SOURCE_LIVE:
+        took = f" in {r.live_latency_ms} ms" if r.live_latency_ms is not None else ""
+        return f"{who} was called and answered{took}."
+    if r.source == SOURCE_CACHE:
+        return (
+            f"{who} was NOT called; a committed cache entry was replayed "
+            f"({r.cache_key[:12]}...)."
+        )
+    if r.source == SOURCE_FALLBACK_CACHE:
+        took = f" after {r.live_latency_ms} ms" if r.live_latency_ms is not None else ""
+        return (
+            f"{who} was called and FAILED{took} ({r.live_error}); a committed cache "
+            f"entry was replayed instead ({r.cache_key[:12]}...). That reading is not "
+            f"this model's answer to this document."
+        )
+    # SOURCE_NONE, and the two ways to arrive at it are different claims.
+    if r.live_attempted:
+        took = f" after {r.live_latency_ms} ms" if r.live_latency_ms is not None else ""
+        tail = (
+            " No committed entry was available to fall back on."
+            if mode == MODE_LIVE_THEN_CACHE
+            else f" {READER_MODE_ENV}={mode} permits no fallback."
+        )
+        return f"{who} was called and FAILED{took} ({r.live_error}).{tail}"
+    return f"{who} was not called and no committed entry matched ({r.error})"
+
+
+def _reading_state(readings: tuple) -> str:
+    """LIVE / CACHE / FALLBACK_CACHE when every reading shares one source, MIXED
+    when they do not, NONE when nothing was read. Derived from the readings, so
+    a state nothing produced cannot be reported."""
+    sources = {r.source for r in readings}
+    if sources == {SOURCE_NONE}:
+        return "NONE"
+    if len(sources) == 1:
+        return next(iter(sources))
+    return "MIXED"
+
+
+def _reading_provenance(readings: tuple, mode: str) -> tuple[str, str]:
     """Say which path this response came down, in words the screen can show.
 
-    A miss is stated, not left to be inferred from a response time. The cache
-    is demo infrastructure for a room with bad wifi, and "it felt fast" is not
-    evidence that it was used. See docs/debt.md,
-    write-path-contradicts-its-own-contract.
-    """
-    hits = [r for r in readings if r.cache == CACHE_HIT]
-    misses = [r for r in readings if r.cache != CACHE_HIT]
+    GENERATED, not written per branch. The previous version hand-wrote one
+    sentence per aggregate state, which was tractable while there were two
+    states and became untrue the moment a reading could be a fallback: no
+    hand-written branch describes "one live, one replayed after a failure".
+    Composing the note from each reading's own record means the mixed case is
+    correct by construction rather than by having been thought of.
 
-    if not misses:
-        return "HIT", (
-            "Both readings were replayed from entries committed to the repo. "
-            "No model was called, so this works with the network down."
+    A miss is stated, never left to be inferred from a response time: "it felt
+    fast" is not evidence about provenance. See docs/debt.md, fast-is-not-cached.
+    """
+    state = _reading_state(readings)
+    clauses = " ".join(_reading_clause(r, mode) for r in readings)
+    note = f"Mode {mode}. {clauses}"
+
+    if state == "CACHE":
+        note += " No model was called for this request, so it works with the network down."
+    elif state == "LIVE":
+        note += " Every reading on this page came from a model called just now."
+    elif state in ("FALLBACK_CACHE", "MIXED") and any(
+        r.source == SOURCE_FALLBACK_CACHE for r in readings
+    ):
+        note += (
+            " A replayed entry is an older answer to the same image, not evidence "
+            "that the model answered this request."
         )
-    if not hits:
-        keys = ", ".join(sorted({r.cache_key for r in misses if r.cache_key}))
-        return "MISS", (
-            "No committed cache entry matched these images, so both readers were "
-            f"called live just now. Expected entries: {keys}. Generate them with "
-            "backend/scripts/make_cache_entry.py and commit them before relying on "
-            "this offline."
-        )
-    return "PARTIAL", (
-        f"{len(hits)} of {len(readings)} readings were replayed from the committed "
-        f"cache; {len(misses)} had no entry and were called live. A partial cache "
-        "will not survive the network going down."
-    )
+    return state, note
 
 
 @app.post("/extract", response_model=ExtractOut)
@@ -745,10 +808,16 @@ def extract(body: ExtractRequest) -> ExtractOut:
     images = _to_images(body)
     readers = default_readers()
 
-    with ThreadPoolExecutor(max_workers=len(readers)) as pool:
-        readings = tuple(pool.map(lambda r: read_with_cache(r, images), readers))
+    # Resolved per request, not at import: a serverless function that read the
+    # policy once at module scope would keep serving the old one after the
+    # environment changed, silently. An unrecognised value raises here and the
+    # request is refused by name rather than run under a mode nobody chose.
+    mode = resolve_reader_mode()
 
-    cache_state, cache_note = _cache_state(readings)
+    with ThreadPoolExecutor(max_workers=len(readers)) as pool:
+        readings = tuple(pool.map(lambda r: read_for_request(r, images, mode=mode), readers))
+
+    reading_state, reading_note = _reading_provenance(readings, mode)
     reconciled = reconcile(readings)
     read_fields = [
         ReadFieldOut(
@@ -769,10 +838,12 @@ def extract(body: ExtractRequest) -> ExtractOut:
                 model=r.model,
                 provider=r.provider,
                 ok=r.ok,
+                source=r.source,
                 error=r.error,
-                latency_ms=r.latency_ms,
-                from_cache=r.from_cache,
-                cache=r.cache,
+                live_attempted=r.live_attempted,
+                live_error=r.live_error,
+                live_latency_ms=r.live_latency_ms,
+                entry_latency_ms=r.entry_latency_ms,
                 cache_key=r.cache_key,
             )
             for r in readings
@@ -782,8 +853,9 @@ def extract(body: ExtractRequest) -> ExtractOut:
         agreed_count=sum(1 for f in read_fields if f.fact.status == "AGREED"),
         read_field_count=len(read_fields),
         cpf_only_fields=sorted(CPF_ONLY_FIELDS),
-        cache_state=cache_state,
-        cache_note=cache_note,
+        reader_mode=mode,
+        reading_state=reading_state,
+        reading_note=reading_note,
     )
 
 

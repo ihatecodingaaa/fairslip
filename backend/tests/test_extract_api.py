@@ -53,7 +53,13 @@ class StubReader:
 @pytest.fixture
 def readers(monkeypatch):
     """Install a pair of stub readers and disable the on-disk cache, so no test
-    writes into backend/demo/extract_cache or replays a real reading."""
+    writes into backend/demo/extract_cache or replays a real reading.
+
+    The mode is NOT pinned here. Tests that care set it with `_use_mode`, and
+    the rest run under whatever the default is - which is the point: if the
+    default ever stops calling the readers, the tests about reconciliation go
+    red, rather than quietly asserting things about replayed values.
+    """
 
     def install(a_values=None, b_values=None, a_fail=None, b_fail=None):
         pair = (
@@ -63,10 +69,21 @@ def readers(monkeypatch):
         monkeypatch.setattr(main, "default_readers", lambda: pair)
         monkeypatch.setattr(
             main,
-            "read_with_cache",
-            lambda r, images: extract.read_with_cache(r, images, None),
+            "read_for_request",
+            lambda r, images, **kw: extract.read_for_request(r, images, None, **kw),
         )
         return pair
+
+    return install
+
+
+@pytest.fixture
+def use_mode(monkeypatch):
+    """Set FAIRSLIP_READER_MODE for one test. The endpoint resolves the mode per
+    request, so this reaches it the same way a deployment's setting would."""
+
+    def install(mode: str):
+        monkeypatch.setenv(extract.READER_MODE_ENV, mode)
 
     return install
 
@@ -91,7 +108,7 @@ def _use_cache_dir(path):
     fixture defaults to no cache at all; this opts a test back in."""
     import app.main as m
 
-    m.read_with_cache = lambda r, images: extract.read_with_cache(r, images, path)
+    m.read_for_request = lambda r, images, **kw: extract.read_for_request(r, images, path, **kw)
 
 
 # --------------------------------------------------------------------------
@@ -214,7 +231,7 @@ def test_the_response_names_both_readers_and_the_model_each_one_used(readers) ->
     for r in out["readers"]:
         assert r["model"].strip()
         assert r["provider"].strip()
-        assert "from_cache" in r
+        assert r["source"] in extract.READER_SOURCES
 
 
 # --------------------------------------------------------------------------
@@ -408,85 +425,212 @@ def test_a_word_this_server_never_published_is_still_refused(readers) -> None:
 
 
 # --------------------------------------------------------------------------
-# The response says which path it came down.
+# The response says which path it came down, per reader and in aggregate.
 #
 # Before this, `from_cache` per reader was the only signal and nothing
 # aggregated it, so a response that silently went live looked exactly like one
 # served from the committed cache - and did, in production, for every request.
-# See docs/debt.md, write-path-contradicts-its-own-contract.
+# See docs/debt.md, write-path-contradicts-its-own-contract and fast-is-not-cached.
+#
+# The wire now carries `source` and nothing coarser. A boolean beside it would
+# be a second way to describe one fact, and the one that cannot express a
+# fallback - which is the state these tests exist to keep visible.
 # --------------------------------------------------------------------------
 
 
-def test_a_live_response_says_it_was_live_and_names_the_missing_entries(readers) -> None:
+def test_a_live_response_says_every_reading_came_from_a_model_called_just_now(
+    readers, use_mode
+) -> None:
+    use_mode(extract.MODE_LIVE)
     readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
     out = post()
 
-    assert out["cache_state"] == "MISS"
-    note = out["cache_note"]
-    assert "called live" in note
-    assert "make_cache_entry.py" in note, "the note must say how to fix it"
-
+    assert out["reader_mode"] == extract.MODE_LIVE
+    assert out["reading_state"] == extract.SOURCE_LIVE
+    assert "called just now" in out["reading_note"]
     for r in out["readers"]:
-        assert r["cache"] == "MISS"
-        assert r["from_cache"] is False
-        assert r["cache_key"], "a miss must name the entry it looked for"
+        assert r["source"] == extract.SOURCE_LIVE
+        assert r["live_attempted"] is True
+        assert r["live_error"] is None
+        assert r["live_latency_ms"] is not None, "a live reading must carry its real duration"
+        assert r["entry_latency_ms"] is None, "nothing was replayed, so there is no entry timing"
+        assert r["cache_key"], "the corresponding entry is named even on the live path"
 
 
-def test_a_fully_cached_response_says_so(readers, tmp_path) -> None:
-    """Both entries committed: no reader is called and the response says the
-    network was not needed."""
+def test_a_fully_cached_response_says_no_model_was_called(readers, use_mode, tmp_path) -> None:
+    """Both entries committed and the mode says cache: no reader is called and
+    the response says the network was not needed."""
+    use_mode(extract.MODE_CACHE)
     pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
     for r in pair:
         extract.write_cache_entry(r, _one_image(), tmp_path)
-    for r in pair:
-        r.calls = 0
     _use_cache_dir(tmp_path)
 
     out = post()
-    assert out["cache_state"] == "HIT"
-    assert "network down" in out["cache_note"]
+    assert out["reader_mode"] == extract.MODE_CACHE
+    assert out["reading_state"] == extract.SOURCE_CACHE
+    assert "network down" in out["reading_note"]
+    assert "was NOT called" in out["reading_note"]
     for r in out["readers"]:
-        assert r["cache"] == "HIT"
-        assert r["from_cache"] is True
+        assert r["source"] == extract.SOURCE_CACHE
+        assert r["live_attempted"] is False
+        assert r["live_latency_ms"] is None, "a duration for a call that never happened"
 
 
-def test_a_half_cached_response_is_reported_as_partial(readers, tmp_path) -> None:
-    """One entry is not enough - /extract calls both readers, so a partial cache
-    still reaches the network. Saying HIT here would be the same class of lie."""
-    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
-    extract.write_cache_entry(pair[0], _one_image(), tmp_path)
+def test_a_cache_mode_response_with_no_entries_reports_the_absence(readers, use_mode, tmp_path):
+    """The offline path with nothing to serve. Nothing is established, and the
+    response says the readers were never called rather than that they failed."""
+    use_mode(extract.MODE_CACHE)
+    readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
     _use_cache_dir(tmp_path)
 
     out = post()
-    assert out["cache_state"] == "PARTIAL"
-    assert "will not survive" in out["cache_note"]
-    states = {r["key"]: r["cache"] for r in out["readers"]}
-    assert states == {"reader_a": "HIT", "reader_b": "MISS"}
+    assert out["reading_state"] == "NONE"
+    assert "was not called" in out["reading_note"]
+    for r in out["readers"]:
+        assert r["source"] == "NONE"
+        assert r["ok"] is False
+        assert r["live_attempted"] is False
+        assert extract.READER_MODE_ENV in r["error"]
+    assert out["agreed_count"] == 0, "an empty cache established a field"
 
 
-def test_the_request_path_never_writes_a_cache_entry(readers, tmp_path) -> None:
+def test_one_live_reader_and_one_fallback_are_reported_independently(
+    readers, use_mode, tmp_path
+) -> None:
+    """THE MIXED CASE. Reader A answers; reader B fails and is replayed. The old
+    aggregate had three hand-written sentences and none of them described this,
+    which is why the note is now composed from the readings themselves."""
+    use_mode(extract.MODE_LIVE_THEN_CACHE)
+    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+
+    # Commit an entry for reader B only, then make B's live call fail. A's live
+    # call still succeeds, so the two readings arrive by different routes.
+    extract.write_cache_entry(pair[1], _one_image(), tmp_path)
+    pair[1]._fail = "APIConnectionError: connection refused"
+    _use_cache_dir(tmp_path)
+
+    out = post()
+    assert out["reading_state"] == "MIXED"
+
+    by_key = {r["key"]: r for r in out["readers"]}
+    assert by_key["reader_a"]["source"] == extract.SOURCE_LIVE
+    assert by_key["reader_a"]["live_error"] is None
+
+    b = by_key["reader_b"]
+    assert b["source"] == extract.SOURCE_FALLBACK_CACHE
+    assert b["ok"] is True, "a fallback reading has values"
+    assert b["error"] is None, "`error` means no values; this reading has values"
+    assert "connection refused" in b["live_error"], "the failed live attempt was hidden"
+    assert b["live_attempted"] is True
+    assert b["live_latency_ms"] is not None, "the failed attempt's real duration"
+
+
+def test_the_note_names_every_reader_and_what_happened_to_each(
+    readers, use_mode, tmp_path
+) -> None:
+    """The note is GENERATED from the readings, so the mixed case is correct by
+    construction rather than by having been thought of. Checked by requiring
+    every reader's label to appear in it, derived from the response itself."""
+    use_mode(extract.MODE_LIVE_THEN_CACHE)
+    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+    extract.write_cache_entry(pair[1], _one_image(), tmp_path)
+    pair[1]._fail = "APIConnectionError: connection refused"
+    _use_cache_dir(tmp_path)
+
+    out = post()
+    note = out["reading_note"]
+    assert out["reader_mode"] in note, "the note does not say which policy was in force"
+    for r in out["readers"]:
+        assert r["label"] in note, "a reader is not accounted for in the note"
+    assert "FAILED" in note, "a failed live call is not mentioned"
+    assert "not this model's answer to this document" in note
+
+
+def test_the_note_never_calls_a_replayed_reading_a_live_one(
+    readers, use_mode, tmp_path
+) -> None:
+    """The one sentence that must never appear. Checked on the two paths where
+    a reading is replayed, because those are the paths where it could."""
+    for mode, fail in ((extract.MODE_CACHE, None), (extract.MODE_LIVE_THEN_CACHE, "boom")):
+        use_mode(mode)
+        pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+        for r in pair:
+            extract.write_cache_entry(r, _one_image(), tmp_path)
+            r._fail = fail
+        _use_cache_dir(tmp_path)
+
+        out = post()
+        for r in out["readers"]:
+            assert r["source"] != extract.SOURCE_LIVE, "a replay was labelled live"
+        assert "was called and answered" not in out["reading_note"], mode
+
+
+def test_the_request_path_never_writes_a_cache_entry(readers, use_mode, tmp_path) -> None:
     """The production bug, at the API boundary: POST /extract must leave the
-    cache directory exactly as it found it."""
+    cache directory exactly as it found it, in every mode."""
+    for mode in extract.READER_MODES:
+        use_mode(mode)
+        readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+        _use_cache_dir(tmp_path)
+        post()
+        post()
+        assert list(tmp_path.glob("*.json")) == [], "POST /extract wrote an entry"
+
+
+def test_the_aggregate_state_cannot_disagree_with_the_per_reader_sources(
+    readers, use_mode, tmp_path
+) -> None:
+    """One aggregate and two per-reader fields describing the same thing must
+    not be able to disagree. Recomputed here from the readers in the response,
+    over every mode, rather than checked on one hand-picked arrangement."""
+    arrangements = [
+        (extract.MODE_LIVE, False, False),
+        (extract.MODE_LIVE, True, True),
+        (extract.MODE_CACHE, True, False),
+        (extract.MODE_LIVE_THEN_CACHE, False, False),
+        (extract.MODE_LIVE_THEN_CACHE, True, True),
+        (extract.MODE_LIVE_THEN_CACHE, True, False),
+    ]
+    for mode, commit, fail in arrangements:
+        run_dir = tmp_path / f"{mode}-{commit}-{fail}"
+        run_dir.mkdir()
+        use_mode(mode)
+        pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
+        if commit:
+            for r in pair:
+                extract.write_cache_entry(r, _one_image(), run_dir)
+        if fail:
+            for r in pair:
+                r._fail = "APIConnectionError: connection refused"
+        _use_cache_dir(run_dir)
+
+        out = post()
+        sources = {r["source"] for r in out["readers"]}
+        if sources == {"NONE"}:
+            expected = "NONE"
+        elif len(sources) == 1:
+            expected = next(iter(sources))
+        else:
+            expected = "MIXED"
+        assert out["reading_state"] == expected, mode
+        assert out["reader_mode"] == mode
+
+
+def test_a_reader_mode_that_is_not_a_mode_is_refused_rather_than_defaulted(
+    readers, use_mode
+) -> None:
+    """Nothing is wrong with the request, and the caller cannot fix it, so this
+    is a 500 - and it is a refusal, not a run under a policy nobody chose."""
+    use_mode("cached")
     readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
-    _use_cache_dir(tmp_path)
 
-    post()
-    post()
-    assert list(tmp_path.glob("*.json")) == [], "POST /extract wrote a cache entry"
-
-
-def test_cache_state_agrees_with_the_per_reader_flags(readers, tmp_path) -> None:
-    """One aggregate and two per-reader flags describing the same fact must not
-    be able to disagree."""
-    pair = readers(a_values={"ot_hours": "18"}, b_values={"ot_hours": "18"})
-    for r in pair:
-        extract.write_cache_entry(r, _one_image(), tmp_path)
-    _use_cache_dir(tmp_path)
-
-    out = post()
-    hits = sum(1 for r in out["readers"] if r["cache"] == "HIT")
-    expected = "HIT" if hits == len(out["readers"]) else "MISS" if hits == 0 else "PARTIAL"
-    assert out["cache_state"] == expected
+    r = client.post("/extract", json=body())
+    assert r.status_code == 500
+    payload = r.json()
+    assert payload["error"] == "INVALID_CONFIG"
+    assert "cached" in payload["detail"]
+    assert extract.READER_MODE_ENV in payload["detail"]
 
 
 def test_an_unestablished_fact_carries_null_and_not_the_word_none() -> None:

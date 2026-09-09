@@ -533,6 +533,11 @@ const REFUSAL_TITLES: Record<Refusal["error"], string> = {
     "A message was written and then refused, because it broke FairSlip’s own copy rules.",
   COVERAGE_UNESTABLISHED: "Something the coverage page states could no longer be established.",
   COVERAGE_COPY: "The coverage page was refused by FairSlip’s own copy rules.",
+  // Not the worker's doing and not fixable by retrying: FAIRSLIP_READER_MODE is
+  // set to something that is not a mode, so nothing was read rather than being
+  // read under a policy nobody chose. Says what happened, not what to type -
+  // the person who can fix it is the one deploying, not the one on this screen.
+  INVALID_CONFIG: "Nothing was read: FairSlip is not configured to read documents right now.",
 };
 
 function RefusalBanner({ refusal }: { refusal: Refusal }) {

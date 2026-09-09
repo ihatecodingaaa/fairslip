@@ -121,7 +121,10 @@ export type Refusal = {
     | "DRAFT_UNAVAILABLE"
     | "DRAFT_REJECTED"
     | "COVERAGE_UNESTABLISHED"
-    | "COVERAGE_COPY";
+    | "COVERAGE_COPY"
+    /** The deployment is misconfigured: FAIRSLIP_READER_MODE is not a mode.
+     * Served as a 500 - the request is fine and the caller cannot fix it. */
+    | "INVALID_CONFIG";
   detail: string;
   /** Present only on MANDATE_EXCEEDED. */
   required_level?: number | null;
@@ -190,18 +193,51 @@ export type ImageIn = {
   data_b64: string;
 };
 
+/**
+ * Where one reading came from. THE ONLY provenance field on this wire.
+ *
+ * The previous pair - `cache: "HIT"|"MISS"` plus `from_cache` - could not tell
+ * a deliberate replay from a fallback after a failed call, and "MISS" covered a
+ * live success and a live failure alike. Both are gone rather than kept beside
+ * this one: a coarser second description is what a screen reaches for when it
+ * wants a boolean, and it is the one that can hide a failed live attempt.
+ *
+ * Do not map these to words here. `app/check/readerSource.ts` owns that, once.
+ */
+export type ReaderSource =
+  /** This model was called for this request and answered. */
+  | "LIVE"
+  /** No model call produced this reading for this request. */
+  | "CACHE"
+  /** A live call was ATTEMPTED, FAILED, and a committed entry was replayed. */
+  | "FALLBACK_CACHE"
+  /** Nothing was read. */
+  | "NONE";
+
 export type ReaderInfo = {
   key: string;
   label: string;
   model: string;
   provider: string;
   ok: boolean;
+  source: ReaderSource;
+  /** Why this reading has no values. Null whenever it has some - including on a
+   * fallback, whose failure is in `live_error`. */
   error: string | null;
-  latency_ms: number | null;
-  from_cache: boolean;
-  /** "HIT" - replayed from an entry committed to the repo; "MISS" - read live. */
-  cache: "HIT" | "MISS";
-  /** The entry that was looked for, hit or miss. A miss you can act on. */
+  /** Whether a model was called for this request - true even when it failed. */
+  live_attempted: boolean;
+  /** What the live call raised. Present on FALLBACK_CACHE too, where the
+   * reading HAS values: a fallback never hides the attempt that failed. */
+  live_error: string | null;
+  /** The call made for THIS request, successful or failed. The only duration
+   * that describes what the viewer just waited for. */
+  live_latency_ms: number | null;
+  /** Recorded when the committed entry was generated, on another day against
+   * another network. NEVER rendered - a test asserts it appears in no
+   * component. See docs/debt.md, cached-path-wearing-a-live-timing. */
+  entry_latency_ms: number | null;
+  /** The entry corresponding to this reader and these images. An absent one can
+   * be generated rather than merely noticed. */
   cache_key: string;
 };
 
@@ -242,13 +278,20 @@ export type ExtractOut = {
   worker_fields: WorkerField[];
   agreed_count: number;
   read_field_count: number;
+  /** The policy this request ran under. Echoed so the screen shows which one
+   * was in force rather than inferring it from what came back. */
+  reader_mode: "live" | "live_then_cache" | "cache";
   /**
    * Which path this response came down. Decided once in the backend so the
    * screen cannot invent its own definition of "cached" - and so a fast
    * response is never mistaken for a cached one.
+   *
+   * MIXED is the case worth naming: one reader answered and the other was
+   * replayed after failing. It is why this is not a boolean.
    */
-  cache_state: "HIT" | "PARTIAL" | "MISS";
-  cache_note: string;
+  reading_state: ReaderSource | "MIXED";
+  /** One clause per reader, generated in the backend from the readings. */
+  reading_note: string;
   /** Fields the Employment Act engine never receives. The compute gate and the
    * input assembler both read this, so they cannot drift apart. */
   cpf_only_fields: string[];

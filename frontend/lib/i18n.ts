@@ -291,6 +291,8 @@ const en = {
   "check.didNotAnswer": "did not answer",
   "check.fromCache": "from cache",
   "check.calledLive": "called live",
+  "check.fellBackToCache": "live call failed - replayed from cache",
+  "check.nothingRead": "nothing was read",
   "check.readersNote":
     "Neither reader saw the other’s answer. They were given the same images and the same list of fields.",
 
@@ -608,6 +610,8 @@ const zh: Partial<Record<Key, string>> = {
   "check.didNotAnswer": "未回答",
   "check.fromCache": "来自缓存",
   "check.calledLive": "实时调用",
+  "check.fellBackToCache": "实时调用失败，改用缓存",
+  "check.nothingRead": "未读取到任何内容",
   "check.readersNote":
     "两个阅读模型都没有看到对方的答案。它们收到的是相同的图像和相同的字段清单。",
 
@@ -920,6 +924,8 @@ const bn: Partial<Record<Key, string>> = {
   "check.didNotAnswer": "উত্তর দেয়নি",
   "check.fromCache": "ক্যাশ থেকে",
   "check.calledLive": "সরাসরি ডাকা হয়েছে",
+  "check.fellBackToCache": "সরাসরি ডাক ব্যর্থ — ক্যাশ থেকে নেওয়া হয়েছে",
+  "check.nothingRead": "কিছুই পড়া হয়নি",
   "check.readersNote":
     "একজন পাঠকও অন্যজনের উত্তর দেখেননি। দুজনকেই একই ছবি এবং একই ফিল্ডের তালিকা দেওয়া হয়েছিল।",
 
@@ -1218,6 +1224,9 @@ const ta: Partial<Record<Key, string>> = {
   "check.answered": "பதிலளித்து",
   "check.didNotAnswer": "பதிலளிக்கவில்லை",
   "check.fromCache": "தேக்கத்திலிருந்து",
+  "check.calledLive": "நேரலையில் அழைக்கப்பட்டது",
+  "check.fellBackToCache": "நேரலை அழைப்பு தோல்வி — தேக்கத்திலிருந்து எடுக்கப்பட்டது",
+  "check.nothingRead": "எதுவும் படிக்கப்படவில்லை",
 
   "group.readHeading": "உங்கள் ஆவணங்களில் இருந்து படிக்கப்பட்டது",
   "group.workerHeading": "இவற்றுக்கு நீங்கள் மட்டுமே பதிலளிக்க முடியும்",

@@ -15,6 +15,60 @@ cited on the deck rather than remembered.
 Both models are configurable by environment variable, so the pick is visible in
 the deployment rather than compiled into a constant.
 
+## When they are actually called: `FAIRSLIP_READER_MODE`
+
+Extraction used to be cache-first: a document whose bytes matched a committed
+entry was answered without either model being called. The response said so, but
+it is the wrong default for a system whose claim is that two models
+independently read the worker's document. The policy is now stated by the
+deployment, per request, and refused by name if it is not one of these three.
+
+| Mode | Reads an entry first | Calls the models | On a live failure | Sources it can return |
+|---|---|---|---|---|
+| `live` | never | always | reports the real failure | `LIVE`, `NONE` |
+| `live_then_cache` **(default)** | never | always | may replay that reader's committed entry | `LIVE`, `FALLBACK_CACHE`, `NONE` |
+| `cache` | only | never | n/a | `CACHE`, `NONE` |
+
+**A successful live reading is never replaced by a cached one, in any mode.** In
+`live_then_cache` the cache is not consulted at all unless the live call failed,
+so there is no path on which a replay can overwrite an answer a model just gave.
+Nothing writes an entry at runtime in any mode; entries are still generated
+offline by `scripts/make_cache_entry.py` and committed.
+
+Which mode goes where:
+
+- **Production / default: `live_then_cache`.** Both models are called for every
+  request. A committed entry stands in only for a reader whose call failed, and
+  when it does, the response and the screen say so and carry the real error.
+- **The pitch demo: `live`.** The demo's claim is that both models were
+  genuinely called, and a silent fallback would destroy the evidence for it. See
+  `docs/demo-script.md`.
+- **`cache`: emergency and offline rehearsal only.** No model is called at all.
+  It must never be described on stage as a live reading.
+
+Unset or empty means the default. A value that is not a mode - `cached`,
+`offline`, `live-then-cache` - is refused with `INVALID_CONFIG` rather than
+defaulted, because every one of those is a value someone typed believing they
+had pinned the behaviour.
+
+### What the response says, per reader
+
+`source` is the only provenance field on the wire, and it separates the three
+claims that must not collapse into each other:
+
+- `LIVE` - this model was called for this request and answered.
+- `CACHE` - no model call produced this reading for this request.
+- `FALLBACK_CACHE` - a live call was **attempted, failed**, and a committed entry
+  was replayed. The reading has values and is `ok`, so `live_error` carries the
+  failure onto the screen; nothing else about it would show that a model was
+  asked and did not answer.
+- `NONE` - nothing was read.
+
+Two timings, named for what they measure: `live_latency_ms` is the call made for
+*this* request (successful or failed) and is the only one a screen may show;
+`entry_latency_ms` was recorded when the entry was generated, on another day
+against another network. See `docs/debt.md, cached-path-wearing-a-live-timing`.
+
 **Both APIs are called directly. Neither goes through an aggregator.** This is
 load-bearing, not incidental. Reader B exists so that a systematic misreading by
 one model family does not become an AGREED — the one failure two readers cannot

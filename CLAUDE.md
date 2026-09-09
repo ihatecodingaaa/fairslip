@@ -31,7 +31,13 @@ Never write "owed", "underpaid", "breach", "entitled", or "resolved" (unless ari
   - `demo/` fictional Rahim fixtures, months 1 and 2
 - Vision: two vendors, each called DIRECTLY - Claude via the Anthropic API (primary), GPT via
   OpenAI's API (auditor). Not through an aggregator: the second reader exists to avoid a shared
-  failure, and routing both through one third party reintroduces one. Cache by image hash.
+  failure, and routing both through one third party reintroduces one.
+- Reader execution policy: `FAIRSLIP_READER_MODE` = `live` | `live_then_cache` | `cache`,
+  default `live_then_cache` - both models called on every request, a committed entry standing
+  in ONLY for a reader whose live call failed, and saying so when it does. `live` (no fallback)
+  is the demo and verification mode; `cache` is offline rehearsal only. A successful live
+  reading is never replaced by a cached one, nothing writes an entry at runtime, and each
+  reading carries `source` = LIVE / CACHE / FALLBACK_CACHE / NONE. See docs/reader-models.md.
 - Work Permit holders have no CPF. The CPF pack returns NO_CPF for them, not an error.
 
 ## Commands
