@@ -10,10 +10,28 @@ dependencies = [
     # requirements.txt - see docs/debt.md manifest-not-read-by-builder.
     "anthropic>=1.4",
     "openai>=3.8",
+    # FastAPI's UploadFile needs this to parse multipart/form-data, and it is
+    # an OPTIONAL FastAPI dependency - so /employer/check imports and starts
+    # fine without it and fails on the first upload. It was installed locally
+    # as a transitive of something else and undeclared, which is the shape of
+    # docs/debt.md manifest-not-read-by-builder: Vercel installs from THIS
+    # file, so a local success proves nothing about production.
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "httpx"]  # httpx backs fastapi.testclient.TestClient
+dev = [
+    "pytest",
+    "ruff",
+    "httpx",  # backs fastapi.testclient.TestClient
+    # Reads the printed take-away sheet back in greyscale - scripts/check_print_sheet.py.
+    # Nothing in the request path imports it and no test imports it, so it was
+    # installed and left undeclared during Phase 4. Declared here because the
+    # alternative is a fresh clone where that script cannot run: its import is
+    # deliberately unguarded, so an absent pymupdf stops the check rather than
+    # letting it pass having examined nothing.
+    "pymupdf",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

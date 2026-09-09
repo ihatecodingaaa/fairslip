@@ -16,7 +16,7 @@
   },
   "rewrites": [
     {
-      "source": "/(health|compute|impact|cpf|extract|openapi.json)(/.*)?",
+      "source": "/(health|compute|impact|cpf|coverage|extract|openapi.json)(/.*)?",
       "destination": { "service": "backend" }
     },
     {
@@ -25,6 +25,10 @@
     },
     {
       "source": "/agent/(mandate|draft|send|verify|escalation|demo-inputs)",
+      "destination": { "service": "backend" }
+    },
+    {
+      "source": "/employer/(check|schema|demo-csv)",
       "destination": { "service": "backend" }
     },
     {

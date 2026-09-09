@@ -282,3 +282,26 @@ def test_every_served_persona_round_trips_through_compute():
         else:
             assert r.status_code == 200, p["key"]
             assert r.json()["expected_gross"]["display"] == "1462.24"
+
+
+def test_the_refusal_codes_the_api_can_send_are_the_ones_the_client_can_receive() -> None:
+    """Two declarations of one vocabulary, on opposite sides of the wire.
+
+    RefusalOut.error and the Refusal union in frontend/lib/api.ts are the same
+    list written twice, and a code added to one and not the other is invisible:
+    the server sends it, the client's type says it cannot arrive, and the screen
+    falls through to a generic sentence about a refusal it could have named.
+    Both sides are read here, so adding a code to either fails until both agree.
+    """
+    import re
+    from pathlib import Path
+    from typing import get_args
+
+    from app.schemas import RefusalOut
+
+    api_ts = Path(__file__).resolve().parent.parent.parent / "frontend" / "lib" / "api.ts"
+    block = re.search(r"export type Refusal = \{\s*error:(.*?);", api_ts.read_text("utf-8"), re.DOTALL)
+    assert block, "the Refusal union was not found in frontend/lib/api.ts"
+    client = set(re.findall(r'"([A-Z_]+)"', block.group(1)))
+    server = set(get_args(RefusalOut.model_fields["error"].annotation))
+    assert client == server, f"only server: {server - client}; only client: {client - server}"

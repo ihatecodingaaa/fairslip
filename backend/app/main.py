@@ -15,9 +15,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 import demo.fixtures as fx
 from app.schemas import (
@@ -30,6 +30,7 @@ from app.schemas import (
     CitedFigureOut,
     ComponentImpactOut,
     ComponentOut,
+    CoverageOut,
     CpfDeltaOut,
     CpfFixtureOut,
     CpfOut,
@@ -39,6 +40,11 @@ from app.schemas import (
     DeadlineOut,
     DraftIn,
     DraftOut,
+    EmployerCheckOut,
+    EmployerFindingOut,
+    EmployerSchemaOut,
+    EncodedRuleOut,
+    EngineValueOut,
     EscalationIn,
     EscalationOut,
     EvidenceItemOut,
@@ -48,20 +54,28 @@ from app.schemas import (
     FixturesOut,
     ImpactIn,
     ImpactOut,
+    InterfaceCoverageOut,
+    MachineOut,
+    MachineStateOut,
     MandateLevelOut,
     MandateOut,
     Money,
     NgoOptionOut,
     NotBuiltOut,
+    NotEncodedOut,
     PayBreakdownOut,
     PayInputsIn,
     PersonaOut,
     QuotedSourceOut,
+    QuoteOut,
     ReaderInfoOut,
     ReadFieldOut,
     RefusalOut,
+    ResidencyOutcomeOut,
+    RulePackOut,
     SendIn,
     SentOut,
+    SpecFieldOut,
     SplitLine,
     VerifyIn,
     VerifyOut,
@@ -70,10 +84,12 @@ from app.schemas import (
 from fairslip.agent import (
     DEFAULT_DRAFT_CACHE_DIR,
     DRAFT_CACHE_HIT,
+    ENTERED_BY,
     MANDATE_LABELS,
     MANDATE_TABLE,
     NO_AUTHENTICATION_NOTICE,
     REFERENCE_LINKS,
+    TRANSITIONS,
     Action,
     ActionNotBuiltError,
     AgentState,
@@ -84,7 +100,18 @@ from fairslip.agent import (
     MandateExceededError,
     TapEvent,
     Unverifiable,
+    Verdict,
     is_built,
+    reachable_states,
+    state_requires_level,
+)
+from fairslip.coverage import (
+    CoverageCopyError,
+    CoverageError,
+    CoveragePack,
+    EngineValue,
+    Quote,
+    build_pack,
 )
 from fairslip.cpf import (
     NO_CPF,
@@ -95,6 +122,19 @@ from fairslip.cpf import (
     ShortfallSplit,
     band_for,
     shortfall_split,
+)
+from fairslip.employer import (
+    CPF_MISTAKES,
+    CPF_MISTAKES_URL,
+    EXTRA_FIELDS,
+    SPEC_ACCOUNT_COLUMN,
+    SPEC_FIELDS,
+    SPEC_NOTE_4,
+    SPEC_NOTE_4_READING,
+    SPEC_ROUNDING_A,
+    SPEC_ROUNDING_B,
+    SPEC_SOURCE,
+    check_csv,
 )
 from fairslip.extract import (
     CACHE_HIT,
@@ -110,6 +150,7 @@ from fairslip.extract_schema import (
     FIELD_LABELS,
     WORKER_ONLY_FIELDS,
     WORKER_PROMPTS,
+    WORKER_PROMPTS_I18N,
     WORKER_WHY,
     choices_for,
 )
@@ -200,6 +241,19 @@ async def _draft_error(_: Request, exc: DraftError) -> JSONResponse:
 @app.exception_handler(InvalidInputError)
 async def _invalid(_: Request, exc: InvalidInputError) -> JSONResponse:
     return _refusal("INVALID_INPUT", str(exc))
+
+
+@app.exception_handler(CoverageError)
+async def _coverage_unestablished(_: Request, exc: CoverageError) -> JSONResponse:
+    """A claim on the coverage screen stopped being true - a probe that no longer
+    refuses, or a field that has since been added. The page gets nothing rather
+    than a description of the product's reach with a hole in it."""
+    return _refusal("COVERAGE_UNESTABLISHED", str(exc))
+
+
+@app.exception_handler(CoverageCopyError)
+async def _coverage_copy(_: Request, exc: CoverageCopyError) -> JSONResponse:
+    return _refusal("COVERAGE_COPY", str(exc))
 
 
 # --------------------------------------------------------------------------
@@ -574,6 +628,7 @@ def _worker_fields_out() -> list[WorkerFieldOut]:
             name=name,
             label=FIELD_LABELS[name],
             prompt=WORKER_PROMPTS[name],
+            prompt_i18n=WORKER_PROMPTS_I18N.get(name, {}),
             why=WORKER_WHY[name],
             required_for=(["cpf"] if name in CPF_ONLY_FIELDS else ["pay"]),
             answer_type=ANSWER_TYPES[name],
@@ -702,6 +757,27 @@ def agent_mandate() -> MandateOut:
             )
             for level in sorted(MANDATE_TABLE)
         ],
+        machine=MachineOut(
+            # Every node and every edge comes out of agent.py's own enums and
+            # TRANSITIONS table. Nothing about the graph is written down twice.
+            states=[
+                MachineStateOut(
+                    name=st.value,
+                    entered_by=(ENTERED_BY[st].value if ENTERED_BY[st] else None),
+                    required_level=state_requires_level(st),
+                    built=(is_built(ENTERED_BY[st]) if ENTERED_BY[st] else True),
+                    terminal=not TRANSITIONS[st],
+                    # Reachable from itself: a cycle, computed by the same
+                    # walker the mandate tests use to prove no edge routes
+                    # around the tap.
+                    re_attemptable=st in reachable_states(st),
+                    to=sorted(x.value for x in TRANSITIONS[st]),
+                )
+                for st in AgentState
+            ],
+            start=AgentState.DISCREPANCY_FOUND.value,
+            verdicts=[v.value for v in Verdict],
+        ),
         no_authentication_notice=NO_AUTHENTICATION_NOTICE,
         reference_links=dict(REFERENCE_LINKS),
     )
@@ -1198,4 +1274,218 @@ def impact(body: ImpactIn) -> ImpactOut:
             "line recorded as its own inputs, not from a list of what depends on "
             "what."
         ),
+    )
+
+
+# --------------------------------------------------------------------------
+# /coverage - who FairSlip is for, stated as rules
+# --------------------------------------------------------------------------
+
+
+def _plain(d: Decimal) -> str:
+    """A number with no trailing zeros and no exponent. Decimal("50.0")
+    normalises to 5E+1, which would put "5E+1%" on a screen."""
+    return format(d.normalize(), "f")
+
+
+def _engine_value_out(v: EngineValue) -> EngineValueOut:
+    """Rendered HERE, from the Decimal the engine holds.
+
+    Money goes through money_display, the same formatter every other dollar on
+    every screen goes through. The frontend receives a string and formats
+    nothing: a second formatter is how $2,600 and $2600.00 end up on one page.
+    """
+    if v.unit == "money":
+        display = f"${money_display(v.value)}"
+    elif v.unit == "ratio":
+        # The engine stores 0.5 and the screen says 50%. Multiplying by 100 to
+        # display a ratio is presentation; it is the only arithmetic this layer
+        # does to an engine's number, and the value carried alongside is still
+        # the engine's.
+        display = f"{_plain(v.value * 100)}%"
+    else:
+        display = _plain(v.value)
+    return EngineValueOut(
+        label=v.label, display=display, unit=v.unit, engine_symbol=v.engine_symbol
+    )
+
+
+def _quote_out(q: Quote | None) -> QuoteOut | None:
+    if q is None:
+        return None
+    return QuoteOut(quoted=q.quoted, source_url=q.source_url, source_label=q.source_label)
+
+
+def _coverage_out(pack: CoveragePack) -> CoverageOut:
+    return CoverageOut(
+        heading=pack.heading,
+        note=pack.note,
+        packs=[
+            RulePackOut(
+                key=p.key,
+                name=p.name,
+                engine_module=p.engine_module,
+                covers=p.covers,
+                coverage_quote=_quote_out(p.coverage_quote),
+                thresholds=[_engine_value_out(t) for t in p.thresholds],
+                encoded=[
+                    EncodedRuleOut(
+                        what=e.what,
+                        engine_symbol=e.engine_symbol,
+                        source_url=e.source_url,
+                        source_label=e.source_label,
+                        quote=_quote_out(e.quote),
+                        values=[_engine_value_out(v) for v in e.values],
+                    )
+                    for e in p.encoded
+                ],
+            )
+            for p in pack.packs
+        ],
+        residency=[
+            ResidencyOutcomeOut(residency=r.residency, outcome=r.outcome, engine_said=r.engine_said)
+            for r in pack.residency
+        ],
+        residency_note=pack.residency_note,
+        not_encoded=[
+            NotEncodedOut(
+                what=n.what,
+                kind=n.kind,
+                why=n.why,
+                established_by=n.established_by,
+                footer_phrase=n.footer_phrase,
+                would_need_field=n.would_need_field,
+            )
+            for n in pack.not_encoded
+        ],
+        interface=InterfaceCoverageOut(
+            question_count=pack.interface.question_count,
+            languages=list(pack.interface.languages),
+            questions_translated=[list(t) for t in pack.interface.questions_translated],
+            note=pack.interface.note,
+            quotes_note=pack.interface.quotes_note,
+        ),
+    )
+
+
+@app.get("/coverage", response_model=CoverageOut)
+def coverage() -> CoverageOut:
+    """Built on every request, not at import.
+
+    The refusals and the residency table are produced by RUNNING the engines, so
+    building them per request is what makes the page a report of what the code
+    does now rather than of what it did when the process started.
+    """
+    return _coverage_out(build_pack())
+
+
+# ------------------------------------------------- the employer pre-payday check
+#
+# The same engine, run before the money moves. A worker brings a payslip after
+# the fact; an employer has the same arithmetic in front of them the day before
+# payday, in a file their payroll system already generates - and at that point
+# the error is still free to fix.
+#
+# THE UPLOAD IS NOT A FORMAT FAIRSLIP INVENTED. Ten of its twelve columns are
+# the CPF EZPay (FTP) File Specifications' Employer Contribution Detail Record,
+# with the spec's own field names and column positions carried through to the
+# screen. The other two are FairSlip's, and say so - see fairslip/employer.py.
+
+
+def _employer_field_out(f) -> SpecFieldOut:
+    return SpecFieldOut(
+        csv_name=f.csv_name,
+        spec_name=f.spec_name,
+        columns=f.columns,
+        data_type=f.data_type,
+        note=f.note,
+    )
+
+
+@app.get("/employer/schema", response_model=EmployerSchemaOut)
+def employer_schema() -> EmployerSchemaOut:
+    """What the check expects, and whose schema each column belongs to."""
+    return EmployerSchemaOut(
+        spec_fields=[_employer_field_out(f) for f in SPEC_FIELDS],
+        extra_fields=[_employer_field_out(f) for f in EXTRA_FIELDS],
+        spec_title=SPEC_SOURCE["title"],
+        spec_effective=SPEC_SOURCE["effective"],
+        spec_record=SPEC_SOURCE["record"],
+        spec_length=SPEC_SOURCE["length"],
+        spec_url=SPEC_SOURCE["url"],
+        spec_read_on=SPEC_SOURCE["read_on"],
+        rounding_a=SPEC_ROUNDING_A,
+        rounding_b=SPEC_ROUNDING_B,
+        note_4=SPEC_NOTE_4,
+        account_column=SPEC_ACCOUNT_COLUMN,
+        note_4_reading=SPEC_NOTE_4_READING,
+        mistakes_url=CPF_MISTAKES_URL,
+        mistakes=[(heading, list(bullets)) for heading, bullets in CPF_MISTAKES.values()],
+    )
+
+
+@app.get("/employer/demo-csv")
+def employer_demo_csv() -> Response:
+    """The fictional roster, generated deterministically from a recorded seed.
+
+    Served rather than committed so it cannot drift from the engine: every
+    correct row's declared amount is what cpf_contribution() returned when this
+    was built. See backend/demo/employer_roster.py.
+    """
+    from demo.employer_roster import build_csv
+
+    return Response(
+        content=build_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="fairslip-demo-roster.csv"'},
+    )
+
+
+@app.post("/employer/check", response_model=EmployerCheckOut)
+async def employer_check(file: UploadFile) -> EmployerCheckOut:
+    """Every row checked against the engine, or visibly refused.
+
+    A row this cannot check is REFUSED and counted, never dropped. An employer
+    reading "11 exceptions" has to be able to see that seven other rows were
+    never examined and why - a refusal that is merely absent from the list is a
+    row silently passed as clean.
+    """
+    raw = await file.read()
+    if len(raw) > 5_000_000:
+        raise InvalidInputError("the file is larger than 5 MB")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise InvalidInputError("the file is not UTF-8 text") from e
+
+    try:
+        result = check_csv(text)
+    except ValueError as e:
+        raise InvalidInputError(str(e)) from e
+
+    return EmployerCheckOut(
+        rows_read=result.rows_read,
+        checked=result.checked,
+        exceptions=result.exceptions,
+        refused=result.refused,
+        total_difference=_money(result.total_difference),
+        by_reason=[(k, v) for k, v in result.by_reason],
+        findings=[
+            EmployerFindingOut(
+                row_number=f.row_number,
+                employee_name=f.employee_name,
+                employee_account_no=f.employee_account_no,
+                outcome=f.outcome.value,
+                reason=f.reason.value if f.reason else None,
+                detail=f.detail,
+                declared=_money(f.declared) if f.declared is not None else None,
+                expected=_money(f.expected) if f.expected is not None else None,
+                difference=_money(f.difference) if f.difference is not None else None,
+                ordinary_wages=_money(f.ordinary_wages) if f.ordinary_wages is not None else None,
+                band=f.band.value if f.band else None,
+                engine_formula=f.engine_formula,
+                engine_flags=list(f.engine_flags),
+            )
+            for f in result.findings
+        ],
     )

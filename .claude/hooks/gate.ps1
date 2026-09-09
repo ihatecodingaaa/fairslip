@@ -70,8 +70,16 @@ foreach ($r in $roots) {
     $exe = $null; $pre = @()
     $venvWin  = Join-Path $r '.venv\Scripts\python.exe'
     $venvUnix = Join-Path $r '.venv/bin/python'
+    # FALLING BACK IS NOT NEUTRAL - see the twin note in gate.sh and
+    # docs/debt.md, green-under-an-interpreter-that-cannot-serve. The system
+    # interpreter on this machine is missing declared runtime dependencies and
+    # still runs the suite green.
     if     (Test-Path $venvWin)  { $exe = $venvWin;  $pre = @('-m', 'pytest') }
     elseif (Test-Path $venvUnix) { $exe = $venvUnix; $pre = @('-m', 'pytest') }
+    elseif (Test-Path (Join-Path $r '.venv')) {
+      [Console]::Error.WriteLine('gate: a .venv exists but has no interpreter inside it; falling back to PATH.')
+      $exe = 'python'; $pre = @('-m', 'pytest')
+    }
     elseif (Get-Command python -ErrorAction SilentlyContinue)  { $exe = 'python'; $pre = @('-m', 'pytest') }
     elseif (Get-Command python3 -ErrorAction SilentlyContinue) { $exe = 'python3'; $pre = @('-m', 'pytest') }
     elseif (Get-Command pytest -ErrorAction SilentlyContinue)  { $exe = 'pytest' }

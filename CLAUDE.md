@@ -36,7 +36,13 @@ Never write "owed", "underpaid", "breach", "entitled", or "resolved" (unless ari
 
 ## Commands
 
-- Backend: `cd backend && python -m pytest -q` / `ruff check --no-cache .` / `uvicorn app.main:app --reload`
+- Backend, THROUGH THE VENV INTERPRETER, not a bare `python`:
+  `cd backend && .venv/Scripts/python.exe -m pytest -q` (`.venv/bin/python` on POSIX)
+  / `.venv/Scripts/python.exe -m ruff check --no-cache .` / `.venv/Scripts/python.exe -m uvicorn app.main:app --reload`
+  A bare `python` is the SYSTEM interpreter, which on this machine is missing
+  declared runtime dependencies and still runs the suite green - see
+  docs/debt.md, green-under-an-interpreter-that-cannot-serve. The gate already
+  prefers the venv; this is the manual command matching it.
 - Frontend: `cd frontend && npm run dev` / `npm run build` / `npm run typecheck`
 - Gate runs backend tests + frontend typecheck on Stop.
 

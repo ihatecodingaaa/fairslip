@@ -303,6 +303,46 @@ TRANSITIONS: dict[AgentState, frozenset[AgentState]] = {
 }
 
 
+# WHICH ACTION ENTERS EACH STATE.
+#
+# TRANSITIONS says which state may follow which. This says what the worker must
+# have ALLOWED for each one to be reachable at all, and the two together are
+# what lets a screen strike a state through and name the level that would permit
+# it - rather than drawing a graph that ignores the mandate it exists to
+# illustrate.
+#
+# DISCREPANCY_FOUND has no action. It is where the reconciliation leaves you,
+# and no mandate is needed to be told that a number does not add up.
+#
+# The four verdicts are all entered by VERIFY: they are its outcomes, not
+# separate things the worker allows. So at level 2 the whole of the right-hand
+# side of the diagram is struck through by one missing permission, which is the
+# mandate argument in a single picture.
+ENTERED_BY: dict[AgentState, Action | None] = {
+    AgentState.DISCREPANCY_FOUND: None,
+    AgentState.MESSAGE_DRAFTED: Action.DRAFT,
+    AgentState.SENT: Action.SEND,
+    AgentState.AWAITING_NEXT_PAYSLIP: Action.TRACK,
+    AgentState.VERIFYING: Action.VERIFY,
+    AgentState.CORRECTED: Action.VERIFY,
+    AgentState.PARTIALLY_CORRECTED: Action.VERIFY,
+    AgentState.NOT_CORRECTED: Action.VERIFY,
+    AgentState.UNVERIFIABLE: Action.VERIFY,
+    AgentState.ESCALATION_PREPARED: Action.PREPARE_ESCALATION,
+}
+
+
+def state_requires_level(state: AgentState) -> int | None:
+    """The lowest mandate level at which this state can be reached at all.
+
+    None for DISCREPANCY_FOUND, which needs no permission. Derived from
+    ENTERED_BY and required_level(), so a level that moves in MANDATE_TABLE
+    moves here too and cannot be restated wrongly on a diagram.
+    """
+    action = ENTERED_BY[state]
+    return None if action is None else required_level(action)
+
+
 def reachable_states(
     start: AgentState, excluding: frozenset[AgentState] | set[AgentState] = frozenset()
 ) -> frozenset[AgentState]:

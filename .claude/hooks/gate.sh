@@ -54,6 +54,15 @@ resolve_python() {
     "$project_dir/.venv/Scripts/python.exe"; do
     [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
   done
+  # FALLING BACK IS NOT NEUTRAL, so it is announced rather than done quietly.
+  # A root with no venv sends the suite to whatever is on PATH - and the system
+  # interpreter on this machine is missing `anthropic` and was missing
+  # `python-multipart`, so it runs the tests green while being unable to serve
+  # the app that those tests are about.
+  # See docs/debt.md, green-under-an-interpreter-that-cannot-serve.
+  if [ -d "$root/.venv" ] || [ -d "$project_dir/.venv" ]; then
+    echo "gate: a .venv exists but no interpreter inside it was executable; falling back to PATH." >&2
+  fi
   for candidate in python3 python; do
     command -v "$candidate" >/dev/null 2>&1 && { command -v "$candidate"; return 0; }
   done

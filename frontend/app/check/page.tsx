@@ -14,8 +14,15 @@
  * the engine sent back.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentPanel } from "./AgentPanel";
+import { Controls } from "../ui/Controls";
+import { T, usePrefs, useT } from "../ui/Prefs";
+import { PrintButton, PrintMasthead, ScreenOnly } from "../ui/PrintSheet";
+import { ReaderComparison } from "./ReaderComparison";
+import { Waterfall } from "./Waterfall";
+import { ReadAloud } from "../ui/ReadAloud";
+import { StatusChip } from "../ui/StatusChip";
 import { ImpactRadius } from "./ImpactRadius";
 import {
   API_BASE,
@@ -37,30 +44,23 @@ import {
 } from "@/lib/api";
 
 /** The documents a reader may be given, and what each is for. */
-const DOCUMENTS: { role: DocumentRole; label: string; hint: string; required: boolean }[] = [
-  {
-    role: "payslip",
-    label: "Payslip",
-    hint: "The itemised pay record from your employer. A photo or a screenshot.",
-    required: true,
-  },
-  {
-    role: "roster",
-    label: "Roster or timesheet",
-    hint: "Your hours - a schedule, a timesheet, or a WhatsApp screenshot.",
-    required: false,
-  },
-  {
-    role: "ket",
-    label: "Key employment terms",
-    hint: "The terms you agreed to, if you have them.",
-    required: false,
-  },
+const DOCUMENTS: {
+  role: DocumentRole;
+  /** Dictionary keys, not literals: these three labels are the first words a
+   * worker reads on this screen, so they translate with everything else. */
+  label: "doc.payslip" | "doc.roster" | "doc.ket";
+  hint: "doc.payslip.hint" | "doc.roster.hint" | "doc.ket.hint";
+  required: boolean;
+}[] = [
+  { role: "payslip", label: "doc.payslip", hint: "doc.payslip.hint", required: true },
+  { role: "roster", label: "doc.roster", hint: "doc.roster.hint", required: false },
+  { role: "ket", label: "doc.ket", hint: "doc.ket.hint", required: false },
 ];
 
 type Phase = "collect" | "reading" | "reconciled";
 
 export default function CheckPage() {
+  const t = useT();
   const [files, setFiles] = useState<Partial<Record<DocumentRole, File>>>({});
   const [phase, setPhase] = useState<Phase>("collect");
   const [extract, setExtract] = useState<ExtractOut | null>(null);
@@ -71,11 +71,22 @@ export default function CheckPage() {
   // a different month from the one rendered above it, labelled "before".
   const [computedFrom, setComputedFrom] = useState<PayInputs | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  // WHEN the engine ran, for the sheet a worker prints and carries somewhere.
+  // Recorded on the response, not on the click: a click that was refused
+  // produced no figures, and a timestamp above no figures dates nothing.
+  // A caseworker holding the paper cannot ask the screen how old it is.
+  const [computedAt, setComputedAt] = useState<string | null>(null);
   // Two failures, two states. They were one, so a /compute failure rendered
   // "The readers could not be reached" - while the readings it was contradicting
   // sat on screen directly above. See docs/debt.md, ui-invents-a-cause.
   const [readError, setReadError] = useState<string | null>(null);
   const [computeError, setComputeError] = useState<string | null>(null);
+  // WCAG 4.1.3. Both of the long operations on this screen finish somewhere
+  // other than where the reader is looking, and a sighted reader gets a page
+  // that visibly grew. `announce` is what a screen reader gets instead.
+  const [announce, setAnnounce] = useState("");
+  const readersRef = useRef<HTMLHeadingElement>(null);
+  const resultRef = useRef<HTMLParagraphElement>(null);
 
   const chosen = DOCUMENTS.filter((d) => files[d.role]);
 
@@ -98,6 +109,7 @@ export default function CheckPage() {
       setAnswers({});
       setBreakdown(null);
       setPhase("reconciled");
+      setAnnounce(t("a11y.readersLanded"));
     } catch (e) {
       setReadError(e instanceof Error ? e.message : String(e));
       setPhase("collect");
@@ -154,31 +166,56 @@ export default function CheckPage() {
         setRefusal(out.refusal);
         setBreakdown(null);
         setComputedFrom(null);
+        setComputedAt(null);
         return;
       }
       setBreakdown(out.value);
       setComputedFrom(sent);
+      // Taken here, where the engine's answer arrived - not in the render, which
+      // would restamp the sheet every time React re-ran it and quietly turn "when
+      // these figures were worked out" into "when you last touched the page".
+      setComputedAt(new Date().toISOString());
+      setAnnounce(t("a11y.resultReady"));
     } catch (e) {
       setComputeError(e instanceof Error ? e.message : String(e));
     }
   }
 
+  useEffect(() => {
+    if (phase === "reconciled" && !breakdown) readersRef.current?.focus();
+  }, [phase, breakdown]);
+
+  useEffect(() => {
+    if (breakdown) resultRef.current?.focus();
+  }, [breakdown]);
+
   return (
-    <div className="flex-1 bg-zinc-100 text-zinc-900">
+    <div className="flex-1 bg-canvas text-ink">
       <main className="mx-auto max-w-3xl px-5 py-10">
-        <header className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight">Does your pay add up?</h1>
-          <p className="mt-2 text-zinc-600">
-            Two readers transcribe your documents independently. Where they agree, we say so.
-            Where they do not, you decide. And some things no document can tell us &mdash; those
-            we ask you.
+        {/* Present in the DOM BEFORE anything is injected into it. A live
+            region created at the same moment as its content is not announced -
+            the assistive technology has nothing to observe changing. */}
+        <div role="status" aria-live="polite" className="sr-only">
+          {announce}
+        </div>
+        <PrintMasthead computedAt={computedAt} />
+        <Controls />
+        {/* print-hide: the masthead above IS this heading on paper - same
+            dictionary key, one line up - and a document that opens with its
+            title twice reads as two documents stapled together. */}
+        <header className="print-hide mb-8">
+          <h1 className="text-page font-semibold tracking-tight">
+            <T k="check.title" />
+          </h1>
+          <p className="max-w-measure mt-2 text-ink-2">
+            <T k="check.intro" />
           </p>
         </header>
 
         {readError && (
           <Banner tone="red" title="The readers could not be reached.">
             <p>{readError}</p>
-            <p className="mt-2">
+            <p className="max-w-measure mt-2">
               Nothing is shown below, because nothing was read. Backend expected at{" "}
               <code className="font-mono">{API_BASE || "the same origin as this page"}</code>.
             </p>
@@ -188,7 +225,7 @@ export default function CheckPage() {
         {computeError && (
           <Banner tone="red" title="The calculation did not complete.">
             <p>{computeError}</p>
-            <p className="mt-2">
+            <p className="max-w-measure mt-2">
               The readers were reached and what they read is shown below. It is the calculation
               that did not return a result, so no figure is shown for this month.
             </p>
@@ -197,20 +234,26 @@ export default function CheckPage() {
 
         {refusal && <RefusalBanner refusal={refusal} />}
 
-        <Upload
-          files={files}
-          onPick={(role, file) => setFiles((f) => ({ ...f, [role]: file }))}
-          onRead={read}
-          phase={phase}
-          canRead={chosen.some((d) => d.required)}
-        />
+        {/* Hidden from print without an omission note: a file picker is a
+            control, not a figure, and its result - which documents were read,
+            and what each reader made of them - is on the sheet directly below. */}
+        <div className="print-hide">
+          <Upload
+            files={files}
+            onPick={(role, file) => setFiles((f) => ({ ...f, [role]: file }))}
+            onRead={read}
+            phase={phase}
+            canRead={chosen.some((d) => d.required)}
+          />
+        </div>
 
         {extract && phase === "reconciled" && (
           <>
             <CachePath state={extract.cache_state} note={extract.cache_note} />
-            <Readers readers={extract.readers} />
+            <Readers readers={extract.readers} headingRef={readersRef} />
             <ReadGroup
               fields={extract.read_fields}
+              readers={extract.readers}
               cpfOnly={extract.cpf_only_fields}
               agreed={extract.agreed_count}
               total={extract.read_field_count}
@@ -223,9 +266,11 @@ export default function CheckPage() {
               restDay={restDayVerdict(extract, answers)}
               onAnswer={(name, value) => setAnswers((a) => ({ ...a, [name]: value }))}
             />
-            <ComputeGate unresolved={unresolved} onCompute={compute} />
+            <div className="print-hide">
+              <ComputeGate unresolved={unresolved} onCompute={compute} />
+            </div>
             {breakdown && computedFrom && (
-              <Result breakdown={breakdown} inputs={computedFrom} />
+              <Result breakdown={breakdown} inputs={computedFrom} headingRef={resultRef} />
             )}
             {breakdown && <AgentPanel />}
           </>
@@ -252,29 +297,32 @@ function Upload({
   phase: Phase;
   canRead: boolean;
 }) {
+  const t = useT();
   return (
-    <section className="mb-8 rounded-lg border border-zinc-300 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-        Your documents
+    <section className="mb-8 rounded-lg border border-line-strong bg-surface p-5 shadow-card">
+      <h2 className="text-body font-semibold uppercase tracking-wide text-ink-3">
+        <T k="check.docsHeading" />
       </h2>
       <ul className="mt-3 space-y-3">
         {DOCUMENTS.map((d) => (
-          <li key={d.role} className="rounded border border-zinc-200 p-3">
+          <li key={d.role} className="rounded-sm border border-line p-3">
             <label className="block cursor-pointer">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="font-medium">
-                  {d.label}
-                  {d.required && <span className="ml-1 text-red-700">*</span>}
+                  <T k={d.label} />
+                  {d.required && <span className="ml-1 text-danger-fg">*</span>}
                 </span>
-                <span className="text-xs text-zinc-500">
-                  {files[d.role] ? files[d.role]!.name : "no file chosen"}
+                <span className="text-meta text-ink-3">
+                  {files[d.role] ? files[d.role]!.name : t("check.noFile")}
                 </span>
               </div>
-              <p className="mt-0.5 text-xs text-zinc-600">{d.hint}</p>
+              <p className="mt-1 text-meta text-ink-2">
+                <T k={d.hint} />
+              </p>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
-                className="mt-2 block w-full text-xs file:mr-3 file:rounded file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-white"
+                className="mt-2 block w-full text-meta file:mr-3 file:rounded-sm file:border-0 file:bg-brand file:px-3 file:py-2 file:text-on-solid"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) onPick(d.role, f);
@@ -288,12 +336,14 @@ function Upload({
         type="button"
         onClick={onRead}
         disabled={!canRead || phase === "reading"}
-        className="mt-4 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-600"
+        className="tap mt-4 rounded-sm bg-brand px-5 py-3 text-body font-semibold text-on-solid disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3"
       >
-        {phase === "reading" ? "Both readers are reading…" : "Read my documents"}
+        {phase === "reading" ? t("check.reading") : t("check.read")}
       </button>
       {!canRead && (
-        <p className="mt-2 text-xs text-zinc-600">A payslip is needed before we can read.</p>
+        <p className="mt-2 text-meta text-ink-2">
+          <T k="check.needPayslip" />
+        </p>
       )}
     </section>
   );
@@ -301,32 +351,43 @@ function Upload({
 
 /* ----------------------------------------------------------------- readers */
 
-function Readers({ readers }: { readers: ReaderInfo[] }) {
+function Readers({
+  readers,
+  headingRef,
+}: {
+  readers: ReaderInfo[];
+  headingRef?: React.Ref<HTMLHeadingElement>;
+}) {
+  const t = useT();
   return (
-    <section className="mb-6 rounded-lg border border-zinc-300 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-        Who read your documents
+    <section className="mb-6 rounded-lg border border-line-strong bg-surface p-4 shadow-card">
+      <h2
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-body font-semibold uppercase tracking-wide text-ink-3"
+      >
+        <T k="check.readersHeading" />
       </h2>
-      <ul className="mt-2 space-y-2 text-sm">
+      <ul className="mt-2 space-y-2 text-body">
         {readers.map((r) => (
           <li key={r.key} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span
-              className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
-                r.ok ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-900"
+              className={`rounded-sm px-2 py-1 text-meta font-semibold ${
+                r.ok ? "bg-agreed-bg text-agreed-fg" : "bg-danger-bg text-danger-fg"
               }`}
             >
-              {r.ok ? "answered" : "did not answer"}
+              {r.ok ? t("check.answered") : t("check.didNotAnswer")}
             </span>
             <span className="font-medium">{r.provider}</span>
-            <span className="font-mono text-xs text-zinc-600">{r.model}</span>
+            <span className="font-mono text-meta text-ink-2">{r.model}</span>
             <span
-              className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
+              className={`rounded-sm px-2 py-1 text-meta font-semibold ${
                 r.cache === "HIT"
-                  ? "bg-emerald-100 text-emerald-900"
-                  : "bg-sky-100 text-sky-900"
+                  ? "bg-agreed-bg text-agreed-fg"
+                  : "bg-brand-bg text-brand-fg"
               }`}
             >
-              {r.cache === "HIT" ? "from cache" : "called live"}
+              {r.cache === "HIT" ? t("check.fromCache") : t("check.calledLive")}
             </span>
             {/*
               A time is only shown for a live call, because only then does it
@@ -338,15 +399,14 @@ function Readers({ readers }: { readers: ReaderInfo[] }) {
               See docs/debt.md, cached-path-wearing-a-live-timing.
             */}
             {r.cache !== "HIT" && r.latency_ms !== null && (
-              <span className="text-xs text-zinc-500">{r.latency_ms} ms</span>
+              <span className="text-meta text-ink-3">{r.latency_ms} ms</span>
             )}
-            {r.error && <span className="w-full text-xs text-red-800">{r.error}</span>}
+            {r.error && <span className="w-full text-meta text-danger-fg">{r.error}</span>}
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-xs text-zinc-600">
-        Neither reader saw the other&rsquo;s answer. They were given the same images and the same
-        list of fields.
+      <p className="max-w-measure mt-2 text-meta text-ink-2">
+        <T k="check.readersNote" />
       </p>
     </section>
   );
@@ -361,10 +421,10 @@ function Readers({ readers }: { readers: ReaderInfo[] }) {
 function CachePath({ state, note }: { state: ExtractOut["cache_state"]; note: string }) {
   const tone =
     state === "HIT"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+      ? "border-agreed-line bg-agreed-bg text-agreed-fg"
       : state === "PARTIAL"
-        ? "border-amber-300 bg-amber-50 text-amber-900"
-        : "border-sky-300 bg-sky-50 text-sky-900";
+        ? "border-attention-line bg-attention-bg text-attention-fg"
+        : "border-brand-line bg-brand-bg text-brand-fg";
   const heading =
     state === "HIT"
       ? "Replayed from the committed cache - no model was called"
@@ -372,7 +432,7 @@ function CachePath({ state, note }: { state: ExtractOut["cache_state"]; note: st
         ? "Partly cached, partly live"
         : "Read live just now - not from the cache";
   return (
-    <section className={`mb-6 rounded-md border px-4 py-3 text-sm ${tone}`}>
+    <section className={`mb-6 rounded-sm border px-4 py-3 text-body ${tone}`}>
       <p className="font-semibold">{heading}</p>
       <p className="mt-1">{note}</p>
     </section>
@@ -383,6 +443,7 @@ function CachePath({ state, note }: { state: ExtractOut["cache_state"]; note: st
 
 function ReadGroup({
   fields,
+  readers,
   cpfOnly,
   agreed,
   total,
@@ -390,6 +451,9 @@ function ReadGroup({
   onAnswer,
 }: {
   fields: ReadField[];
+  /** Who read them. The comparison needs the two reader identities for its
+   * column headings and for the independence diagram. */
+  readers: ReaderInfo[];
   /** Fields the pay engine never receives. Labelled, not silently unanswerable:
    * one of these used to offer "What is the right figure?", record a green
    * chip, and then have the answer deleted before /compute. */
@@ -401,139 +465,109 @@ function ReadGroup({
 }) {
   const allAgreed = agreed === total;
   return (
-    <section className="mb-6 overflow-hidden rounded-lg border-2 border-sky-300 bg-white shadow-sm">
-      <div className="border-b border-sky-200 bg-sky-50 px-5 py-3">
-        <h2 className="text-base font-semibold text-sky-950">
-          Read from your documents
-          <span className="ml-2 rounded-full bg-sky-200 px-2 py-0.5 text-xs font-semibold text-sky-900">
-            {total} fields
+    <section className="mb-6 overflow-hidden rounded-lg border-2 border-brand-line bg-surface shadow-card">
+      <div className="border-b border-brand-line bg-brand-bg px-5 py-3">
+        <h2 className="text-lead font-semibold text-brand-fg">
+          <T k="group.readHeading" />
+          <span className="ml-2 rounded-full border border-brand-line bg-surface px-2 py-1 text-meta font-semibold text-brand-fg">
+            <T k="group.fieldCount" vars={{ n: total }} />
           </span>
         </h2>
-        <p className="mt-1 text-sm text-sky-900">
-          These are figures a payslip or a roster actually shows, so two readers were each asked
-          to transcribe them.
+        <p className="max-w-measure mt-1 text-body text-brand-fg">
+          <T k="group.readBlurb" />
         </p>
       </div>
 
       {allAgreed ? (
-        <div className="border-b border-emerald-200 bg-emerald-50 px-5 py-3">
-          <p className="font-semibold text-emerald-900">
-            Both readers agreed on all {total}.
+        <div className="border-b border-agreed-line bg-agreed-bg px-5 py-3">
+          <p className="font-semibold text-agreed-fg">
+            <T k="group.allAgreed" vars={{ n: total }} />
           </p>
-          <p className="mt-1 text-sm text-emerald-900">
-            Two models, given the same images separately, transcribed every one of these the same
-            way. That is what agreement means here, and it is the only thing that makes a read
-            field usable without asking you.
+          <p className="max-w-measure mt-1 text-body text-agreed-fg">
+            <T k="group.allAgreedWhy" />
           </p>
         </div>
       ) : (
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3">
-          <p className="font-semibold text-amber-900">
-            The readers agreed on {agreed} of {total}.
+        <div className="border-b border-attention-line bg-attention-bg px-5 py-3">
+          <p className="font-semibold text-attention-fg">
+            <T k="group.someAgreed" vars={{ a: agreed, t: total }} />
           </p>
-          <p className="mt-1 text-sm text-amber-900">
-            The rest are below, with what each reader said. FairSlip does not pick between them.
+          <p className="max-w-measure mt-1 text-body text-attention-fg">
+            <T k="group.someAgreedWhy" />
           </p>
         </div>
       )}
 
-      <ul className="divide-y divide-zinc-200">
-        {fields.map((f) => (
-          <ReadFieldRow
-            key={f.name}
-            field={f}
-            cpfOnly={cpfOnly.includes(f.name)}
-            answer={answers[f.name] ?? ""}
-            onAnswer={(v) => onAnswer(f.name, v)}
-          />
-        ))}
-      </ul>
+      {/* ONE COMPARISON, NOT SIX ROWS. The readings used to be scattered a
+          field at a time down the page, so seeing whether the readers ever
+          disagreed meant reading six separate rows and holding them in your
+          head. Side by side it is the picture, and the answer boxes stay with
+          their fields - the 0:10 beat still taps the rest-day row and confirms
+          it in place. */}
+      <div className="px-5 py-4">
+        <ReaderComparison fields={fields} readers={readers} answers={answers}>
+          {(f) => (
+            <ReadFieldAnswer
+              field={f}
+              cpfOnly={cpfOnly.includes(f.name)}
+              answer={answers[f.name] ?? ""}
+              onAnswer={(v) => onAnswer(f.name, v)}
+            />
+          )}
+        </ReaderComparison>
+      </div>
     </section>
   );
 }
 
-function ReadFieldRow({
+/**
+ * What a worker is asked to do about a field the readers did not settle.
+ *
+ * This used to be a whole row: the label, the status chip, both readings and
+ * then the answer box. The first three moved into ReaderComparison, which shows
+ * them for every field at once; what is left here is the affordance, rendered
+ * under its own row in that table.
+ *
+ * The three branches are unchanged, and the middle one is the one worth
+ * keeping: a `cpfOnly` field never reaches the pay engine, so offering to
+ * answer it would earn a green chip and then have the answer deleted before
+ * /compute - a confirmation recorded and thrown away.
+ */
+function ReadFieldAnswer({
   field,
   cpfOnly,
   answer,
   onAnswer,
 }: {
   field: ReadField;
-  /** The pay engine never receives this one. It is read from the payslip for the
-   * CPF check, and payInputsFrom deletes it before /compute. */
   cpfOnly: boolean;
   answer: string;
   onAnswer: (v: string) => void;
 }) {
-  const settled = isEstablished(field.fact.status);
-  // An ANSWER, not a confirmation. This is `answer.trim().length > 0` and
-  // nothing more: "abc" and "-5" satisfy it. The engine still refuses them, so
-  // no bad figure ships - but the chip must not claim an establishment that
-  // only the engine can grant. docs/debt.md,
-  // established-status-mistaken-for-established-value.
-  const answered = !settled && answer.trim().length > 0;
-
+  const t = useT();
+  if (isEstablished(field.fact.status)) return null;
+  if (cpfOnly) {
+    return (
+      <p className="max-w-measure text-meta text-ink-3">
+        This one is for the CPF check, which FairSlip does not run on this screen, so it does
+        not hold up your figures.
+      </p>
+    );
+  }
   return (
-    <li className="px-5 py-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="font-medium">
-          {field.label}
-          {cpfOnly && (
-            <span className="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-normal text-sky-900">
-              for the CPF check
-            </span>
-          )}
-        </span>
-        <StatusChip status={answered ? "HUMAN_CONFIRMED" : field.fact.status} />
-      </div>
-
-      <ul className="mt-1.5 space-y-0.5 text-xs">
-        {Object.entries(field.readings).map(([reader, value]) => (
-          <li key={reader} className="font-mono text-zinc-700">
-            <span className="text-zinc-500">{reader}</span>{" "}
-            {value === null ? (
-              <span className="italic text-zinc-500">answered nothing</span>
-            ) : (
-              <span
-                className={
-                  field.unreadable.includes(reader) ? "text-amber-800" : "text-zinc-900"
-                }
-              >
-                {value}
-                {field.unreadable.includes(reader) && " (not a number)"}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      {settled ? (
-        <p className="mt-1 text-xs text-zinc-500">{field.fact.source}</p>
-      ) : cpfOnly ? (
-        // No answer box. This field never reaches the pay engine, so an answer
-        // typed here would earn a green chip and then be deleted before
-        // /compute - a confirmation recorded and thrown away.
-        <p className="mt-1 text-xs text-zinc-500">
-          {field.fact.source}. This one is for the CPF check, which FairSlip does not run on
-          this screen, so it does not hold up your figures.
-        </p>
-      ) : (
-        <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
-          <p className="text-xs text-amber-900">{field.fact.source}</p>
-          <label className="mt-2 block text-xs font-medium text-amber-950">
-            What is the right figure?
-            <input
-              type="text"
-              inputMode="decimal"
-              value={answer}
-              onChange={(e) => onAnswer(e.target.value)}
-              placeholder="type the number you know to be right"
-              className="mt-1 block w-full rounded border border-amber-400 bg-white px-2 py-1 font-mono text-sm text-zinc-900"
-            />
-          </label>
-        </div>
-      )}
-    </li>
+    <div className="rounded-sm border border-attention-line bg-attention-bg px-3 py-2">
+      <label className="block text-meta font-medium text-attention-fg">
+        <T k="field.rightFigure" />
+        <input
+          type="text"
+          inputMode="decimal"
+          value={answer}
+          onChange={(e) => onAnswer(e.target.value)}
+          placeholder={t("field.typeNumber")}
+          className="mt-1 block w-full rounded-sm border border-attention-line bg-surface px-2 py-1 font-mono text-body text-ink"
+        />
+      </label>
+    </div>
   );
 }
 
@@ -554,46 +588,43 @@ function WorkerGroup({
   const rest = fields.filter((f) => f.name !== "net_paid");
 
   return (
-    <section className="mb-6 overflow-hidden rounded-lg border-2 border-violet-300 bg-white shadow-sm">
-      <div className="border-b border-violet-200 bg-violet-50 px-5 py-3">
-        <h2 className="text-base font-semibold text-violet-950">
-          Only you can answer these
-          <span className="ml-2 rounded-full bg-violet-200 px-2 py-0.5 text-xs font-semibold text-violet-900">
-            {fields.length} fields
+    <section className="mb-6 overflow-hidden rounded-lg border-2 border-confirmed-line bg-surface shadow-card">
+      <div className="border-b border-confirmed-line bg-confirmed-bg px-5 py-3">
+        <h2 className="text-lead font-semibold text-confirmed-fg">
+          <T k="group.workerHeading" />
+          <span className="ml-2 rounded-full border border-confirmed-line bg-surface px-2 py-1 text-meta font-semibold text-confirmed-fg">
+            <T k="group.fieldCount" vars={{ n: fields.length }} />
           </span>
         </h2>
-        <p className="mt-1 text-sm text-violet-900">
-          No reader was shown these. A better photograph would not help, and a better model
-          would not either: some of these are facts no payslip states, and the rest are facts
-          only you can settle. A model asked anyway would return a guess that looks exactly
-          like a reading.
+        <p className="max-w-measure mt-1 text-body text-confirmed-fg">
+          <T k="group.workerBlurb" />
         </p>
       </div>
 
       {netPaid && (
-        <div className="border-b-4 border-violet-200 bg-violet-50/40 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
-            The one that matters most
+        <div className="border-b-4 border-confirmed-line bg-confirmed-bg/40 px-5 py-4">
+          <p className="text-meta font-semibold uppercase tracking-wide text-confirmed-fg">
+            <T k="group.mostImportant" />
           </p>
-          <h3 className="mt-1 text-lg font-semibold text-violet-950">{netPaid.label}</h3>
-          <p className="mt-2 rounded border border-violet-300 bg-white px-3 py-2 text-sm text-zinc-800">
+          <h3 className="mt-1 text-lead font-semibold text-confirmed-fg">{netPaid.label}</h3>
+          <p className="mt-2 rounded-sm border border-confirmed-line bg-surface px-3 py-2 text-body text-ink">
             {netPaid.why}
           </p>
-          <label className="mt-3 block text-sm font-medium text-violet-950">
-            {netPaid.prompt}
+          <label className="mt-3 block text-body font-medium text-confirmed-fg">
+            <ServerPrompt field={netPaid} />
             <input
               type="text"
               inputMode="decimal"
               value={answers.net_paid ?? ""}
               onChange={(e) => onAnswer("net_paid", e.target.value)}
               placeholder="e.g. 1120.00"
-              className="mt-1 block w-full rounded border-2 border-violet-400 bg-white px-3 py-2 font-mono text-base text-zinc-900"
+              className="mt-1 block w-full rounded-sm border-2 border-confirmed-line bg-surface px-3 py-2 font-mono text-body text-ink"
             />
           </label>
         </div>
       )}
 
-      <ul className="divide-y divide-zinc-200">
+      <ul className="divide-y divide-line">
         {rest.map((f) => {
           // Non-rest-day fields always render their input; only this one is conditional.
           const held: RestDayVerdict =
@@ -604,8 +635,8 @@ function WorkerGroup({
                 <span className="font-medium">{f.label}</span>
                 <div className="flex gap-2">
                   {f.required_for.includes("cpf") && (
-                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-600">
-                      for the CPF check
+                    <span className="rounded-sm bg-sunken px-2 py-1 text-meta font-semibold text-ink-2">
+                      <T k="group.forCpf" />
                     </span>
                   )}
                   <StatusChip
@@ -613,9 +644,9 @@ function WorkerGroup({
                   />
                 </div>
               </div>
-              <p className="mt-1 text-xs text-zinc-600">{f.why}</p>
+              <p className="mt-1 text-meta text-ink-2">{f.why}</p>
               {held.state === "not_worked" ? (
-                <p className="mt-2 text-xs text-zinc-500">
+                <p className="mt-2 text-meta text-ink-3">
                   Not asked:{" "}
                   {held.settledBy === "readers"
                     ? "both readers agree no hours were worked on a rest day"
@@ -623,7 +654,7 @@ function WorkerGroup({
                   , so MOM&rsquo;s rest-day table does not apply.
                 </p>
               ) : held.state === "unknown" ? (
-                <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="mt-2 rounded-sm border border-attention-line bg-attention-bg px-3 py-2 text-meta text-attention-fg">
                   Not asked yet. Whether a rest day was worked is not established &mdash; see
                   &ldquo;Hours worked on a rest day&rdquo; above. That is not the same as the
                   documents showing no rest day, and FairSlip will not treat it as though it were.
@@ -644,6 +675,26 @@ function WorkerGroup({
   );
 }
 
+/**
+ * A question the SERVER owns, rendered in the reader's language.
+ *
+ * The translations ship from backend/fairslip/extract_schema.py beside the
+ * English, so there is one source of truth for what a field asks. When a
+ * language has no entry the English is shown MARKED, exactly like an
+ * untranslated interface string - the fallback is the same everywhere, because
+ * "we have not translated this yet" is one fact however it arises.
+ */
+function ServerPrompt({ field }: { field: WorkerField }) {
+  const { lang } = usePrefs();
+  const translated = lang === "en" ? field.prompt : field.prompt_i18n[lang];
+  if (translated) return <>{translated}</>;
+  return (
+    <span className="untranslated" lang="en">
+      {field.prompt}
+    </span>
+  );
+}
+
 function WorkerInput({
   field,
   value,
@@ -654,10 +705,10 @@ function WorkerInput({
   onChange: (v: string) => void;
 }) {
   const cls =
-    "mt-1 block w-full rounded border border-zinc-400 bg-white px-2 py-1.5 text-sm text-zinc-900";
+    "mt-1 block w-full rounded-sm border border-control bg-surface px-2 py-2 text-body text-ink";
   return (
-    <label className="mt-2 block text-sm text-zinc-800">
-      {field.prompt}
+    <label className="mt-2 block text-body text-ink">
+      <ServerPrompt field={field} />
       {field.answer_type === "choice" ? (
         <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
           <option value="">&mdash; not yet answered &mdash;</option>
@@ -689,45 +740,45 @@ function ComputeGate({
   unresolved: { name: string; label: string; group: "read" | "worker" }[];
   onCompute: () => void;
 }) {
+  const t = useT();
   const blocked = unresolved.length > 0;
   return (
-    <section className="mb-6 rounded-lg border border-zinc-300 bg-white p-5 shadow-sm">
+    <section className="mb-6 rounded-lg border border-line-strong bg-surface p-5 shadow-card">
       <button
         type="button"
         onClick={onCompute}
         disabled={blocked}
-        className="rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-600"
+        className="tap rounded-sm bg-brand px-5 py-3 text-body font-semibold text-on-solid disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3"
       >
-        Work out what the rules say this month should have paid
+        <T k="gate.compute" />
       </button>
 
       {blocked ? (
         <div className="mt-3">
-          <p className="text-sm font-semibold text-zinc-800">
+          <p className="text-body font-semibold text-ink">
             {unresolved.length === 1
-              ? "One field is still unanswered, so nothing has been calculated:"
-              : `${unresolved.length} fields are still unanswered, so nothing has been calculated:`}
+              ? t("gate.blockedOne")
+              : t("gate.blockedMany", { n: unresolved.length })}
           </p>
-          <ul className="mt-2 space-y-1 text-sm">
+          <ul className="mt-2 space-y-1 text-body">
             {unresolved.map((f) => (
               <li key={f.name} className="flex items-baseline gap-2">
                 <span
-                  className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
-                    f.group === "read" ? "bg-sky-500" : "bg-violet-500"
+                  className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                    f.group === "read" ? "bg-brand" : "bg-confirmed"
                   }`}
                 />
-                <span className="text-zinc-800">{f.label}</span>
-                <span className="text-xs text-zinc-500">
-                  {f.group === "read" ? "the readers did not settle it" : "we ask you, not a reader"}
+                <span className="text-ink">{f.label}</span>
+                <span className="text-meta text-ink-3">
+                  {f.group === "read" ? t("gate.reasonRead") : t("gate.reasonWorker")}
                 </span>
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <p className="mt-3 text-sm text-zinc-700">
-          Every field the engine needs has an answer &mdash; agreed by both readers, or given
-          by you. The engine checks each value when it runs, and refuses any it cannot use.
+        <p className="max-w-measure mt-3 text-body text-ink-2">
+          <T k="gate.ready" />
         </p>
       )}
     </section>
@@ -739,40 +790,72 @@ function ComputeGate({
 function Result({
   breakdown,
   inputs,
+  headingRef,
 }: {
+  headingRef?: React.Ref<HTMLParagraphElement>;
   breakdown: PayBreakdown;
   /** The exact facts that produced this breakdown. The impact view varies one
    * of them and sends both sets to the engine. */
   inputs: PayInputs;
 }) {
+  const t = useT();
   return (
-    <section className="mb-8 rounded-lg border border-zinc-300 bg-white shadow-sm">
-      <div className="border-b border-zinc-200 px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Possible unreconciled difference
+    <section className="mb-8 rounded-lg border border-line-strong bg-surface shadow-card">
+      <div className="border-b border-line px-5 py-4">
+        <p
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-meta font-semibold uppercase tracking-wide text-ink-3"
+        >
+          <T k="result.difference" />
         </p>
-        <p className="mt-1 text-4xl font-semibold tabular-nums">{money(breakdown.difference)}</p>
-        <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
-          <Stat label="Expected gross" value={money(breakdown.expected_gross)} />
-          <Stat label="Deductions on the payslip" value={money(breakdown.deductions_total)} />
-          <Stat label="Expected net" value={money(breakdown.expected_net)} />
-          <Stat label="Reached the bank" value={money(breakdown.net_paid)} />
-        </dl>
+        <p className="mt-1 text-hero font-semibold tabular-nums">{money(breakdown.difference)}</p>
+        {/* The four figures that used to sit here as a row of numbers are now
+            four rows of the waterfall below, each drawn against the same axis
+            as the components that produced them. Nothing was dropped: the
+            read-aloud below still speaks all four, from the same Money objects. */}
+        {/* The read-aloud is handed the SAME t() labels and the SAME money()
+            strings this card just rendered, assembled one line up. There is no
+            second copy of the figures anywhere and no template: what it speaks
+            is what is on the screen, by construction rather than by care. */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <PrintButton />
+          <ReadAloud
+            lines={[
+              `${t("result.difference")}: ${money(breakdown.difference)}`,
+              `${t("result.expectedGross")}: ${money(breakdown.expected_gross)}`,
+              `${t("result.deductions")}: ${money(breakdown.deductions_total)}`,
+              `${t("result.expectedNet")}: ${money(breakdown.expected_net)}`,
+              `${t("result.reachedBank")}: ${money(breakdown.net_paid)}`,
+              ...breakdown.components.map(
+                (c) => `${c.label.replace(/_/g, " ")}: ${money(c.amount)}`,
+              ),
+            ]}
+          />
+        </div>
       </div>
 
-      <div className="border-b border-zinc-200 px-5 py-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Where each dollar comes from
+      <Waterfall breakdown={breakdown} />
+
+      {/* The list stays. It answers a different question from the chart: the
+          chart says how big each part is, the list says where each came from,
+          and the 0:35 beat of docs/demo-script.md points at this one with the
+          formulas already open - "no tap needed, point, do not click". Both
+          render the same Component objects; neither holds a second copy of a
+          figure. */}
+      <div className="border-b border-line px-5 py-4">
+        <h3 className="text-body font-semibold uppercase tracking-wide text-ink-3">
+          <T k="result.whereFrom" />
         </h3>
-        <ul className="mt-2 divide-y divide-zinc-200">
+        <ul className="mt-2 divide-y divide-line">
           {breakdown.components.map((c) => (
             <li key={c.label} className="py-2">
               <div className="flex items-baseline justify-between gap-4">
                 <span className="font-medium">{c.label.replace(/_/g, " ")}</span>
                 <span className="font-medium tabular-nums">{money(c.amount)}</span>
               </div>
-              <p className="mt-0.5 font-mono text-xs text-zinc-600">{c.formula}</p>
-              <ul className="mt-1 space-y-0.5 text-xs text-zinc-500">
+              <p className="mt-1 font-mono text-meta text-ink-2">{c.formula}</p>
+              <ul className="mt-1 space-y-1 text-meta text-ink-3">
                 {c.inputs.map((src) => (
                   <li key={src}>&larr; {src}</li>
                 ))}
@@ -784,12 +867,14 @@ function Result({
 
       {breakdown.flags.length > 0 && (
         <div className="px-5 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Flags</h3>
+          <h3 className="text-body font-semibold uppercase tracking-wide text-ink-3">
+            <T k="result.flags" />
+          </h3>
           <ul className="mt-2 space-y-1">
             {breakdown.flags.map((f) => (
               <li
                 key={f}
-                className="rounded border border-amber-300 bg-amber-50 px-3 py-1 font-mono text-xs text-amber-900"
+                className="rounded-sm border border-attention-line bg-attention-bg px-3 py-1 font-mono text-meta text-attention-fg"
               >
                 {f}
               </li>
@@ -798,13 +883,15 @@ function Result({
         </div>
       )}
 
-      <ImpactRadius inputs={inputs} />
+      <ScreenOnly id="impact" noteClassName="px-5">
+        <ImpactRadius inputs={inputs} />
+      </ScreenOnly>
 
-      <div className="border-t border-zinc-200 px-5 py-4">
-        <p className="text-sm font-semibold text-zinc-800">
+      <div className="border-t border-line px-5 py-4">
+        <p className="text-body font-semibold text-ink">
           The CPF side of this month is not shown.
         </p>
-        <p className="mt-1 text-sm text-zinc-700">
+        <p className="max-w-measure mt-1 text-body text-ink-2">
           Working out CPF needs the wage the employer actually computed CPF on, and no document
           you uploaded states that figure. It could be worked backwards from the CPF line on the
           payslip, but CPF rounding drops the cents, so that gives a range of possible wages
@@ -818,31 +905,6 @@ function Result({
 
 /* --------------------------------------------------------------- fragments */
 
-function StatusChip({ status }: { status: Fact["status"] }) {
-  const tone = isEstablished(status)
-    ? "bg-emerald-100 text-emerald-900"
-    : status === "DISAGREED"
-      ? "bg-amber-200 text-amber-900"
-      : "bg-zinc-200 text-zinc-700";
-  const words: Record<Fact["status"], string> = {
-    AGREED: "both readers agree",
-    DISAGREED: "readers disagree",
-    MISSING: "not established",
-    HUMAN_CONFIRMED: "you answered this",
-  };
-  return (
-    <span className={`rounded px-2 py-0.5 text-xs font-semibold ${tone}`}>{words[status]}</span>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-zinc-500">{label}</dt>
-      <dd className="font-medium tabular-nums">{value}</dd>
-    </div>
-  );
-}
 
 function Banner({
   tone,
@@ -855,10 +917,10 @@ function Banner({
 }) {
   const cls =
     tone === "red"
-      ? "border-red-300 bg-red-50 text-red-900"
-      : "border-amber-300 bg-amber-50 text-amber-900";
+      ? "border-danger-line bg-danger-bg text-danger-fg"
+      : "border-attention-line bg-attention-bg text-attention-fg";
   return (
-    <section className={`mb-6 rounded-md border p-4 text-sm ${cls}`}>
+    <section className={`mb-6 rounded-sm border p-4 text-body ${cls}`}>
       <p className="font-semibold">{title}</p>
       {children}
     </section>
@@ -882,21 +944,23 @@ const REFUSAL_TITLES: Record<Refusal["error"], string> = {
   ACTION_NOT_BUILT: "FairSlip has not built that yet.",
   DRAFT_UNAVAILABLE: "No drafted message is available for this month.",
   DRAFT_REJECTED: "A message was written and then refused, because it broke FairSlip’s own copy rules.",
+  COVERAGE_UNESTABLISHED: "Something the coverage page states could no longer be established.",
+  COVERAGE_COPY: "The coverage page was refused by FairSlip’s own copy rules.",
 };
 
 function RefusalBanner({ refusal }: { refusal: Refusal }) {
   const title = REFUSAL_TITLES[refusal.error] ?? "FairSlip declined, and said why below.";
   return (
     <Banner tone="amber" title={title}>
-      <p className="mt-1 rounded bg-white/60 px-3 py-2 font-mono text-xs">{refusal.detail}</p>
+      <p className="mt-1 rounded-sm bg-surface/60 px-3 py-2 font-mono text-meta">{refusal.detail}</p>
       {refusal.error === "MANDATE_EXCEEDED" && refusal.required_level != null && (
-        <p className="mt-2 text-xs">
+        <p className="max-w-measure mt-2 text-meta">
           Mandate level {refusal.required_level} would permit it. Raising the level is your
           choice, and nothing changes until you make it.
         </p>
       )}
       {refusal.error === "ACTION_NOT_BUILT" && (
-        <p className="mt-2 text-xs">
+        <p className="max-w-measure mt-2 text-meta">
           This is not disabled by your mandate. Raising your mandate level will not enable it.
         </p>
       )}
@@ -906,20 +970,18 @@ function RefusalBanner({ refusal }: { refusal: Refusal }) {
 
 function Footer() {
   return (
-    <footer className="mt-10 border-t border-zinc-300 pt-6 text-xs text-zinc-600">
-      <p className="font-semibold text-zinc-700">Outside what FairSlip checks</p>
-      <p className="mt-1">
-        Daily and piece-rated workers; public-holiday pay; shift-work averaging; CPF on monthly
-        wages of $750 or less; PR year 1 and 2 CPF rates; Additional Wages; platform workers;
-        domestic workers; and any question of legal liability. Where an input falls outside these
-        rules the engines refuse rather than approximate.
+    <footer className="mt-10 border-t border-line-strong pt-6 text-meta text-ink-2">
+      <p className="font-semibold text-ink-2">
+        <T k="footer.outside" />
       </p>
-      <p className="mt-3">
-        Figures are reconstructed from MOM&rsquo;s and CPF Board&rsquo;s published rules and are
-        not a determination of any kind. Check with MOM, TADM or CPF Board.
+      <p className="max-w-measure mt-1">
+        <T k="footer.outsideBody" />
       </p>
-      <p className="mt-3 font-mono text-[11px] text-zinc-400">
-        Engines at {API_BASE || "same origin"}
+      <p className="max-w-measure mt-3">
+        <T k="footer.notADetermination" />
+      </p>
+      <p className="mt-3 font-mono text-meta text-ink-3">
+        <T k="footer.engines" /> {API_BASE || "same origin"}
       </p>
     </footer>
   );

@@ -149,6 +149,13 @@ class RefusalOut(BaseModel):
         "DRAFT_UNAVAILABLE",
         # A draft was produced and then refused for breaking the copy contract.
         "DRAFT_REJECTED",
+        # A claim on the coverage screen stopped being establishable - a refusal
+        # probe that no longer refuses, an input that has since appeared. The
+        # page is refused whole rather than served with a hole in it.
+        "COVERAGE_UNESTABLISHED",
+        # Coverage copy broke the UI copy contract. Distinct from the above: the
+        # claims still hold, the words describing them do not.
+        "COVERAGE_COPY",
     ]
     detail: str
     required_level: int | None = None
@@ -247,6 +254,10 @@ class WorkerFieldOut(BaseModel):
     name: str
     label: str
     prompt: str
+    # The same question in each interface language. English is not a key here:
+    # `prompt` above IS the English, and duplicating it would give the screen
+    # two places to read the same sentence from.
+    prompt_i18n: dict[str, str]
     why: str
     required_for: list[str]  # "pay" and/or "cpf"
     answer_type: str  # "decimal" | "choice" | "date"
@@ -295,11 +306,43 @@ class MandateLevelOut(BaseModel):
     action_detail: list[ActionOut]
 
 
+class MachineStateOut(BaseModel):
+    """One node of the agent's state machine, with everything a diagram needs.
+
+    Served rather than described, so a drawing cannot drift from the machine it
+    draws. `to` is the state's outgoing edges from TRANSITIONS; `required_level`
+    is derived from ENTERED_BY and the mandate table, so a level that moves in
+    one place moves on the diagram too.
+    """
+
+    name: str
+    entered_by: str | None
+    required_level: int | None
+    built: bool
+    terminal: bool
+    # TRUE ONLY IF THE STATE IS REACHABLE FROM ITSELF.
+    #
+    # "not terminal" is not the same as "can be attempted again", and the
+    # difference is the whole point of drawing UNVERIFIABLE. PARTIALLY_CORRECTED
+    # is not terminal either - it goes on to the escalation pack - but it does
+    # not come back, and labelling it re-attemptable told a worker their
+    # part-corrected month could be re-checked, which it cannot.
+    re_attemptable: bool
+    to: list[str]
+
+
+class MachineOut(BaseModel):
+    states: list[MachineStateOut]
+    start: str
+    verdicts: list[str]
+
+
 class MandateOut(BaseModel):
     """The whole table, so a screen renders the worker's choice from the server's
     own answer rather than from a copy of the table it keeps itself."""
 
     levels: list[MandateLevelOut]
+    machine: MachineOut
     # Stated on screen, not buried in a comment: nothing here establishes that
     # the worker granted the level the caller claims.
     no_authentication_notice: str
@@ -573,3 +616,150 @@ class ImpactOut(BaseModel):
     flags_before: list[str]
     flags_after: list[str]
     note: str
+
+
+# --------------------------------------------------------------------------
+# Coverage: who FairSlip is for, stated as rules
+# --------------------------------------------------------------------------
+
+
+class QuoteOut(BaseModel):
+    """An authority's own sentence and the page it was read from. Kept apart
+    from every FairSlip-authored string beside it, like EvidenceItemOut: a
+    reader must always be able to see which words are the authority's."""
+
+    quoted: str
+    source_url: str
+    source_label: str
+
+
+class EngineValueOut(BaseModel):
+    """A number an engine holds. `display` is rendered by the API from that
+    Decimal, so the page cannot format money a second way, and `engine_symbol`
+    names where the value was read from - it is what the test resolves."""
+
+    label: str
+    display: str
+    unit: str
+    engine_symbol: str
+
+
+class EncodedRuleOut(BaseModel):
+    what: str
+    engine_symbol: str
+    source_url: str
+    source_label: str
+    quote: QuoteOut | None = None
+    values: list[EngineValueOut] = []
+
+
+class RulePackOut(BaseModel):
+    key: str
+    name: str
+    engine_module: str
+    covers: str
+    coverage_quote: QuoteOut | None = None
+    thresholds: list[EngineValueOut] = []
+    encoded: list[EncodedRuleOut] = []
+
+
+class ResidencyOutcomeOut(BaseModel):
+    """`engine_said` is what the engine returned or refused with, and it is
+    empty where the engine simply computed - a sentence written to fill that
+    column would be FairSlip's words wearing the engine's."""
+
+    residency: str
+    outcome: Literal["CONTRIBUTES", "NOT_A_MEMBER", "REFUSED"]
+    engine_said: str
+
+
+class NotEncodedOut(BaseModel):
+    what: str
+    kind: Literal["REFUSED_BY_ENGINE", "NO_INPUT_EXISTS", "STATED_NOT_CHECKED"]
+    why: str
+    established_by: str
+    footer_phrase: str = ""
+    would_need_field: str = ""
+
+
+class InterfaceCoverageOut(BaseModel):
+    question_count: int
+    languages: list[str]
+    questions_translated: list[tuple[str, int]]
+    note: str
+    quotes_note: str
+
+
+class CoverageOut(BaseModel):
+    heading: str
+    note: str
+    packs: list[RulePackOut]
+    residency: list[ResidencyOutcomeOut]
+    residency_note: str
+    not_encoded: list[NotEncodedOut]
+    interface: InterfaceCoverageOut
+
+
+# ------------------------------------------------- the employer pre-payday check
+
+
+class SpecFieldOut(BaseModel):
+    """One column, and where it comes from.
+
+    `spec_name` and `columns` are CPF Board's own, from the Employer Contribution
+    Detail Record. The two columns FairSlip adds carry "(not in the CPF file)"
+    here, so the screen can show the boundary rather than describe it.
+    """
+
+    csv_name: str
+    spec_name: str
+    columns: str
+    data_type: str
+    note: str
+
+
+class EmployerFindingOut(BaseModel):
+    row_number: int
+    employee_name: str
+    employee_account_no: str
+    outcome: Literal["OK", "EXCEPTION", "REFUSED"]
+    reason: str | None
+    detail: str
+    declared: Money | None
+    expected: Money | None
+    difference: Money | None
+    ordinary_wages: Money | None
+    band: str | None
+    engine_formula: str
+    engine_flags: list[str]
+
+
+class EmployerCheckOut(BaseModel):
+    rows_read: int
+    checked: int
+    exceptions: int
+    refused: int
+    total_difference: Money
+    by_reason: list[tuple[str, int]]
+    findings: list[EmployerFindingOut]
+
+
+class EmployerSchemaOut(BaseModel):
+    """What the upload expects, and whose schema each column is."""
+
+    spec_fields: list[SpecFieldOut]
+    extra_fields: list[SpecFieldOut]
+    spec_title: str
+    spec_effective: str
+    spec_record: str
+    spec_length: str
+    spec_url: str
+    spec_read_on: str
+    rounding_a: str
+    rounding_b: str
+    note_4: str
+    account_column: str
+    note_4_reading: str
+    mistakes_url: str
+    mistakes: list[tuple[str, list[str]]]
+

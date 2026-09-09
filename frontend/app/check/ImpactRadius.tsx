@@ -41,10 +41,10 @@ function editableFields(inputs: PayInputs): { name: string; fact: Fact }[] {
 }
 
 const STATUS_COPY: Record<ComponentStatus, { word: string; tone: string }> = {
-  MOVED: { word: "moved", tone: "text-amber-900" },
-  ADDED: { word: "appeared", tone: "text-amber-900" },
-  REMOVED: { word: "gone", tone: "text-amber-900" },
-  UNCHANGED: { word: "did not move", tone: "text-zinc-500" },
+  MOVED: { word: "moved", tone: "text-attention-fg" },
+  ADDED: { word: "appeared", tone: "text-attention-fg" },
+  REMOVED: { word: "gone", tone: "text-attention-fg" },
+  UNCHANGED: { word: "did not move", tone: "text-ink-3" },
 };
 
 type ComponentStatus = ImpactOut["components"][number]["status"];
@@ -97,15 +97,15 @@ export function ImpactRadius({ inputs }: { inputs: PayInputs }) {
 
   if (!open) {
     return (
-      <div className="border-t border-zinc-200 px-5 py-4">
+      <div className="border-t border-line px-5 py-4">
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:border-zinc-700"
+          className="tap-sm rounded-sm border border-control bg-surface px-4 py-3 text-body font-medium text-ink hover:border-ink"
         >
           Change one of these numbers and re-run
         </button>
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="max-w-measure mt-1 text-meta text-ink-3">
           Every figure above came from a fact. Change one and see which figures it reaches -
           and which it does not.
         </p>
@@ -114,20 +114,20 @@ export function ImpactRadius({ inputs }: { inputs: PayInputs }) {
   }
 
   return (
-    <div className="border-t border-zinc-200 bg-zinc-50/60 px-5 py-4">
-      <h3 className="text-sm font-semibold text-zinc-900">Change one number and re-run</h3>
-      <p className="mt-0.5 text-xs text-zinc-600">
+    <div className="border-t border-line bg-muted/60 px-5 py-4">
+      <h3 className="text-body font-semibold text-ink">Change one number and re-run</h3>
+      <p className="max-w-measure mt-1 text-meta text-ink-2">
         Both sets of figures are produced by the same engine, run twice on the facts you sent.
         Nothing on this screen is worked out here.
       </p>
 
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="text-xs font-medium text-zinc-700">
+        <label className="text-meta font-medium text-ink-2">
           Which fact
           <select
             value={field}
             onChange={(e) => pick(e.target.value)}
-            className="mt-1 block rounded border border-zinc-400 bg-white px-2 py-1 text-sm text-zinc-900"
+            className="mt-1 block rounded-sm border border-control bg-surface px-2 py-1 text-body text-ink"
           >
             <option value="">&mdash; pick one &mdash;</option>
             {fields.map((f) => (
@@ -138,7 +138,7 @@ export function ImpactRadius({ inputs }: { inputs: PayInputs }) {
           </select>
         </label>
 
-        <label className="text-xs font-medium text-zinc-700">
+        <label className="text-meta font-medium text-ink-2">
           New value
           <input
             type="text"
@@ -152,7 +152,7 @@ export function ImpactRadius({ inputs }: { inputs: PayInputs }) {
               setResult(null);
               setRefusal(null);
             }}
-            className="mt-1 block w-40 rounded border border-zinc-400 bg-white px-2 py-1 font-mono text-sm text-zinc-900 disabled:bg-zinc-100"
+            className="mt-1 block w-40 rounded-sm border border-control bg-surface px-2 py-1 font-mono text-body text-ink disabled:bg-muted"
           />
         </label>
 
@@ -160,14 +160,14 @@ export function ImpactRadius({ inputs }: { inputs: PayInputs }) {
           type="button"
           onClick={rerun}
           disabled={!chosen || busy}
-          className="rounded bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          className="tap rounded-sm bg-brand px-5 py-3 text-body font-semibold text-on-solid disabled:opacity-50"
         >
           {busy ? "Re-running…" : "Re-run the engine"}
         </button>
       </div>
 
       {error && (
-        <p className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <p className="mt-3 rounded-sm border border-danger-line bg-danger-bg px-3 py-2 text-body text-danger-fg">
           The re-run did not complete: {error}. No figure was produced for the change, and the
           figures above are the ones from before. FairSlip cannot tell from here whether the
           engine was reached.
@@ -178,21 +178,21 @@ export function ImpactRadius({ inputs }: { inputs: PayInputs }) {
           impact on screen next to a refusal for the run that would have
           superseded it. */}
       {refusal && (
-        <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2">
+        <div className="mt-3 rounded-sm border border-attention-line bg-attention-bg px-3 py-2">
           {/* Two of the refusal paths never reach the engine: an unreadable
               value is caught converting the request, and "nothing changed" is
               not a refused value at all - and that one is the LIKELIEST first
               click, because the box is prefilled with the current value.
               docs/debt.md, ui-invents-a-cause. */}
-          <p className="text-sm font-semibold text-amber-900">
+          <p className="text-body font-semibold text-attention-fg">
             {refusal.detail.includes("nothing changed")
               ? "Nothing was changed, so there was nothing to re-run."
               : refusal.error === "INVALID_INPUT"
                 ? "That value could not be read as the type its field needs, so nothing was recomputed."
                 : "The engine refused that value, so nothing was recomputed."}
           </p>
-          <p className="mt-1 font-mono text-xs text-amber-900">{refusal.detail}</p>
-          <p className="mt-1 text-xs text-amber-900">
+          <p className="mt-1 font-mono text-meta text-attention-fg">{refusal.detail}</p>
+          <p className="max-w-measure mt-1 text-meta text-attention-fg">
             No figure is shown for the change. FairSlip does not keep the previous number on
             screen as though it still answered the question you just asked.
           </p>
@@ -210,7 +210,7 @@ function ImpactResult({ r }: { r: ImpactOut }) {
 
   return (
     <div className="mt-4">
-      <p className="text-sm text-zinc-900">
+      <p className="max-w-measure text-body text-ink">
         {r.changed_fields.map((f) => (
           <span key={f.name} className="mr-3">
             <span className="font-medium">{f.name.replace(/_/g, " ")}</span>{" "}
@@ -226,7 +226,7 @@ function ImpactResult({ r }: { r: ImpactOut }) {
           what is in doubt, and rendering the retraction last put the confident
           panel first. Empty on every correct run. */}
       {r.unexplained_moves.length > 0 && (
-        <p className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900">
+        <p className="mt-3 rounded-sm border border-danger-line bg-danger-bg px-3 py-2 text-meta text-danger-fg">
           These lines moved without listing the fact you changed among their inputs:{" "}
           {r.unexplained_moves.join(", ")}. That is a contradiction between what the engine
           computed and what it recorded, so treat the two lists below with suspicion - FairSlip
@@ -235,25 +235,25 @@ function ImpactResult({ r }: { r: ImpactOut }) {
       )}
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <section className="rounded border border-amber-300 bg-amber-50 px-3 py-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+        <section className="rounded-sm border border-attention-line bg-attention-bg px-3 py-2">
+          <h4 className="text-meta font-semibold uppercase tracking-wide text-attention-fg">
             {r.moved_count} {r.moved_count === 1 ? "line moved" : "lines moved"}
           </h4>
           <ul className="mt-1 space-y-1">
             {moved.map((c) => (
-              <li key={c.label} className="text-sm text-amber-900">
+              <li key={c.label} className="text-body text-attention-fg">
                 <span className="font-medium">{c.label.replace(/_/g, " ")}</span>{" "}
-                <span className="font-mono text-xs">
+                <span className="font-mono text-meta">
                   {c.before ? money(c.before) : "—"} &rarr; {c.after ? money(c.after) : "—"}
                   {c.delta && ` (${money(c.delta)})`}
                 </span>
-                <span className="block text-[11px] opacity-80">
+                <span className="block text-meta opacity-80">
                   {STATUS_COPY[c.status].word} &middot; {c.formula}
                 </span>
               </li>
             ))}
             {moved.length === 0 && (
-              <li className="text-sm text-amber-900">
+              <li className="text-body text-attention-fg">
                 {/* Branching on the engine's own figure. This used to assert the
                     change "reached the comparison" on runs where the difference
                     delta was $0.00, forty lines above a line saying so. */}
@@ -266,16 +266,16 @@ function ImpactResult({ r }: { r: ImpactOut }) {
         </section>
 
         {/* The claim this whole view exists for. Computed, never asserted. */}
-        <section className="rounded border border-zinc-300 bg-white px-3 py-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <section className="rounded-sm border border-line-strong bg-surface px-3 py-2">
+          <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
             {r.unchanged_count} did not move
           </h4>
           <ul className="mt-1 space-y-1">
             {held.map((c) => (
-              <li key={c.label} className="text-sm text-zinc-600">
+              <li key={c.label} className="text-body text-ink-2">
                 <span className="font-medium">{c.label.replace(/_/g, " ")}</span>{" "}
-                <span className="font-mono text-xs">{c.before ? money(c.before) : "—"}</span>
-                <span className="block text-[11px] text-zinc-500">
+                <span className="font-mono text-meta">{c.before ? money(c.before) : "—"}</span>
+                <span className="block text-meta text-ink-3">
                   {/* Read from what the backend computed, never asserted. A
                       line CAN list the changed fact and hold its value: the
                       rest-day table brackets on half the normal daily hours,
@@ -289,7 +289,7 @@ function ImpactResult({ r }: { r: ImpactOut }) {
               </li>
             ))}
             {held.length === 0 && (
-              <li className="text-sm text-zinc-600">
+              <li className="text-body text-ink-2">
                 {r.unexplained_moves.length === 0
                   ? "Every line moved. That fact reaches all of them."
                   : "Every line moved, but see the note below - not all of them declared a dependency on what you changed."}
@@ -299,13 +299,13 @@ function ImpactResult({ r }: { r: ImpactOut }) {
         </section>
       </div>
 
-      <dl className="mt-3 grid gap-x-6 gap-y-1 rounded border border-zinc-300 bg-white px-3 py-2 sm:grid-cols-2">
+      <dl className="mt-3 grid gap-x-6 gap-y-1 rounded-sm border border-line-strong bg-surface px-3 py-2 sm:grid-cols-2">
         <Row label="Expected net, before" value={money(r.before_expected_net)} />
         <Row label="Expected net, after" value={money(r.after_expected_net)} />
         <Row label="Difference, before" value={money(r.before_difference)} />
         <Row label="Difference, after" value={money(r.after_difference)} strong />
       </dl>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-meta text-ink-2">
         The difference moved by {money(r.difference_delta)}.
       </p>
 
@@ -315,7 +315,7 @@ function ImpactResult({ r }: { r: ImpactOut }) {
       {(r.flags_before.length > 0 || r.flags_after.length > 0) && (
         <ul className="mt-2 space-y-1">
           {r.flags_before.map((f) => (
-            <li key={`b-${f}`} className="font-mono text-[11px] text-zinc-600">
+            <li key={`b-${f}`} className="font-mono text-meta text-ink-2">
               before: {f}
               {!r.flags_after.includes(f) && " (cleared by your change)"}
             </li>
@@ -323,23 +323,23 @@ function ImpactResult({ r }: { r: ImpactOut }) {
           {r.flags_after
             .filter((f) => !r.flags_before.includes(f))
             .map((f) => (
-              <li key={`a-${f}`} className="font-mono text-[11px] text-amber-900">
+              <li key={`a-${f}`} className="font-mono text-meta text-attention-fg">
                 after: {f} (raised by your change)
               </li>
             ))}
         </ul>
       )}
 
-      <p className="mt-2 text-[11px] text-zinc-500">{r.note}</p>
+      <p className="mt-2 text-meta text-ink-3">{r.note}</p>
     </div>
   );
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="flex justify-between gap-4 text-xs">
-      <dt className="text-zinc-600">{label}</dt>
-      <dd className={`font-mono ${strong ? "font-bold text-zinc-900" : "text-zinc-800"}`}>
+    <div className="flex justify-between gap-4 text-meta">
+      <dt className="text-ink-2">{label}</dt>
+      <dd className={`font-mono ${strong ? "font-bold text-ink" : "text-ink"}`}>
         {value}
       </dd>
     </div>

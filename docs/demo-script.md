@@ -13,6 +13,26 @@ the whole scripted run and nothing it does takes longer than 1.3s, so there is n
 cut - every remaining second is a person typing or talking. The one measurable wait is the
 extraction, 1.0-1.3s on the committed cache against 9.06s live, so run it cached.
 
+RE-MEASURED AGAINST PRODUCTION 8 Sept 2026, three runs, same harness. Warm: 3.8s and 4.3s of
+system time, extraction 1.24s and 1.30s - the 7 Sept figures hold. The FIRST run of the day
+was 10.6s, of which 2.45s was loading /check and 2.94s was the extraction: that is a cold
+serverless start, and it is the only number here that would hurt on stage. WARM THE
+DEPLOYMENT BEFORE YOU PRESENT - load /check and run one extraction, then leave the tab open.
+
+THE DESIGN PASS COSTS NOTHING MEASURABLE. Deployed to a Vercel PREVIEW on the same
+infrastructure and driven three times by the same harness, 8 Sept: 3.9s and 4.4s of system
+time warm, against production's 3.8s and 4.3s on the same afternoon. THE HONEST STATEMENT IS
+THAT THE TWO ARE NOT DISTINGUISHABLE AT THIS SAMPLE SIZE - three runs each - which is not the
+same claim as "no slower", and the difference between those two sentences is the argument this
+whole product makes. Do not upgrade it to "no slower" without more runs.
+Extraction 1.22-1.55s (production
+1.24-1.30s), compute 0.39-0.64s (production 0.28-0.53s). The preview's first run of the day
+was 9.2s, production's 10.6s: the same cold start, not a regression.
+
+Preview deployments sit behind Vercel SSO, so the harness needs a protection-bypass token in
+VERCEL_BYPASS. `vercel curl -v <preview-url>` prints the header the CLI mints. Do not commit
+one.
+
 EVERY CLICK IS WRITTEN DOWN. Four used to be missing - the script said a thing appeared and in
 fact a person had to click. A beat that says "the difference lands" and does not say who
 clicked what is a beat you will fumble when the room is watching.
@@ -23,7 +43,194 @@ The scripted run is 24 presenter actions, and they are: 2 file picks, 1 "Read my
 a number with no derivation goes stale silently, which is the defect this file already
 records about itself. The Q&A moves are NOT in that 24 and are not in the 90 seconds.
 
-Setup: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with
+STILL 24 AFTER THE 8 SEPT DESIGN PASS. Re-driven, not re-counted by eye: the harness fires
+the same beats against the same predicates, and no click was added or removed. What DID
+change is how far you scroll between them, because the type scale raised the body text from
+12-14px to 14-16px and the pages grew with it. At a 1400x900 window:
+
+  after the compute click, the page is        4,653px -> 6,791px
+  after the approve tap                       6,620px -> 8,052px
+  after the escalation pack renders           7,942px -> 9,732px
+  the 1:10 scroll to "Next month" travels     1,723px -> 2,349px  (1.9 -> 2.6 screens)
+  total scroll travel across the run          ~6,800px -> ~9,300px (7.6 -> 10.4 screens)
+
+THOSE FIVE FIGURES WERE MEASURED AT THE END OF PHASE 1 AND THE FIRST THREE ARE NOW STALE.
+Phase 2 put the language / text size / contrast row above everything (187px) and a read-aloud
+button on the result (44px), and the table was never re-driven. Re-measured 8 Sept at
+1400x900 on the committed cache, after Phases 2 and 3:
+
+  after the compute click                     6,791px -> 7,256px
+  after the approve tap                       8,052px -> 8,517px
+  after the escalation pack renders           9,732px -> 9,995px
+
+THE LAST TWO ROWS ARE NO LONGER STALE. Re-driven 8 Sept at 1400x900 on the committed cache,
+after Phase 4, with the six answers entered THROUGH THE FIELDS - focused, one at a time, the
+way the script counts them - because a field that is off screen scrolls itself into view when
+it takes focus, and a run that sets the values blind never makes those moves:
+
+  the 1:10 scroll to "Next month" travels     2,349px -> 2,448px  (2.6 -> 2.7 screens)
+  total scroll travel across the run          ~9,300px -> 9,301px (10.3 screens)
+
+RE-DRIVEN AGAINST PRODUCTION after the Phase 5 deploy, same harness, same window: the 1:10
+scroll was 2,448px to the pixel and the total 9,419px - 118px more than localhost, in two
+small reflows after the payslip-2 click.
+
+THEN THE WATERFALL WENT IN AND BOTH GREW AGAIN. Those two figures were measured BEFORE it,
+and carried into this section as though they were after - which is this file's own recurring
+defect, committed while correcting it. Re-driven against production with the waterfall
+deployed:
+
+  the 1:10 scroll to "Next month"             2,448px -> 2,575px  (2.7 -> 2.9 screens)
+  total scroll travel across the run          9,419px -> 9,992px  (11.1 screens)
+
+AND AGAIN AFTER THE READER COMPARISON, re-driven against production:
+
+  the 1:10 scroll to "Next month"             2,575px -> 2,574px  (unchanged)
+  total scroll travel across the run          9,992px -> 10,413px (11.6 screens)
+
+AND AGAIN AFTER THE STATE MACHINE. This one is the largest single cost of
+any visual so far, and it is worth knowing before you stand up:
+
+  the 1:10 scroll to "Next month"             2,574px -> 3,260px  (2.9 -> 3.6 screens)
+  total scroll travel across the run          10,413px -> 12,611px (14.0 screens)
+  after the compute click, the page is        7,831px -> 9,022px
+  after the approve tap                       9,092px -> 10,239px
+  after the escalation pack renders           10,570px -> 11,680px
+
+The diagram is ~1,200px and it sits between the mandate control and
+everything below it, so both of the long scrolls got longer: the one to the
+CPF example is 2,779px -> 3,546px and the one to "What happens next" is
+841px -> 1,607px. PRACTISE THE THREE SCROLLS AGAIN. They are each about a
+third longer than they were on Tuesday, and a scroll that overshoots on a
+projector is the same fumble as a missing click.
+
+The placement was deliberate and is worth defending if asked: the argument
+about what the agent may not do belongs beside the control that decides it.
+Putting it lower would have bought back the scroll and separated the
+picture from the thing it is about.
+
+All of the growth is in one leg: moving through the six questions is 964px ->
+1,383px, because the six readings are now one table instead of six stacked rows
+and the fields sit further apart. The three scrolls you actually make are
+unchanged.
+
+The growth is where you would expect it: the scroll to the CPF example is 2,334px -> 2,779px,
+because the waterfall now sits between the figure and that card. Page heights are unchanged
+from the waterfall measurement - 7,831 after the compute click, 9,092 after the approve tap,
+10,570 with the escalation pack - so nothing since has touched /check.
+
+BOTH LAND WITHIN A FEW PER CENT OF WHAT WAS ALREADY WRITTEN DOWN, and the pages under them
+are 469px taller than when those distances were taken. Nothing about the scroll rehearsal
+needs to change. Why the growth did not show up in the distances was NOT established - the
+figures are reported, not explained.
+
+MEASURED, at a 900px viewport, in the order they happen:
+
+  0:10  "Read my documents"        the page moves itself         663px
+  0:10  the six answers            the page follows your focus   964 + 857 + 570px
+  0:35  the compute click          the page moves itself         625px
+  0:45  scroll 1 of 3, to the CPF example                      2,334px  (2.6 screens)
+  0:55  scroll 2 of 3, UP to "What happens next"                 840px  (0.9 screens)
+  1:10  scroll 3 of 3, to "Next month"                         2,448px  (2.7 screens)
+                                                               -------
+                                                               9,301px
+
+THE 0:35 BEAT BELOW SAYS THE COMPUTE CLICK "TRAVELS ABOUT 3,000px ON ITS OWN". That came from
+a run that set the six answers without focusing anything, so the page was still at the top
+when the click fired and made the journey in one go. Both runs were DRIVEN to settle it:
+
+  answers entered through the fields  the page has travelled 3,054px already; the click adds   625px
+  answers set blind, nothing focused  the page has travelled     0px;         the click adds 3,016px
+                                                                             total 9,301px either way
+
+The total is the same to the pixel. It is the same distance whichever way it is split, so the
+table is not sensitive to how the answers are entered - only the beat you FEEL it on is. On
+stage you will feel it as the first one: by the time you click compute you have been typing
+into fields three-quarters of the way down the page, and the click is a short hop.
+
+THE CPF SCROLL IS 2,334px, NOT THE "about 1,900px" THE 0:35 BEAT CLAIMED. Corrected there.
+
+PHASE 3 ADDS NOTHING TO THIS PAGE. The coverage page is a new route; /check imports none of
+it. Checked rather than assumed: the rendered text of /check after the full scripted run is
+byte-identical to the Phase 2 capture apart from one field's status chip, which differs
+because that run had answered the date of birth and the scripted one skips it.
+
+PHASE 4 ADDS FOUR PIXELS. "Save or print this" sits beside "Read this aloud" under the four
+figures, and a 48px primary tap target in a row that was 44px is the whole of it. Re-driven,
+all three heights moved by exactly that and nothing else did:
+
+  after the compute click                     7,256px -> 7,260px
+  after the approve tap                       8,517px -> 8,521px
+  after the escalation pack renders           9,995px -> 9,999px
+
+THE WATERFALL ADDS ~570px, and it goes in ABOVE the component tree. Re-driven
+against production, 1400x900:
+
+  after the compute click                     7,260px -> 7,831px
+  after the approve tap                       8,521px -> 9,092px
+  after the escalation pack renders           9,999px -> 10,570px
+
+STILL 24 PRESENTER ACTIONS. Phase 4 adds a control and no beat presses it - printing is a Q&A
+move, not one of the 90 seconds. Not counted by eye: the harness drove the whole scripted path
+again, found every beat by the same predicate, and needed no new one.
+
+So the three scrolls are still three scrolls. Practise them: a scroll that overshoots on a
+projector is the same fumble as a missing click.
+
+WHAT MOVED: the component tree is NO LONGER visible below the $62.24 without scrolling.
+The waterfall took that space, and it is the thing to point at now - same three components,
+on one axis, with the gap at the end of it. Measured on production at 900px after the compute
+click: the waterfall heading is 609px down the viewport and its last row is at 742px, both in
+view; "WHERE EACH DOLLAR COMES FROM" is at 1,131px and is not. The 0:35 beat has been
+rewritten to match, and it still says "point, do not click" - about the chart.
+
+## Setup
+
+WARM THE DEPLOYMENT. THIS IS THE FIRST SETUP STEP, NOT A TIP.
+
+  09:55-10:00  before the 10:30 semi-final
+  13:25-13:30  before the final
+
+Open the deployed /check, attach the payslip and the roster, click "Read my documents", and
+let it land. Then LEAVE THE TAB OPEN. That is the whole procedure and it takes twenty seconds.
+
+Why it is first: the functions are serverless and they go cold. RE-MEASURED AGAINST THE
+DEPLOYMENT THAT WILL BE PRESENTED, 8 Sept, immediately after it went live - so this is a true
+first-of-the-day, not a warm run wearing the label:
+
+  COLD, first of the day     /check 4.59s   extraction 1.68s   TOTAL 6.27s
+  warm, three runs           /check 0.18-0.23s  extraction 1.02-1.03s  total 1.21-1.25s
+
+5.05 SECONDS OF DEAD AIR, on the 0:10 beat, in a 90-second pitch - while the room watches a
+spinner and Lucas has already finished the sentence that was meant to cover it. It is the
+single largest demo risk in the product and it costs nothing to remove.
+
+Warming once is not permanent - the platform will let the functions go cold again if they sit
+idle. Warm at the times above, not the night before.
+
+RESET THE INTERFACE. Second setup step, same reason as the first: it is avoidable and it
+lands on the opening beat. IT IS ONE ACTION - open this URL instead of the plain /check:
+
+  https://fairslip.vercel.app/check?reset=1
+
+That is the whole step. The page clears the stored language, text size and contrast and comes
+up in English; there is nothing to look at and nothing to click. It also resets any other tab
+of the same browser profile that is still open, so a rehearsal tab left in Tamil goes back to
+English with it. The parameter takes itself out of the address bar afterwards, so if you
+change the language during the Q&A a later reload keeps YOUR choice rather than reverting it.
+
+Why it is a step at all: the three controls PERSIST - they are stored per browser profile, so
+a language picked while rehearsing the Q&A is still selected the next time the tab opens. It
+bit this build during verification: a screenshot pass left the interface in Tamil and the next
+run of the scripted path failed on its first beat, looking for English text that was no longer
+on the screen. On stage that is the whole demo in a language you cannot read.
+
+This used to be a procedure - read three controls, click the wrong ones, or open DevTools and
+remove a storage key. Warming the deployment is already a twenty-second procedure at 09:55; a
+second one is the one that gets skipped. If you want to confirm it worked, the control row at
+the top of /check reads English / Normal / Normal.
+
+Then: laptop on hotspot; backend and frontend up; cache committed to the repo, verified with
 network disabled; printed handwritten payslip in Jaydon's hand; phone camera tested under the
 room's lighting; audio cached; fallback video on a hidden slide and on your phone.
 
@@ -42,13 +249,29 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
       >>> CLICK "Read my documents". <<<  Nothing happens until you do. 1.0-1.3s on the
       committed cache, so keep talking through it; it is 9s if it ever goes live.
 
-      Fields light up. HOURS WORKED ON A REST DAY shows a grey "not established" chip and an
-      amber answer box.
+      WHAT APPEARS IS NOW A COMPARISON, NOT A LIST. Read the strip off the screen:
 
-      "Two readers, two vendors, same images. For the Sunday, one returned 8 hours. The other
-      returned nothing at all. And the roster does not print an hour count anywhere - it says
-      'full day'. One model produced a number the other could not find. One reader is not
-      agreement, so FairSlip will not use it."
+        6 fields read | 4 both readers agree | 0 readers disagree | 2 not established
+
+      Those four numbers are counted from the facts as the page renders them - answer a
+      field and they move. Under them is the diagram, and it is worth one sentence: two
+      boxes, Anthropic and OpenAI, fed from the same two images, converging on "reconciled
+      by code, not by a model" - AND NOTHING BETWEEN THE TWO BOXES. Point at the gap.
+      "There is no line between them because neither reader saw the other's answer. That
+      absence is the only reason the agreement below means anything."
+
+      THEN POINT AT THE MONTHLY BASIC ROW, which is the reconciler's whole argument sitting
+      in two columns: one reader read "1200.00", the other read "1200", and the verdict is
+      BOTH READERS AGREE. "Different strings, same number. The comparison is on Decimals,
+      not on text - which is why a formatting difference is not a disagreement, and why a
+      real disagreement cannot hide behind one."
+
+      NOW THE REST DAY. Its row has an 8 in one column and a DASHED EMPTY BOX in the other,
+      beside a "not established" chip. "Two readers, two vendors, same images. For the
+      Sunday, one returned 8 hours. The other returned nothing at all - that is the empty
+      box. And the roster does not print an hour count anywhere; it says 'full day'. One
+      model produced a number the other could not find. One reader is not agreement, so
+      FairSlip will not use it."
 
       Tap the roster row. "She worked the full Sunday." Confirm. Chip turns green: you answered this.
 
@@ -88,6 +311,26 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
 0:35  >>> CLICK "Work out what the rules say this month should have paid". <<<  It is disabled
       until all six are answered, and the figure does not appear on its own. 0.3-0.4s.
 
+      THE PAGE IS NOT FINISHED WHEN THE FIGURE IS. The panel below fetches its fixture data
+      when it mounts, and on PRODUCTION that lands after the number does: measured 8 Sept
+      against the deployment, the figure is on screen at 0.39s and the page grows a further
+      1,308px at 0.64s. A quarter of a second after the room reads $62.24, everything below it
+      moves. On localhost this does not happen at all - the fetch resolves first - so it will
+      not show up in rehearsal against a dev server. DO NOT START SCROLLING INTO IT. Land the
+      sentence, let it settle, then move.
+
+      THE PAGE NOW MOVES ITSELF TO THE FIGURE. Phase 2 sends keyboard focus to the result
+      heading when the reconciliation lands - WCAG 4.1.3, so a screen reader is taken to the
+      answer rather than left at the button - and moving focus scrolls it into view. Do not
+      fight it. The same thing happens after "Read my documents", which moves to "Who read
+      your documents", and every time you tab into one of the six questions.
+
+      HOW FAR IT ACTUALLY MOVES, re-driven 8 Sept after Phase 4: this click travels 625px,
+      because the page has already come 3,054px following your focus through the questions.
+      An earlier note here said 3,000px, which is what the click does only if nobody focused
+      a field - see the table at the top. The scroll from here to the CPF worked example is
+      2,334px.
+
       POSSIBLE UNRECONCILED DIFFERENCE  $62.24
       (Do not say "about 1.35 days of her basic pay" - days_of_pay() exists in rules.py but no
       endpoint calls it and nothing renders it. Every figure you say out loud must be one the
@@ -108,10 +351,23 @@ room's lighting; audio cached; fallback video on a hidden slide and on your phon
       The line under the list shows the other half of it: $62.24 minus $12.00 = $50.24, the
       cash that did not arrive. Read it off the screen, not from here.
 
-      The component tree is already open below the figure - basic, overtime, rest day - each
-      with the formula that produced it and, under it, where each input came from: "both
-      readers agree: Claude 1200.00, OpenAI 1200" or "you answered on screen: Hours worked on
-      a rest day". No tap needed, and they are text, not links. Point, do not click.
+      WHAT IS UNDER THE FIGURE IS NOW THE WATERFALL, not the component tree. Point at it:
+      basic, overtime and rest day as bars on one money axis, then expected gross, then
+      deductions coming off, then what reached the bank - and the gap is what is left of the
+      axis after it. Say that: "the last bar is not a number we added at the end, it is what
+      is left when the money that arrived is taken off what the rules say was earned."
+
+      THE GAP BAR IS SMALL, AND THAT IS THE POINT. $62.24 against $1,462.24 is 4% of the
+      axis, and every bar is drawn to one scale, so it is drawn at 4%. If a judge asks why
+      the hero is the smallest bar: "because it is the smallest number. We are not going to
+      draw it bigger than it is on the one screen whose whole argument is that we do not."
+
+      THE COMPONENT TREE IS NOW BELOW THE FOLD. Measured on production at 900px: "WHERE EACH
+      DOLLAR COMES FROM" sits at 1,131px, so it is one short scroll down, not on screen. It
+      still carries every formula and every source with no tap needed. DO NOT scroll to it in
+      the 90 seconds - the waterfall says the same three components, and each bar opens its
+      own formula on tap if a judge asks. Keep it as a Q&A move and the run stays at three
+      scrolls.
 
 0:55  "Now what?" Scroll to "What happens next". Pick mandate level 2, draft and track.
       Tap "Draft a message". Mandarin Chinese left, English right.
@@ -169,6 +425,41 @@ hits. Same engines, same published rules, visibly different outcome:
   will notice you knew that a Work Permit holder is not a CPF member.
   (No reader runs when you switch - the panel is fixture data and says so. Do not say
   "same readers" here.)
+
+**"Is this only for the one worker you showed us?"** - THE COVERAGE PAGE. From the landing
+page, the second button: "Who FairSlip is for, in rules". Not on the 90-second path.
+
+  It answers the scale question in RULES, and the first line says why: no figure on the page
+  describes a population, because FairSlip does not know one and a number like that would be a
+  claim it cannot establish. Say that out loud - it is the same rule as the payslip, applied to
+  our own pitch.
+
+  Three things to point at, in this order:
+
+  - THE TWO RULE PACKS, each with the MOM or CPF Board sentence it implements, quoted, with the
+    page and its last-updated date - and beside each rule the symbol in our code that implements
+    it. The thresholds are the engine's own constants: $2,600 and $4,500 are read from
+    rules.py, not typed onto a slide. A test resolves every one of those symbols and compares
+    the value, so a threshold that moved in the engine and not on the page fails the build.
+
+  - WHO IS A CPF MEMBER. Seven rows, one per residency status, and every one of them was
+    produced by RUNNING the CPF engine when the page loaded - Citizen and PR-from-year-3
+    compute, Work Permit / S Pass / EP come back with the engine's own NO_CPF flag, and PR year
+    1 and 2 come back refused, with the engine's own reason. "That is why we ship two workers
+    and not one: same code, different published rules, different answer."
+
+  - WHAT WE DO NOT DO, in three kinds, and the difference between them is the point. The engine
+    REFUSES it (asked on this page load; the message shown is the one it refused with). There
+    is NO INPUT for it (checked against the input schema on this page load). Or we SAY it and
+    this page does not prove it - domestic workers and legal liability are labelled exactly
+    that way. If a judge wants to see one of the refusals happen, the impact-radius move does
+    it live: set days a week to 7.
+
+  Then the last section, if there is time: what OUR OWN interface covers. The six worker
+  questions are translated into all four languages; the rest of the interface is counted from
+  the dictionary and Tamil is visibly short. READ THE NUMBERS OFF THE SCREEN. They are computed
+  from the dictionary at render time and they will change the next time anyone adds a string -
+  which is the point, and is why they are not written down here.
 
 **"What if the employer does nothing?"** - Path B. >>> CLICK "Payslip 2 with the same
 shortfall". <<<  The CORRECTED card is replaced in place. "NOT CORRECTED - the gap stands, and
@@ -232,6 +523,167 @@ Q&A move you have; do not spend it in the 90 seconds.
   rest-day components used the normal daily hours and did not record it as an input, so a line
   could move without declaring what moved it. The view caught it because it checks that
   invariant on every run, and the fix was to record the input the engine was already using.
+
+**"What does she actually walk out with?"** - THE TAKE-AWAY SHEET. Not on the 90-second path.
+
+  >>> On the results card, beside "Read this aloud", CLICK "Save or print this". <<<
+
+  BRING A PRINTED COPY AND PREFER IT. The button opens the browser's print dialog, which is a
+  modal over the whole demo - on a projector that is a grey box where your product was, and
+  you have to find Cancel in front of the room. Hold up the paper instead, and only press the
+  button if a judge asks to see it happen.
+
+  Six A4 pages, black on white, no colour anywhere. What is on it:
+
+  - who read the documents, and what each reader said, field by field
+  - every field's status, as an ICON AND A WORD - "both readers agree", "not established",
+    "you answered this" - because the colour is gone and something has to carry it
+  - the difference, the four figures under it, and every component with its formula and the
+    source of each input
+  - the sentence saying the CPF side of this month is not shown, and why
+  - TADM's evidence list and MOM's filing deadlines, quoted, each with its own page - and on
+    paper the URL is printed after the link text, because a link is a dead end otherwise
+
+  WHAT IS DELIBERATELY NOT ON IT, and this is the part to point at. The agent panel's figures
+  belong to Mei Ling, an invented worker - her CPF split, her drafted message, her month-2
+  verdict. On screen you can see they are hers: they are in dashed boxes that say so, on a
+  page you can take in at once. Paper has none of that. Paper has pages, and pages come apart
+  in a photocopier and on a desk. So the sheet leaves them off - and says so, in the place
+  each one would have been, naming what was there and why it is not:
+
+      "Shown on screen, not on this sheet: the CPF worked example. It is a fictional example
+      about an invented month... It is not this worker's CPF, and on paper - separated from
+      the screen that says so - it would read as though it were."
+
+  Say it out loud: "the product's rule is that it does not state what it did not establish.
+  The sheet applies that to its own omissions. It never quietly drops a section."
+
+  IT IS THE SAME PAGE, NARROWED - not a second render. Nothing on the sheet is re-typed from
+  the screen, so there is no second copy of a figure that could drift from the first. Print
+  hides and restyles; it never re-states a number. Same argument as the read-aloud.
+
+  IF THEY ASK HOW YOU KNOW IT SURVIVES A PHOTOCOPIER: it was printed to PDF and read back in
+  greyscale, not eyeballed in a browser. Every colour that paints anything in print media is
+  pure black or pure white - sampled off the live computed styles, 8 distinct pairs, zero
+  greys. And it was rendered TWICE, with background graphics off and on, because Chrome does
+  not print backgrounds unless you tick a box: the two rasters are pixel-identical, so the
+  sheet does not depend on a setting the worker will never find. The first run of that check
+  found the one thing that did - a calendar icon on the date field, 112 pixels, which is now
+  gone.
+
+**"Is it accessible?"** - AUDITED 8 SEPT, AGAINST THE DEPLOYMENT, and the interesting part is
+that the three tools disagreed about whether anything was wrong.
+
+  - axe-core 4.13, run over SEVEN states - both other routes, /check at each of its four
+    stages, and /scale in Bengali at largest text in high contrast: **0 violations, 0 items
+    needing review**. It found two serious contrast failures the first time and they are
+    fixed; see below.
+  - Lighthouse: **accessibility 100** on all three routes. Say this one carefully if a judge
+    presses - Lighthouse audits the page AS LOADED, and /check as loaded is an upload form.
+    Every finding axe made was in a state Lighthouse never reached.
+  - KEYBOARD ONLY, real key events, the whole scripted run: all six answers typed, all three
+    selects chosen, the compute button pressed with Enter. **Every tab stop draws a focus
+    ring.** The Radix mandate group is one tab stop with arrow keys inside it, as it should be.
+  - The ACCESSIBILITY TREE on the core path: no heading level skipped, **0 of 37 controls
+    unnamed**, landmarks present, the live region carrying the right sentence at both moments
+    the page changes, and focus moving to the result heading when the figure lands.
+
+WHAT WAS FOUND AND FIXED, because "we audited it" is worth less than "here is what it caught":
+
+  - Two contrast failures at 4.33:1 and 4.1:1, from `opacity` at 70% over tokens that are
+    themselves fine. The tokens were never wrong - opacity composites at render time, so the
+    contrast suite that has been green for four phases could not see it. One of the two was
+    dimming the label that says "not your figures".
+  - A tab stop with no focus ring: `<input type="date">` is FOUR stops in Chrome and the
+    fourth is a button inside its shadow root. Neither scanner evaluates focus indicators.
+  - An UNEARNED CAVEAT: the coverage page told English readers "FairSlip has not verified a
+    translation of them" beside every quotation, in English, where nothing had been
+    translated. That is this product's own rule pointed the other way - a warning it had not
+    earned - and it is worth saying out loud if the honesty thesis comes up.
+
+NOT A SCREEN-READER PASS. No screen reader ran; NVDA cannot be driven from the harness. What
+was established is the tree a screen reader is GIVEN. If a judge asks, say exactly that.
+
+**"Who pays for this?"** - THE EMPLOYER CHECK. Not on the 90-second path. From the landing
+page, the third button: "Check a payroll before payday".
+
+  >>> CLICK "Run the fictional 300-employee roster". <<<  ~1s.
+
+  THE NUMBERS ARE DERIVED, NOT MEMORISED. Read them off the strip:
+
+      300 rows read, 293 checked, 11 exceptions, 7 not checked, $2,599.00 total difference
+
+  Say: "we seeded eleven errors into three hundred rows and it found eleven - and a test
+  asserts that, per category, so if the engine stops catching the age-band transition the
+  build goes red before the demo quietly reports ten."
+
+  THE THREE THINGS TO POINT AT, in this order:
+
+  - THE SCHEMA IS CPF BOARD'S. Ten of the twelve columns are the Employer Contribution Detail
+    Record from the CPF EZPay (FTP) File Specifications, effective 16 January 2025 - fixed
+    width, 150 bytes a record. The screen shows CPF Board's own field names and column
+    positions beside each one. "This is not a format we invented. Every payroll vendor in
+    Singapore already generates this file."
+
+  - TWO COLUMNS ARE OURS AND THEY SAY SO. Scroll to the dashed box. The Detail Record carries
+    no date of birth, and its S and T prefixes separate citizens from PRs registered since
+    1 January 2000 - they do not say which PR year applies. The engine needs both, so we ask
+    for both, in a box that says CPF Board did not. "A schema that is mostly official is the
+    easiest possible version of the failure this product exists to find."
+
+  - SEVEN ROWS WERE NOT CHECKED, AND THEY ARE ON THE SCREEN. Scroll to "Not checked". Two are
+    PR graduated years and two are wages at or below $750 - the engine refuses both, in its
+    own words. Three carry Additional Wages, and the refusal there says whose limit it is:
+    "FairSlip's limit, not CPF Board's - our CPF engine computes Ordinary Wages only." Say:
+    "an exceptions table that silently drops what it could not check is a payroll signed off
+    on rows nobody looked at."
+
+  THE ROUNDING, IF AN ACCOUNTANT IS IN THE ROOM. The specification states CPF's rounding
+  rules verbatim on the Contribution detail amount column: the total to the nearest dollar,
+  the employee's share DOWN. fairslip/cpf.py was written from CPF Board's contribution-rates
+  page months earlier and does exactly that, and the spec's own two worked examples -
+  "$1.50 should be regarded as $2.00" and "$1.50 should be regarded as $1.00" - are run as
+  tests. "Our engine and the government's file format agree on the arithmetic, and we can
+  show you the test."
+
+  WHAT IT DOES NOT DO: it does not edit anything. It flags and explains; the fix happens in
+  the employer's own payroll system. Staying out of their system is what makes it checkable.
+
+**"How do you know the agent can't exceed the mandate?"** - THE STATE MACHINE. It is on
+screen the whole time, under "What you are allowing". Not a scripted beat; a 20-second answer.
+
+  >>> Look at the diagram at whatever level is currently set. <<<
+
+  At level 2 - where the scripted run leaves it - SIX of the ten states are STRUCK THROUGH,
+  and each one says the level that would permit it. Say: "that is not a disabled button. The
+  states the agent cannot reach are drawn as unreachable, and the diagram is generated from
+  the same enum and the same transition table the guard enforces. A test asserts the drawn
+  nodes equal the enum members and the drawn edges equal the transitions - a state diagram
+  that drifts from its own machine is worse than no diagram."
+
+  THREE THINGS TO POINT AT, in this order:
+
+  - RAISE THE LEVEL AND WATCH THE STRIKE-THROUGHS GO. Level 3 clears VERIFYING and the four
+    verdicts; level 4 clears the escalation pack and the summary line reads "0 of these
+    states are out of reach". That is the mandate argument as a picture: one permission, one
+    whole region of the machine.
+
+  - AWAITING_NEXT_PAYSLIP IS DASHED, NOT STRUCK THROUGH, and it says "inside the mandate,
+    and not built in this cut". Two different sentences. "You did not allow this" and "we did
+    not build this" send a worker to different places, and raising the mandate would not make
+    that one work at any level.
+
+  - UNVERIFIABLE SAYS "CAN BE ATTEMPTED AGAIN - NOT AN ENDING", and the other three verdicts
+    do not. A worker whose month-2 payslip photographed badly has not reached the end of
+    anything; that state returns to AWAITING_NEXT_PAYSLIP and VERIFYING, and the return edge
+    is in the machine rather than in the drawing. The server computes it as "reachable from
+    itself", which is why PARTIALLY_CORRECTED - which is also not terminal, but goes on to
+    the escalation pack and never comes back - is correctly NOT labelled re-attemptable.
+
+  IF A JUDGE ASKS WHETHER THE DIAGRAM IS REAL: it is served by /agent/mandate, which builds
+  it from agent.py's AgentState, TRANSITIONS, ENTERED_BY and MANDATE_TABLE. The component
+  contains no node list, no edge list and no mandate level - only which column to draw a node
+  in - and a test asserts exactly that.
 
 **"What stops someone else setting mandate level 4?"** - "Nothing, in this build. It says so
 on the screen where the level is set: there is no authentication here, and the mandate level is

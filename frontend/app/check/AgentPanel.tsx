@@ -18,7 +18,12 @@
  * and every refusal reason arrives from the API.
  */
 
+import * as RadioGroup from "@radix-ui/react-radio-group";
 import { useEffect, useState } from "react";
+import { ScreenOnly } from "../ui/PrintSheet";
+import { QuotedInEnglish } from "../ui/QuotedInEnglish";
+import { AgentMachine } from "./AgentMachine";
+import { CpfOverlapBar } from "./Waterfall";
 import {
   getAgentDemoInputs,
   getMandate,
@@ -147,15 +152,15 @@ export function AgentPanel() {
   };
 
   return (
-    <section className="mt-8 rounded-lg border border-zinc-300 bg-white p-5">
-      <h2 className="text-lg font-semibold text-zinc-900">What happens next</h2>
-      <p className="mt-1 text-sm text-zinc-600">
+    <section className="mt-8 rounded-lg border border-line-strong bg-surface p-5">
+      <h2 className="text-lead font-semibold text-ink">What happens next</h2>
+      <p className="max-w-measure mt-1 text-body text-ink-2">
         FairSlip can help you raise this. What it may do is limited to what you allow, and it
         never contacts your employer itself.
       </p>
 
       {error && (
-        <p className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <p className="mt-3 rounded-sm border border-danger-line bg-danger-bg px-3 py-2 text-body text-danger-fg">
           FairSlip could not complete that request: {error}. If that was the send tap, FairSlip
           cannot tell whether the record was made - check before tapping again.
         </p>
@@ -163,18 +168,56 @@ export function AgentPanel() {
 
       {refusal && <AgentRefusal refusal={refusal} onRaise={(l) => setLevel(l)} />}
 
-      {demo && (
-        <PersonaSwitch
-          personas={demo.personas}
-          selected={demo.selected}
-          onPick={setPersonaKey}
-          busy={busy !== null}
-        />
+      {/* Controls, not figures: which example worker is on screen, what the
+          worker has allowed, and two buttons. None of it is a fact about the
+          month above, so none of it needs a line on the paper saying it is
+          missing - unlike the three regions below, which are. */}
+      <div className="print-hide">
+        {demo && (
+          <PersonaSwitch
+            personas={demo.personas}
+            selected={demo.selected}
+            onPick={setPersonaKey}
+            busy={busy !== null}
+          />
+        )}
+
+        <MandateSelector mandate={mandate} level={level} onPick={setLevel} />
+
+      </div>
+
+      {/* OUTSIDE the controls' print-hide, and wrapped.
+          It sat inside that div, so it was dropped from the take-away sheet
+          silently - and a visual that vanishes from the paper with nothing said
+          is the omission-without-a-line this codebase already has a mechanism
+          for. ScreenOnly leaves a line in its place naming what was there.
+
+          `current` is what actually happened on this panel - a draft, a tap, a
+          verdict - so the lit node is a record rather than a guess.
+
+          `mandate?.machine &&`, not just `mandate &&`: a backend that does not
+          serve the machine made this throw "cannot read properties of
+          undefined" and took the WHOLE of /check down with it, result card and
+          all, over a field only one diagram needs. */}
+      {mandate?.machine && (
+        <ScreenOnly id="agent-machine">
+          <AgentMachine
+            machine={mandate.machine}
+            level={level}
+            current={
+              verdict
+                ? verdict.verdict
+                : sent
+                  ? "SENT"
+                  : draft
+                    ? "MESSAGE_DRAFTED"
+                    : "DISCREPANCY_FOUND"
+            }
+          />
+        </ScreenOnly>
       )}
 
-      <MandateSelector mandate={mandate} level={level} onPick={setLevel} />
-
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="print-hide mt-5 flex flex-wrap gap-2">
         <Action
           label="Draft a message"
           onClick={doDraft}
@@ -196,7 +239,7 @@ export function AgentPanel() {
       </div>
 
       {draft && draft.basis.trim() !== "" && (
-        <>
+        <ScreenOnly id="draft">
           <DraftView draft={draft} />
           <TapToSend
             sent={sent}
@@ -206,9 +249,13 @@ export function AgentPanel() {
             mandate={mandate}
           />
           <Timeline reached={reached} sent={sent} />
-        </>
+        </ScreenOnly>
       )}
 
+      {/* The one block on this panel that reaches the paper. Everything in it
+          is TADM's, MOM's or CPF Board's published wording, quoted, with the
+          page it came from - the same for anyone who walks into that office, so
+          it belongs on the sheet a worker carries into one. */}
       {pack && <EscalationPack pack={pack} />}
 
       {/* One branch or the other, never both. A split of zeros under a NO_CPF
@@ -220,18 +267,24 @@ export function AgentPanel() {
           can drift, and CPF figures without that caveat read as the viewer's own
           month, directly under their own reconciliation. */}
       {demo?.cpf && demo.cpf_basis.trim() !== "" && (
-        <CpfShortfall cpf={demo.cpf} basis={demo.cpf_basis} persona={demo.selected} />
+        <ScreenOnly id="cpf-example">
+          <CpfShortfall cpf={demo.cpf} basis={demo.cpf_basis} persona={demo.selected} />
+        </ScreenOnly>
       )}
       {demo && !demo.cpf && demo.no_cpf_note.trim() !== "" && (
-        <NoCpfCard persona={demo.selected} note={demo.no_cpf_note} />
+        <ScreenOnly id="cpf-example">
+          <NoCpfCard persona={demo.selected} note={demo.no_cpf_note} />
+        </ScreenOnly>
       )}
 
-      <VerifySection
-        demo={demo}
-        verdict={verdict}
-        onVerify={doVerify}
-        busy={busy === "verify"}
-      />
+      <ScreenOnly id="next-month">
+        <VerifySection
+          demo={demo}
+          verdict={verdict}
+          onVerify={doVerify}
+          busy={busy === "verify"}
+        />
+      </ScreenOnly>
     </section>
   );
 }
@@ -271,10 +324,10 @@ function PersonaSwitch({
 }) {
   return (
     <div className="mt-4">
-      <h3 className="text-sm font-semibold text-zinc-900">
+      <h3 className="text-body font-semibold text-ink">
         Whose month this example shows
       </h3>
-      <p className="mt-0.5 text-xs text-zinc-600">
+      <p className="max-w-measure mt-1 text-meta text-ink-2">
         Both are invented. Same engines, same published rules - and different rules apply to
         each of them.
       </p>
@@ -288,20 +341,20 @@ function PersonaSwitch({
               onClick={() => onPick(p.key)}
               disabled={busy}
               aria-pressed={picked}
-              className={`rounded border px-3 py-2 text-left text-sm transition disabled:opacity-60 ${
+              className={`rounded-sm border px-3 py-2 text-left text-body transition disabled:opacity-60 ${
                 picked
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-500"
+                  ? "border-brand bg-brand text-on-solid"
+                  : "border-line-strong bg-surface text-ink hover:border-ink-2"
               }`}
             >
               <span className="block font-medium">{p.name}</span>
               <span
-                className={`mt-0.5 block text-xs ${picked ? "text-zinc-300" : "text-zinc-600"}`}
+                className={`mt-1 block text-meta ${picked ? "text-on-solid" : "text-ink-2"}`}
               >
                 {p.residency_label} &middot; {p.occupation}
               </span>
               <span
-                className={`mt-0.5 block text-xs ${picked ? "text-zinc-300" : "text-zinc-600"}`}
+                className={`mt-1 block text-meta ${picked ? "text-on-solid" : "text-ink-2"}`}
               >
                 Writes in {p.language} &middot;{" "}
                 {p.cpf_applies ? "CPF applies" : "not a CPF member"}
@@ -318,16 +371,16 @@ function PersonaSwitch({
  * split of zeros. */
 function NoCpfCard({ persona, note }: { persona: AgentPersona; note: string }) {
   return (
-    <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
-      <div className="border-b border-zinc-300 px-4 py-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+    <div className="mt-6 rounded-sm border-2 border-dashed border-control bg-muted/60">
+      <div className="border-b border-line-strong px-4 py-2">
+        <p className="text-meta font-semibold uppercase tracking-wide text-ink-3">
           Fictional worked example - not your figures
         </p>
-        <h3 className="mt-0.5 text-sm font-semibold text-zinc-900">
+        <h3 className="mt-1 text-body font-semibold text-ink">
           No CPF for {persona.name}
         </h3>
       </div>
-      <p className="px-4 py-3 text-sm text-zinc-800">{note}</p>
+      <p className="px-4 py-3 text-body text-ink">{note}</p>
     </div>
   );
 }
@@ -345,34 +398,71 @@ function MandateSelector({
 }) {
   if (!mandate) {
     return (
-      <p className="mt-4 text-sm text-zinc-500">
+      <p className="mt-4 text-body text-ink-3">
         Loading the mandate levels from the server that enforces them...
       </p>
     );
   }
   return (
     <div className="mt-4">
-      <h3 className="text-sm font-semibold text-zinc-900">What you are allowing</h3>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <h3 className="text-body font-semibold text-ink">What you are allowing</h3>
+      {/*
+        A RADIO GROUP, not five toggles.
+        Five <button aria-pressed> told a screen reader there were five
+        independent switches, of which the user had turned some number on. There
+        is one choice of five, and the difference is not cosmetic: a radio group
+        is entered ONCE by Tab and traversed by arrow key, which is how a
+        keyboard user expects to move through a set of alternatives, and it is
+        the shape that makes "you are at level 2" announceable at all.
+        Radix is used rather than hand-rolled because roving tabindex is exactly
+        the kind of thing that is written wrong once and then trusted.
+        `asChild` is not needed here - Item renders a <button role="radio">, so
+        the styling below is unchanged and so is anything that finds these by
+        tag name.
+      */}
+      {/* ONE COLUMN, so it reads as a ladder rather than as a menu. Three
+          columns made level 4 sit beside level 1, which is exactly the
+          relationship a mandate does not have: the levels are cumulative, and a
+          ladder shows that a rung is the one below it plus something. Still a
+          radio group underneath - the semantics were right, the shape was not. */}
+      <RadioGroup.Root
+        value={String(level)}
+        onValueChange={(v) => onPick(Number(v))}
+        aria-label="What you are allowing"
+        className="mt-2 grid gap-2"
+      >
         {mandate.levels.map((l) => {
           const picked = l.level === level;
           return (
-            <button
+            <RadioGroup.Item
               key={l.level}
-              type="button"
-              onClick={() => onPick(l.level)}
-              aria-pressed={picked}
-              className={`rounded border px-3 py-2 text-left text-sm transition ${
+              value={String(l.level)}
+              className={`rounded-sm border px-3 py-2 text-left text-body transition ${
                 picked
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-500"
+                  ? "border-brand bg-brand text-on-solid"
+                  : "border-line-strong bg-surface text-ink hover:border-ink-2"
               }`}
             >
-              <span className="block font-medium">
-                Level {l.level} - {l.label}
+              <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="font-medium">
+                  Level {l.level} - {l.label}
+                </span>
+                {/* WHERE THE WORKER SITS, AND WHAT A RUNG WOULD BUY, in words.
+                    The selected level was carried by a blue fill alone, which
+                    is the one encoding this codebase does not allow to stand on
+                    its own - and "what raising it would unlock" was not said at
+                    all, so the ladder had no reason to be a ladder. */}
+                {picked && (
+                  <span className="text-meta font-semibold">&#9654; you are here</span>
+                )}
+                {l.level > level && (
+                  <span className="text-meta font-semibold text-ink-2">
+                    raising to here would unlock
+                  </span>
+                )}
               </span>
               <span
-                className={`mt-1 block text-xs ${picked ? "text-zinc-300" : "text-zinc-600"}`}
+                className={`mt-1 block text-meta ${picked ? "text-on-solid" : "text-ink-2"}`}
               >
                 {l.action_detail.length === 0 ? (
                   "FairSlip may do nothing beyond showing you the figures."
@@ -382,7 +472,14 @@ function MandateSelector({
                     {l.action_detail.map((a, i) => (
                       <span key={a.name}>
                         {i > 0 && ", "}
-                        <span className={a.built ? "" : "line-through opacity-70"}>
+                        {/* NO opacity. At 70% this text composited to #79797e on
+                            white (4.33:1) and to #bbcaf3 on the selected blue
+                            (4.1:1) - both under 1.4.3's 4.5. The strike-through
+                            and the words "(not built yet)" two lines down
+                            already carry the meaning; the dimming only made it
+                            harder to read. See docs/debt.md,
+                            opacity-composites-past-the-contrast-suite. */}
+                        <span className={a.built ? "" : "line-through"}>
                           {ACTION_WORDS[a.name] ?? a.name}
                         </span>
                         {!a.built && " (not built yet)"}
@@ -391,14 +488,14 @@ function MandateSelector({
                   </>
                 )}
               </span>
-            </button>
+            </RadioGroup.Item>
           );
         })}
-      </div>
+      </RadioGroup.Root>
 
       {/* The honest answer to "what stops someone else setting level 4", where
           the level is set - not in a tooltip, not in a footnote. */}
-      <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <p className="mt-3 rounded-sm border border-attention-line bg-attention-bg px-3 py-2 text-meta text-attention-fg">
         <span className="font-semibold">About this build: </span>
         {mandate.no_authentication_notice}
       </p>
@@ -421,48 +518,48 @@ function MandateSelector({
  */
 function DraftView({ draft }: { draft: DraftOut }) {
   return (
-    <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-300 px-4 py-2">
+    <div className="mt-6 rounded-sm border-2 border-dashed border-control bg-muted/60">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-strong px-4 py-2">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-meta font-semibold uppercase tracking-wide text-ink-3">
             Fictional worked example - not your message
           </p>
-          <h3 className="mt-0.5 text-sm font-semibold text-zinc-900">
+          <h3 className="mt-1 text-body font-semibold text-ink">
             A message they could send - not sent
           </h3>
         </div>
-        <span className="rounded bg-zinc-200 px-2 py-0.5 font-mono text-[11px] text-zinc-700">
+        <span className="rounded-sm bg-sunken px-2 py-1 font-mono text-meta text-ink-2">
           {draft.state}
         </span>
       </div>
-      <p className="border-b border-zinc-300 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+      <p className="border-b border-line-strong bg-attention-bg px-4 py-2 text-meta text-attention-fg">
         {draft.basis}
       </p>
 
       <div className="grid gap-0 md:grid-cols-2">
-        <article className="border-b border-zinc-200 p-4 md:border-b-0 md:border-r">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <article className="border-b border-line p-4 md:border-b-0 md:border-r">
+          <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
             {draft.language}
           </h4>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-900">
+          <p className="mt-2 whitespace-pre-wrap text-body leading-relaxed text-ink">
             {draft.translated}
           </p>
         </article>
         <article className="p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">English</h4>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-900">
+          <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">English</h4>
+          <p className="mt-2 whitespace-pre-wrap text-body leading-relaxed text-ink">
             {draft.english}
           </p>
         </article>
       </div>
 
-      <div className="border-t border-zinc-200 px-4 py-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <div className="border-t border-line px-4 py-3">
+        <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
           Every figure in this message came from an engine
         </h4>
         <ul className="mt-2 space-y-1">
           {draft.figures_cited.map((f) => (
-            <li key={f.label} className="font-mono text-xs text-zinc-700">
+            <li key={f.label} className="font-mono text-meta text-ink-2">
               {money(f.amount)} - {f.label.replace(/_/g, " ")} - {f.formula}
             </li>
           ))}
@@ -470,11 +567,11 @@ function DraftView({ draft }: { draft: DraftOut }) {
       </div>
 
       {/* Beside the draft, never behind a disclosure. */}
-      <div className="border-t border-zinc-200 bg-sky-50 px-4 py-3">
-        <p className="text-sm font-medium text-sky-900">{draft.alternative_heading}</p>
+      <div className="border-t border-line bg-brand-bg px-4 py-3">
+        <p className="text-body font-medium text-brand-fg">{draft.alternative_heading}</p>
         <ul className="mt-2 space-y-2">
           {draft.alternative.map((o) => (
-            <li key={o.name} className="text-sm text-sky-900">
+            <li key={o.name} className="text-body text-brand-fg">
               <a
                 href={o.link}
                 target="_blank"
@@ -483,13 +580,13 @@ function DraftView({ draft }: { draft: DraftOut }) {
               >
                 {o.name}
               </a>
-              <span className="block text-xs text-sky-800">{o.what_they_do}</span>
+              <span className="block text-meta text-brand-fg">{o.what_they_do}</span>
             </li>
           ))}
         </ul>
       </div>
 
-      <p className="border-t border-zinc-200 px-4 py-2 text-[11px] text-zinc-500">
+      <p className="border-t border-line px-4 py-2 text-meta text-ink-3">
         {draft.cache_note}
       </p>
     </div>
@@ -525,12 +622,12 @@ function TapToSend({
   const permitted = sendLevel !== null && level >= sendLevel;
   if (sent) {
     return (
-      <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 px-4 py-3">
-        <p className="text-sm font-semibold text-emerald-900">
+      <div className="mt-4 rounded-sm border border-agreed-line bg-agreed-bg px-4 py-3">
+        <p className="text-body font-semibold text-agreed-fg">
           Recorded: you approved sending this. FairSlip did not contact your employer.
         </p>
-        <p className="mt-1 text-xs text-emerald-900">{sent.note}</p>
-        <p className="mt-1 font-mono text-[11px] text-emerald-800">
+        <p className="mt-1 text-meta text-agreed-fg">{sent.note}</p>
+        <p className="mt-1 font-mono text-meta text-agreed-fg">
           {sent.state} at <time dateTime={sent.tap_at}>{localTime(sent.tap_at)}</time> -
           tapped on {sent.tap_surface}
         </p>
@@ -538,15 +635,15 @@ function TapToSend({
     );
   }
   return (
-    <div className="mt-4 rounded border border-zinc-300 bg-zinc-50 px-4 py-3">
-      <p className="text-sm text-zinc-800">
+    <div className="mt-4 rounded-sm border border-line-strong bg-muted px-4 py-3">
+      <p className="text-body text-ink">
         Nothing has been sent. FairSlip cannot record this as sent without your tap.
       </p>
       <button
         type="button"
         onClick={onSend}
         disabled={busy}
-        className="mt-2 rounded bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        className="tap mt-2 rounded-sm bg-brand px-5 py-3 text-body font-semibold text-on-solid disabled:opacity-50"
       >
         {busy
           ? "Recording..."
@@ -571,25 +668,25 @@ function Timeline({ reached, sent }: { reached: Record<string, boolean>; sent: S
           <li key={step.key} className="flex gap-3">
             <span
               aria-hidden
-              className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 ${
-                done ? "border-emerald-600 bg-emerald-600" : "border-zinc-300 bg-white"
+              className={`mt-1 h-4 w-4 shrink-0 rounded-full border-2 ${
+                done ? "border-agreed bg-agreed" : "border-line-strong bg-surface"
               }`}
             />
             <div>
               <p
-                className={`text-sm font-medium ${done ? "text-zinc-900" : "text-zinc-400"}`}
+                className={`text-body font-medium ${done ? "text-ink" : "text-ink-3"}`}
               >
                 {step.label}
-                {!done && <span className="ml-2 text-xs font-normal">not yet reached</span>}
+                {!done && <span className="ml-2 text-meta font-normal">not yet reached</span>}
                 {done && step.key === "SENT" && sent && (
-                  <span className="ml-2 font-mono text-xs font-normal">
+                  <span className="ml-2 font-mono text-meta font-normal">
                     <time dateTime={sent.tap_at} title={sent.tap_at}>
                       {localTime(sent.tap_at)}
                     </time>
                   </span>
                 )}
               </p>
-              <p className={`text-xs ${done ? "text-zinc-600" : "text-zinc-400"}`}>
+              <p className={`text-meta ${done ? "text-ink-2" : "text-ink-3"}`}>
                 {step.key === "MESSAGE_DRAFTED" && reached.SENT
                   ? "A message was written, and you approved it below."
                   : step.hint}
@@ -613,29 +710,45 @@ function Timeline({ reached, sent }: { reached: Record<string, boolean>; sent: S
  * Board's report form - which could not be read, so its fields are unknown.
  */
 function EscalationPack({ pack }: { pack: EscalationOut }) {
+  // No language check here any more. It lives inside QuotedInEnglish, which is
+  // the only component allowed to render that sentence - so this file cannot
+  // get the condition wrong, and cannot omit it.
   return (
-    <div className="mt-6 rounded border border-zinc-300">
-      <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-2">
-        <h3 className="text-sm font-semibold text-zinc-900">{pack.heading}</h3>
-        <p className="mt-0.5 text-xs text-zinc-600">
+    <div className="mt-6 rounded-sm border border-line-strong">
+      <div className="border-b border-line bg-muted px-4 py-2">
+        <h3 className="text-body font-semibold text-ink">{pack.heading}</h3>
+        <p className="mt-1 text-meta text-ink-2">
           FairSlip has assembled a checklist. You file; FairSlip does not.
         </p>
       </div>
 
+      {/*
+        THE BOUNDARY, STATED IN THE READER'S LANGUAGE.
+        Everything below this line inside quotation marks is MOM's, TADM's or
+        CPF Board's own wording, and it stays in English in every language
+        FairSlip offers. Translating a government's exact words and printing
+        them on the sheet a worker carries to a mediation counter would be
+        asserting a translation nobody verified - the same failure as showing a
+        figure no engine produced, on the page where being wrong costs the most.
+        Shown only in a translated interface: in English there is no boundary to
+        explain.
+      */}
+      <QuotedInEnglish className="border-b border-line bg-attention-bg px-4 py-2 text-attention-fg" />
+
       <div className="px-4 py-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
           What TADM asks you to bring
         </h4>
         <ul className="mt-2 space-y-2">
           {pack.evidence.map((e) => (
-            <li key={e.quoted} className="text-sm text-zinc-900">
+            <li key={e.quoted} className="text-body text-ink">
               <span className="block">&ldquo;{e.quoted}&rdquo;</span>
-              <span className="block text-xs text-zinc-600">{e.note}</span>
+              <span className="block text-meta text-ink-2">{e.note}</span>
               <a
                 href={e.source_url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[11px] text-zinc-500 underline underline-offset-2"
+                className="text-meta text-ink-3 underline underline-offset-2"
               >
                 {e.source_label}
               </a>
@@ -644,13 +757,13 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
         </ul>
       </div>
 
-      <div className="border-t border-zinc-200 px-4 py-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <div className="border-t border-line px-4 py-3">
+        <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
           Time limits for filing
         </h4>
         <ul className="mt-2 space-y-1">
           {pack.deadlines.map((d) => (
-            <li key={d.label} className="text-sm text-zinc-900">
+            <li key={d.label} className="text-body text-ink">
               <span className="font-medium">{d.label}: </span>
               <span>&ldquo;{d.quoted}&rdquo;</span>
               {/* These are MOM's words under a heading about TADM. A quote
@@ -660,7 +773,7 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
                 href={d.source_url}
                 target="_blank"
                 rel="noreferrer"
-                className="ml-1 text-[11px] text-zinc-500 underline underline-offset-2"
+                className="ml-1 text-meta text-ink-3 underline underline-offset-2"
               >
                 {d.source_label}
               </a>
@@ -669,13 +782,13 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
         </ul>
       </div>
 
-      <div className="border-t border-zinc-200 px-4 py-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <div className="border-t border-line px-4 py-3">
+        <h4 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
           How filing works
         </h4>
         <ol className="mt-2 list-decimal space-y-1 pl-5">
             {pack.filing_steps.map((s) => (
-              <li key={s} className="text-sm text-zinc-800">
+              <li key={s} className="text-body text-ink">
                 {s}
               </li>
             ))}
@@ -683,12 +796,12 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
       </div>
 
       {pack.not_built.map((n) => (
-        <div key={n.what} className="border-t border-zinc-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-semibold text-amber-900">Not built: {n.what}</p>
-          <p className="mt-1 text-xs text-amber-900">{n.why}</p>
+        <div key={n.what} className="border-t border-line bg-attention-bg px-4 py-3">
+          <p className="text-body font-semibold text-attention-fg">Not built: {n.what}</p>
+          <p className="mt-1 text-meta text-attention-fg">{n.why}</p>
           {n.what_is_known.length > 0 && (
             <>
-              <p className="mt-2 text-xs font-semibold text-amber-900">
+              <p className="mt-2 text-meta font-semibold text-attention-fg">
                 What CPF Board does say:
               </p>
               {/* The quote and FairSlip's reading are rendered apart, and the
@@ -697,10 +810,10 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
                   the mirror of the defect Deadline's docstring names. */}
               <ul className="mt-1 space-y-2">
                 {n.what_is_known.map((k) => (
-                  <li key={k.quoted} className="text-xs text-amber-900">
+                  <li key={k.quoted} className="text-meta text-attention-fg">
                     <span className="block">&ldquo;{k.quoted}&rdquo;</span>
                     {k.note && (
-                      <span className="mt-0.5 block text-amber-800">
+                      <span className="mt-1 block text-attention-fg">
                         <span className="font-semibold">FairSlip&rsquo;s words, not CPF Board&rsquo;s: </span>
                         {k.note}
                       </span>
@@ -713,7 +826,7 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
                   href={n.source_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-2 inline-block text-[11px] text-amber-900 underline underline-offset-2"
+                  className="mt-2 inline-block text-meta text-attention-fg underline underline-offset-2"
                 >
                   {n.source_label}
                 </a>
@@ -723,7 +836,7 @@ function EscalationPack({ pack }: { pack: EscalationOut }) {
         </div>
       ))}
 
-      <p className="border-t border-zinc-200 px-4 py-2 text-xs text-zinc-600">
+      <p className="border-t border-line px-4 py-2 text-meta text-ink-2">
         {pack.disclaimer}
       </p>
     </div>
@@ -752,15 +865,15 @@ function CpfShortfall({
   persona: AgentPersona;
 }) {
   return (
-    <div className="mt-6 rounded border-2 border-dashed border-zinc-400 bg-zinc-50/60">
-      <div className="border-b border-zinc-300 px-4 py-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+    <div className="mt-6 rounded-sm border-2 border-dashed border-control bg-muted/60">
+      <div className="border-b border-line-strong px-4 py-2">
+        <p className="text-meta font-semibold uppercase tracking-wide text-ink-3">
           Fictional worked example - not your figures
         </p>
-        <h3 className="mt-0.5 text-sm font-semibold text-zinc-900">
+        <h3 className="mt-1 text-body font-semibold text-ink">
           When a pay difference also reaches CPF
         </h3>
-        <p className="mt-0.5 text-xs text-zinc-600">
+        <p className="max-w-measure mt-1 text-meta text-ink-2">
           Based on CPF Board&rsquo;s published rule that CPF contributions are payable on
           overtime pay. A difference in wage can therefore be a difference in CPF as well. Below
           is one month for {persona.name}, an invented {persona.residency_label.toLowerCase()}.
@@ -769,27 +882,23 @@ function CpfShortfall({
       {/* The note explains the total, so it is placed BEFORE the lines it
           explains: it says "the total below", and rendering it underneath left
           that pointing at the caveat instead. */}
-      <p className="border-b border-zinc-300 px-4 py-2 text-xs text-zinc-600">{cpf.split_note}</p>
-      <dl className="px-4 py-3">
-        {cpf.split.map((line) => (
-          <div
-            key={line.key}
-            className={`flex justify-between gap-4 py-0.5 ${
-              line.sub ? "pl-4 text-xs text-zinc-600" : "text-sm text-zinc-900"
-            } ${line.key === "total_withheld" ? "mt-1 border-t border-zinc-300 pt-2 font-semibold" : ""}`}
-          >
-            <dt>{line.label}</dt>
-            <dd className="font-mono">{money(line.amount)}</dd>
-          </div>
-        ))}
-      </dl>
+      <p className="border-b border-line-strong px-4 py-2 text-meta text-ink-2">{cpf.split_note}</p>
+      {/* The six lines shortfall_split() returns, laid end to end instead of
+          listed. The overlap - the $12 of employee CPF that is part of BOTH the
+          wage that was not paid and the CPF that never arrived - is the one
+          thing a list of six numbers cannot show, and it is what an accountant
+          leans forward at. Every value below is still one of those six lines,
+          rendered from the same objects. */}
+      <div className="px-4 py-3">
+        <CpfOverlapBar split={cpf.split} />
+      </div>
       {/* Two figures on this card describe money she did not receive. Both are
           true and they differ by the employee CPF; the derivation is shown
           rather than left for a reader to reconstruct. */}
-      <p className="border-t border-zinc-300 bg-white/70 px-4 py-2 text-xs text-zinc-700">
+      <p className="border-t border-line-strong bg-surface/70 px-4 py-2 text-meta text-ink-2">
         {cpf.split_bridge}
       </p>
-      <p className="border-t border-zinc-300 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+      <p className="border-t border-line-strong bg-attention-bg px-4 py-2 text-meta text-attention-fg">
         {basis}
       </p>
     </div>
@@ -805,22 +914,22 @@ const VERDICT_COPY: Record<
   CORRECTED: {
     title: "The month-1 difference closes.",
     body: "The arithmetic below closes to within one cent. That is the month-1 pay difference only - FairSlip did not check CPF in this comparison.",
-    tone: "border-emerald-300 bg-emerald-50 text-emerald-900",
+    tone: "border-agreed-line bg-agreed-bg text-agreed-fg",
   },
   PARTIALLY_CORRECTED: {
     title: "The difference narrowed. It did not close.",
     body: "Payslip 2 paid more than payslip 2 alone required. FairSlip cannot say the extra was for month 1. A gap still stands, and it is shown below.",
-    tone: "border-amber-300 bg-amber-50 text-amber-900",
+    tone: "border-attention-line bg-attention-bg text-attention-fg",
   },
   NOT_CORRECTED: {
     title: "The difference did not narrow.",
     body: "Payslip 2 does not reduce the month-1 difference. FairSlip is not saying why, and not saying anyone did anything wrong.",
-    tone: "border-orange-300 bg-orange-50 text-orange-900",
+    tone: "border-attention-line bg-attention-bg text-attention-fg",
   },
   UNVERIFIABLE: {
     title: "FairSlip cannot say.",
     body: "FairSlip did not get a usable payslip 2, so it made no comparison. This is not a finding about your employer - it is a statement about what FairSlip could establish. What blocked it is below.",
-    tone: "border-zinc-300 bg-zinc-100 text-zinc-800",
+    tone: "border-line-strong bg-sunken text-ink",
   },
 };
 
@@ -837,9 +946,9 @@ function VerifySection({
 }) {
   const personaName = demo?.selected.name ?? "the invented worker";
   return (
-    <div className="mt-6 border-t border-zinc-200 pt-5">
-      <h3 className="text-sm font-semibold text-zinc-900">Next month</h3>
-      <p className="mt-1 text-sm text-zinc-600">
+    <div className="mt-6 border-t border-line pt-5">
+      <h3 className="text-body font-semibold text-ink">Next month</h3>
+      <p className="max-w-measure mt-1 text-body text-ink-2">
         A real payslip 2 would go through the same two readers and the same engines. Both
         months here are {personaName}&rsquo;s invented figures - not yours - so no reader
         ran. The verdict is arithmetic; no model takes part in it.
@@ -862,34 +971,38 @@ function VerdictCard({ v, personaName }: { v: VerifyOut; personaName: string }) 
     // inches below the viewer's own "Reached the bank" on the same page: same
     // words, two different people's money. The draft and the CPF cards got this
     // treatment and this one, their sibling, did not.
-    <div className={`mt-4 rounded border-2 border-dashed px-4 py-3 ${copy.tone}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+    <div className={`mt-4 rounded-sm border-2 border-dashed px-4 py-3 ${copy.tone}`}>
+      {/* NOT dimmed. This is the line that separates the example worker's
+          money from the reader's own, three inches below their own figures -
+          the last label on the page that should be fading into its card. It
+          carried opacity-70 for no reason but visual hierarchy. */}
+      <p className="text-meta font-semibold uppercase tracking-wide">
         Fictional worked example - {personaName}&rsquo;s months, not yours
       </p>
-      <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold">{copy.title}</p>
-        <span className="rounded bg-white/70 px-2 py-0.5 font-mono text-[11px]">{v.verdict}</span>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-body font-semibold">{copy.title}</p>
+        <span className="rounded-sm bg-surface/70 px-2 py-1 font-mono text-meta">{v.verdict}</span>
       </div>
-      <p className="mt-1 text-xs">{copy.body}</p>
+      <p className="mt-1 text-meta">{copy.body}</p>
 
       {v.verdict === "UNVERIFIABLE" ? (
-        <div className="mt-3 rounded bg-white/70 px-3 py-2">
-          <p className="text-xs font-semibold">What was not established:</p>
+        <div className="mt-3 rounded-sm bg-surface/70 px-3 py-2">
+          <p className="text-meta font-semibold">What was not established:</p>
           <ul className="mt-1 space-y-1">
             {v.blocked_by.map((b) => (
-              <li key={b.name} className="font-mono text-[11px]">
+              <li key={b.name} className="font-mono text-meta">
                 {b.name || "(unnamed field)"} - {b.status} - {b.detail}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs">
+          <p className="max-w-measure mt-2 text-meta">
             {personaName}&rsquo;s month-1 difference of {money(v.month1_difference)} is
             unchanged by this: it was established for that invented month, and nothing here
             revises it.
           </p>
         </div>
       ) : (
-        <dl className="mt-3 grid gap-x-6 gap-y-1 rounded bg-white/70 px-3 py-2 sm:grid-cols-2">
+        <dl className="mt-3 grid gap-x-6 gap-y-1 rounded-sm bg-surface/70 px-3 py-2 sm:grid-cols-2">
           <Row label="Month-1 difference" value={money(v.month1_difference)} />
           {v.month2_expected_net && (
             <Row label="Month 2 should have paid" value={money(v.month2_expected_net)} />
@@ -904,14 +1017,14 @@ function VerdictCard({ v, personaName }: { v: VerifyOut; personaName: string }) 
         </dl>
       )}
 
-      <p className="mt-2 font-mono text-[11px] opacity-80">{v.arithmetic}</p>
+      <p className="mt-2 font-mono text-meta opacity-80">{v.arithmetic}</p>
     </div>
   );
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="flex justify-between gap-4 text-xs">
+    <div className="flex justify-between gap-4 text-meta">
       <dt>{label}</dt>
       <dd className={`font-mono ${strong ? "font-bold" : ""}`}>{value}</dd>
     </div>
@@ -929,28 +1042,28 @@ function AgentRefusal({
 }) {
   const mandateRefusal = refusal.error === "MANDATE_EXCEEDED";
   return (
-    <div className="mt-4 rounded border border-amber-300 bg-amber-50 px-4 py-3">
-      <p className="text-sm font-semibold text-amber-900">
+    <div className="mt-4 rounded-sm border border-attention-line bg-attention-bg px-4 py-3">
+      <p className="text-body font-semibold text-attention-fg">
         {mandateRefusal
           ? "That is outside the mandate you granted."
           : refusal.error === "ACTION_NOT_BUILT"
             ? "FairSlip has not built that yet."
             : "FairSlip declined, and said why."}
       </p>
-      <p className="mt-1 rounded bg-white/60 px-3 py-2 font-mono text-xs text-amber-900">
+      <p className="mt-1 rounded-sm bg-surface/60 px-3 py-2 font-mono text-meta text-attention-fg">
         {refusal.detail}
       </p>
       {mandateRefusal && refusal.required_level != null && (
         <button
           type="button"
           onClick={() => onRaise(refusal.required_level as number)}
-          className="mt-2 rounded border border-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-900"
+          className="tap-sm mt-2 rounded-sm border border-attention-line px-4 py-3 text-meta font-semibold text-attention-fg"
         >
           Raise to level {refusal.required_level} - your choice, nothing changes until you do
         </button>
       )}
       {refusal.error === "ACTION_NOT_BUILT" && (
-        <p className="mt-2 text-xs text-amber-900">
+        <p className="max-w-measure mt-2 text-meta text-attention-fg">
           This is not disabled by your mandate. Raising your mandate level will not enable it.
         </p>
       )}
@@ -974,7 +1087,7 @@ function Action({
       type="button"
       onClick={onClick}
       disabled={busy || disabled}
-      className="rounded border border-zinc-400 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:border-zinc-700 disabled:opacity-50"
+      className="tap-sm rounded-sm border border-control bg-surface px-4 py-3 text-body font-medium text-ink hover:border-ink disabled:opacity-50"
     >
       {busy ? "Working..." : label}
     </button>

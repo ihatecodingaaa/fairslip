@@ -127,6 +127,56 @@ WORKER_PROMPTS: dict[str, str] = {
     "date_of_birth": "What is your date of birth?",
 }
 
+# The same six questions, in the languages the interface offers.
+#
+# SERVER-SIDE, NOT A CLIENT OVERLAY. These are the most important sentences on
+# the screen for the worker this product is for, and the English already lives
+# here for a stated reason: "a client that writes its own wording for a field
+# can quietly restate what the field means." A translation is a rewording, so it
+# belongs at the same source of truth. A dictionary in the frontend keyed by
+# field name would be a second copy, free to drift from the first, and the drift
+# would be invisible in English.
+#
+# The languages are not listed here: the test derives them from
+# LANGS in frontend/lib/i18n.ts, so adding a language to the switcher fails
+# loudly here rather than silently serving English.
+#
+# These translations are model-produced and have not been reviewed by a native
+# speaker. The interface says so where the language is chosen.
+WORKER_PROMPTS_I18N: dict[str, dict[str, str]] = {
+    "net_paid": {
+        "zh": "这个月实际到你银行账户的金额是多少？",
+        "bn": "এই মাসে আপনার ব্যাংক অ্যাকাউন্টে আসলে কত টাকা এসেছে?",
+        "ta": "இந்த மாதம் உங்கள் வங்கிக் கணக்கில் உண்மையில் எவ்வளவு பணம் வந்தது?",
+    },
+    "days_per_week": {
+        "zh": "按合同你每周需要工作几天？",
+        "bn": "চুক্তি অনুসারে আপনি সপ্তাহে কত দিন কাজ করেন?",
+        "ta": "ஒப்பந்தப்படி வாரத்திற்கு எத்தனை நாட்கள் வேலை செய்ய வேண்டும்?",
+    },
+    "is_workman": {
+        "zh": "你的工作是否涉及体力劳动——建筑、清洁、机器操作、驾驶？",
+        "bn": "আপনার কাজে কি শারীরিক শ্রম জড়িত - নির্মাণ, পরিচ্ছন্নতা, যন্ত্র চালনা, ড্রাইভিং?",
+        "ta": "உங்கள் வேலையில் உடல் உழைப்பு உள்ளதா - கட்டுமானம், துப்புரவு, இயந்திரம் இயக்குதல், ஓட்டுநர் பணி?",
+    },
+    "rest_day_requested_by": {
+        "zh": "是谁要求你在休息日工作的？",
+        "bn": "আপনার বিশ্রামের দিনে কাজ করতে কে বলেছিল?",
+        "ta": "உங்கள் ஓய்வு நாளில் வேலை செய்யச் சொன்னது யார்?",
+    },
+    "residency": {
+        "zh": "你在新加坡的居留身份是什么？",
+        "bn": "সিঙ্গাপুরে আপনার বসবাসের মর্যাদা কী?",
+        "ta": "சிங்கப்பூரில் உங்கள் குடியிருப்பு நிலை என்ன?",
+    },
+    "date_of_birth": {
+        "zh": "你的出生日期是？",
+        "bn": "আপনার জন্ম তারিখ কী?",
+        "ta": "உங்கள் பிறந்த தேதி என்ன?",
+    },
+}
+
+
 WORKER_WHY: dict[str, str] = {
     "net_paid": (
         "This is the one figure we will not read off the payslip. The payslip prints a "

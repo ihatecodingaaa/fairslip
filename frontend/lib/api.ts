@@ -105,7 +105,9 @@ export type Refusal = {
     | "MANDATE_EXCEEDED"
     | "ACTION_NOT_BUILT"
     | "DRAFT_UNAVAILABLE"
-    | "DRAFT_REJECTED";
+    | "DRAFT_REJECTED"
+    | "COVERAGE_UNESTABLISHED"
+    | "COVERAGE_COPY";
   detail: string;
   /** Present only on MANDATE_EXCEEDED. */
   required_level?: number | null;
@@ -205,6 +207,10 @@ export type WorkerField = {
   name: string;
   label: string;
   prompt: string;
+  /** The same question per interface language, from extract_schema.py. English
+   * is absent by design - `prompt` is the English, and a second copy of it here
+   * would be a second place for it to drift. */
+  prompt_i18n: Record<string, string>;
   /** Why no reader was shown this field. Ships from the backend. */
   why: string;
   required_for: string[];
@@ -298,8 +304,37 @@ export type MandateLevel = {
   action_detail: ActionDetail[];
 };
 
+/** One node of the agent's state machine, as agent.py defines it.
+ *
+ * Served rather than described: `to` is the state's outgoing edges from
+ * TRANSITIONS and `required_level` is derived from ENTERED_BY and the mandate
+ * table, so a diagram drawn from this cannot drift from the machine.
+ * `built` and `required_level` answer different questions - "we did not build
+ * this" and "you did not allow this" send a worker to different places. */
+export type MachineState = {
+  name: string;
+  entered_by: string | null;
+  required_level: number | null;
+  built: boolean;
+  terminal: boolean;
+  /** Reachable from itself. NOT the same as "not terminal":
+   * PARTIALLY_CORRECTED goes on to the escalation pack and never comes back,
+   * so it is neither terminal nor re-attemptable. */
+  re_attemptable: boolean;
+  to: string[];
+};
+
+export type MachineOut = {
+  states: MachineState[];
+  start: string;
+  verdicts: string[];
+};
+
 export type MandateTable = {
   levels: MandateLevel[];
+  /** The state machine itself, so the diagram is the machine rather than a
+   * picture of it. See backend/tests/test_agent_machine.py. */
+  machine: MachineOut;
   /** Shown where the level is set, never in a tooltip. */
   no_authentication_notice: string;
   reference_links: Record<string, string>;
@@ -540,3 +575,167 @@ export function postImpact(
     body: JSON.stringify({ before, after }),
   });
 }
+
+/* ------------------------------------------------------------------------
+ * Coverage: who FairSlip is for, stated as rules.
+ *
+ * Every string below was written by the backend from a quote, an engine
+ * constant, or the result of running an engine - see backend/fairslip/
+ * coverage.py. The page renders them and computes nothing, which is why there
+ * is no number type here except the counts: `display` arrives formatted, by the
+ * same formatter every other dollar in the product goes through.
+ * ---------------------------------------------------------------------- */
+
+export type Quote = {
+  /** The authority's own words. Never edited, never translated. */
+  quoted: string;
+  source_url: string;
+  source_label: string;
+};
+
+export type EngineValue = {
+  label: string;
+  display: string;
+  unit: "money" | "hours" | "ratio" | "multiplier" | "count";
+  /** Where the value was read from, e.g. "rules.WORKMAN_BASIC_CAP". */
+  engine_symbol: string;
+};
+
+export type EncodedRule = {
+  what: string;
+  engine_symbol: string;
+  source_url: string;
+  source_label: string;
+  /** null where the published source carries the rule as a table, not a sentence. */
+  quote: Quote | null;
+  values: EngineValue[];
+};
+
+export type RulePack = {
+  key: string;
+  name: string;
+  engine_module: string;
+  covers: string;
+  coverage_quote: Quote | null;
+  thresholds: EngineValue[];
+  encoded: EncodedRule[];
+};
+
+export type ResidencyOutcome = {
+  residency: string;
+  outcome: "CONTRIBUTES" | "NOT_A_MEMBER" | "REFUSED";
+  /** The engine's own flag or refusal message. Empty where it simply computed. */
+  engine_said: string;
+};
+
+export type NotEncoded = {
+  what: string;
+  kind: "REFUSED_BY_ENGINE" | "NO_INPUT_EXISTS" | "STATED_NOT_CHECKED";
+  why: string;
+  established_by: string;
+  footer_phrase: string;
+  would_need_field: string;
+};
+
+export type InterfaceCoverage = {
+  question_count: number;
+  languages: string[];
+  questions_translated: [string, number][];
+  note: string;
+  quotes_note: string;
+};
+
+export type CoverageOut = {
+  heading: string;
+  note: string;
+  packs: RulePack[];
+  residency: ResidencyOutcome[];
+  residency_note: string;
+  not_encoded: NotEncoded[];
+  interface: InterfaceCoverage;
+};
+
+export function getCoverage(): Promise<Outcome<CoverageOut>> {
+  return call<CoverageOut>("/coverage");
+}
+
+/* ------------------------------------------- the employer pre-payday check */
+
+/** One column of the upload, and whose schema it belongs to.
+ *
+ * `spec_name` is CPF Board's own field name from the Employer Contribution
+ * Detail Record; the two columns FairSlip adds carry "(not in the CPF file)".
+ * The screen renders the two groups apart, because telling an employer that CPF
+ * Board asked for something it did not ask for is the same class of error as
+ * showing a figure no engine produced. */
+export type SpecField = {
+  csv_name: string;
+  spec_name: string;
+  columns: string;
+  data_type: string;
+  note: string;
+};
+
+export type EmployerFinding = {
+  row_number: number;
+  employee_name: string;
+  employee_account_no: string;
+  outcome: "OK" | "EXCEPTION" | "REFUSED";
+  reason: string | null;
+  detail: string;
+  declared: Money | null;
+  expected: Money | null;
+  difference: Money | null;
+  ordinary_wages: Money | null;
+  band: string | null;
+  engine_formula: string;
+  engine_flags: string[];
+};
+
+export type EmployerCheckOut = {
+  rows_read: number;
+  checked: number;
+  exceptions: number;
+  refused: number;
+  total_difference: Money;
+  by_reason: [string, number][];
+  findings: EmployerFinding[];
+};
+
+export type EmployerSchemaOut = {
+  spec_fields: SpecField[];
+  extra_fields: SpecField[];
+  spec_title: string;
+  spec_effective: string;
+  spec_record: string;
+  spec_length: string;
+  spec_url: string;
+  spec_read_on: string;
+  rounding_a: string;
+  rounding_b: string;
+  note_4: string;
+  account_column: string;
+  note_4_reading: string;
+  mistakes_url: string;
+  mistakes: [string, string[]][];
+};
+
+export function getEmployerSchema(): Promise<Outcome<EmployerSchemaOut>> {
+  return call<EmployerSchemaOut>("/employer/schema");
+}
+
+/** Upload the file. NOT through call(): that sets a JSON content type, and a
+ * multipart body needs the browser to set its own boundary. */
+export async function postEmployerCheck(file: File): Promise<Outcome<EmployerCheckOut>> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/employer/check`, { method: "POST", body });
+  const payload = await res.json();
+  if (res.ok) return { ok: true, value: payload as EmployerCheckOut };
+  if (payload && typeof payload.error === "string")
+    return { ok: false, refusal: payload as Refusal };
+  throw new Error(`/employer/check returned HTTP ${res.status}`);
+}
+
+export const EMPLOYER_DEMO_CSV = `${API_BASE}/employer/demo-csv`;
+

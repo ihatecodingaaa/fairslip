@@ -1,26 +1,558 @@
 @import "tailwindcss";
 
+/*
+ * FairSlip design tokens.
+ *
+ * The rule this file exists to enforce: a colour, a size, a radius or a shadow
+ * that is not named here cannot be used. The four `*: initial` lines below
+ * delete Tailwind's default namespaces, so `text-zinc-500` and `text-[11px]`
+ * stop compiling rather than quietly surviving a review. A design system that
+ * can be bypassed is a design system that will be.
+ *
+ * Every foreground token's contrast ratio against every surface it is allowed
+ * to sit on is asserted in backend/tests/test_design_tokens.py, which GENERATES
+ * the pairs from the naming convention below rather than listing them by hand.
+ * Nothing here is eyeballed.
+ *
+ * The naming convention, per semantic family <f>:
+ *   --color-<f>         solid fill   - white on it must reach 4.5:1
+ *   --color-<f>-fg      text / icon  - 4.5:1 on surface, canvas, muted and <f>-bg
+ *   --color-<f>-bg      soft tint
+ *   --color-<f>-line    border       - 3:1 on surface and canvas (WCAG 1.4.11)
+ *
+ * LIGHT ONLY, DELIBERATELY. The demo is projected in a lit lecture theatre,
+ * where a projector cannot hold its black level and a dark theme washes out to
+ * grey. There is no dark palette here and no prefers-color-scheme block; see
+ * `color-scheme: light` below, which also stops the native <select> and date
+ * controls rendering dark chrome inside a white card.
+ */
+
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+
+  /* ---------------------------------------------------------------- type */
+  /* Six steps, ratio 1.25 from a 16px body. The floor is 14px: this screen
+     is read by people with low vision and by a room five to fifteen metres
+     from a projector, and the previous floor was 11px. */
+  --text-meta: 0.875rem;
+  --text-body: 1rem;
+  --text-lead: 1.25rem;
+  --text-title: 1.5rem;
+  --text-page: 2rem;
+  --text-hero: 3rem;
+  /* The hero is one line of digits and never wraps, so it takes no script
+     multiplier - a taller line here would only push the figure off centre. */
+  --text-hero--line-height: 1;
+
+  /* One stack, four scripts. The browser resolves per GLYPH, so a line reading
+     "Rahim / রহিম" takes its Latin from Noto Sans and only the Bengali
+     characters from Noto Sans Bengali - one Latin face on the line, not two.
+     Order matters: Noto Sans first so Latin never falls through to an Indic or
+     CJK face, whose Latin has a different x-height. SC last, because it is the
+     largest and covers Latin too. */
+  --font-sans:
+    var(--font-noto-sans), var(--font-noto-bengali), var(--font-noto-tamil),
+    var(--font-noto-sc), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Mono", monospace;
+
+  /* Leading is per-script, and it is the reason the "UI"-suffixed Noto variants
+     are not needed here. Bengali stacks matras above and conjuncts below the
+     baseline; Tamil has tall superscript vowel signs; CJK is dense and square.
+     Each type step multiplies by --lh-script, which :lang() sets below. */
+  --text-meta--line-height: calc(1.45 * var(--lh-script));
+  --text-body--line-height: calc(1.55 * var(--lh-script));
+  --text-lead--line-height: calc(1.4 * var(--lh-script));
+  --text-title--line-height: calc(1.25 * var(--lh-script));
+  --text-page--line-height: calc(1.15 * var(--lh-script));
+
+  /* ------------------------------------------------------------ neutrals */
+  --color-ink: #18181b; /* primary text */
+  --color-ink-2: #3f3f46; /* secondary text */
+  --color-ink-3: #56565f; /* metadata, formulas, provenance */
+
+  --color-canvas: #eceef1; /* the page behind the cards */
+  --color-surface: #ffffff; /* a card */
+  --color-muted: #f5f6f7; /* a panel inside a card */
+  --color-sunken: #e4e6ea; /* a chip fill, a disabled control */
+
+  /* `line` is a hairline BETWEEN items inside a group that is already bounded
+     by a 3:1 edge. It carries no information a heading does not, so 1.4.11
+     does not apply to it and the test does not assert 3:1 on it - it is
+     listed as decorative there, with its measured ratio, rather than left
+     looking like an oversight. `line-strong` and `control` do carry a
+     boundary, and both are asserted. */
+  --color-line: #dcdee2;
+  --color-line-strong: #868992; /* card edges, chip borders */
+  --color-control: #6f7280; /* input and select borders */
+
+  --color-on-solid: #ffffff; /* text on a solid fill */
+  --color-focus: #18181b;
+
+  /* --------------------------------------------------------------- brand */
+  /* One accent. It carries the primary action AND the "read from your
+     documents" group, which were two different blues before. */
+  --color-brand: #1d4ed8;
+  --color-brand-fg: #1c398e;
+  --color-brand-bg: #e9f0fe;
+  --color-brand-line: #5b83e8;
+
+  /* -------------------------------------------------------------- agreed */
+  --color-agreed: #16704a;
+  --color-agreed-fg: #0d5236;
+  --color-agreed-bg: #e6f5ee;
+  --color-agreed-line: #479673;
+
+  /* ----------------------------------------------------------- attention */
+  /* Reader disagreement, engine flags, refusals, and the two verify verdicts
+     that did not close. It absorbed the separate orange that NOT_CORRECTED
+     used to have: three warm hues a room cannot tell apart is not three
+     meanings, and that verdict is now distinguished by weight and wording. */
+  --color-attention-fg: #7a4405;
+  --color-attention-bg: #fdf3e3;
+  --color-attention-line: #b87b22;
+
+  /* ----------------------------------------------------------- confirmed */
+  /* The worker's own answers, and the "only you can answer these" group. */
+  --color-confirmed: #6d28d9;
+  --color-confirmed-fg: #57219c;
+  --color-confirmed-bg: #f2ecfe;
+  --color-confirmed-line: #9061ea;
+
+  /* ------------------------------------------------------------- missing */
+  /* Not established. Grey on purpose: it is the absence of a finding, and it
+     must not read as a warning. */
+  --color-missing-fg: #3f3f46;
+  --color-missing-bg: #eceef0;
+  --color-missing-line: #82848e;
+
+  /* -------------------------------------------------------------- danger */
+  /* Transport failures and self-contradiction. Never a pay finding: FairSlip
+     does not tell a worker in red that something is wrong with their pay. */
+  --color-danger-fg: #8c1d18;
+  --color-danger-bg: #fdecea;
+  --color-danger-line: #cc6c66;
+
+  /* ------------------------------------------------------------ geometry */
+  --radius-sm: 0.375rem; /* chips, inputs, buttons */
+  --radius-lg: 0.75rem; /* cards */
+  --shadow-card: 0 1px 2px rgb(24 24 27 / 0.05), 0 4px 12px rgb(24 24 27 / 0.05);
+
+  /* Bringhurst's 45-75 characters; 66 is the middle of it. Applied to prose,
+     not to the page - the tables and the four-column stat grid are data, and
+     data is not read at prose measure. */
+  --container-measure: 66ch;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* One multiplier, no second layout. The text-size control moves this value;
+     everything downstream is rem, so the type scale, the spacing grid and the
+     container widths all scale together.
+     `100%` rather than `16px` keeps the user's own browser font-size setting
+     in the multiplication instead of overriding it. */
+  --ui-scale: 1;
+
+  /* Per-script leading, multiplied into every type step above. */
+  --lh-script: 1;
+
+  /* Light only. Without this the native <select> and <input type="date"> on
+     /check render dark UA chrome inside a white card on any machine set to
+     dark mode - which is six of the answers on the scripted demo path. */
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Bengali and Tamil stack vowel signs and conjuncts well above and below the
+   baseline. At Latin leading the ascenders of one line meet the descenders of
+   the next and the marks clip - which reads as a broken font rather than as a
+   tight line, and would have been blamed on Noto. CJK is squarer than Latin and
+   also wants more air between lines than 1.55 gives it.
+   Verified by rendering a paragraph in each script and looking at it, including
+   a line that mixes Latin and Bengali. */
+html:lang(bn),
+html:lang(ta) {
+  --lh-script: 1.2;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html:lang(zh) {
+  --lh-script: 1.1;
+}
+
+/*
+ * High contrast, for low vision and for a projector that has lost its black
+ * level. It redefines the TOKENS and nothing else - there is no second layout
+ * and no second component - so every contrast rule in
+ * backend/tests/test_design_tokens.py applies to this set too, and does.
+ *
+ * The tints go white and the borders go near-black: on a washed-out projector a
+ * pale tint and a white card are the same colour, so the tint stops carrying
+ * anything and the border has to.
+ */
+[data-contrast="high"] {
+  --color-ink: #000000;
+  --color-ink-2: #1a1a1f;
+  --color-ink-3: #2b2b33;
+
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-muted: #ffffff;
+  --color-sunken: #e8e8ec;
+
+  --color-line: #6b6d78;
+  --color-line-strong: #26262c;
+  --color-control: #26262c;
+
+  --color-brand: #0b2f9e;
+  --color-brand-fg: #0b2f9e;
+  --color-brand-bg: #ffffff;
+  --color-brand-line: #0b2f9e;
+
+  --color-agreed: #0a4a30;
+  --color-agreed-fg: #0a4a30;
+  --color-agreed-bg: #ffffff;
+  --color-agreed-line: #0a4a30;
+
+  --color-attention-fg: #5c3204;
+  --color-attention-bg: #ffffff;
+  --color-attention-line: #5c3204;
+
+  --color-confirmed: #45177d;
+  --color-confirmed-fg: #45177d;
+  --color-confirmed-bg: #ffffff;
+  --color-confirmed-line: #45177d;
+
+  --color-missing-fg: #26262c;
+  --color-missing-bg: #ffffff;
+  --color-missing-line: #26262c;
+
+  --color-danger-fg: #6b1310;
+  --color-danger-bg: #ffffff;
+  --color-danger-line: #6b1310;
+}
+
+html {
+  font-size: calc(100% * var(--ui-scale));
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  /* This line used to read `Arial, Helvetica, sans-serif`, which overrode the
+     font layout.tsx loads through next/font. Two fonts were downloaded and
+     neither was ever displayed. See docs/debt.md, wired-mechanism-does-nothing. */
+  font-family: var(--font-sans);
+}
+
+/*
+ * Minimum size for anything a worker taps.
+ *
+ * THE AUTHORITIES DISAGREE, so this picks and says which:
+ *   WCAG 2.2 SC 2.5.8 (AA)          24 x 24 CSS px
+ *   Apple Human Interface Guidelines 44 x 44 pt
+ *   Google Material Design           48 x 48 dp
+ * Roughly a factor of two apart. 24px is a legal floor rather than a
+ * recommendation - it is the number below which a page fails, not the number at
+ * which it is comfortable - so primary actions take the LARGEST of the three and
+ * everything else clears the middle one. On a projector this is also the
+ * difference between a button the back row can see and one it cannot.
+ *
+ * Padding alone already lands near these numbers; min-height is what makes it
+ * true rather than nearly true.
+ */
+@utility tap {
+  min-height: 3rem; /* 48px - Material */
+}
+
+@utility tap-sm {
+  min-height: 2.75rem; /* 44px - Apple */
+}
+
+/*
+ * One focus ring for the whole app, strong enough to survive a projector.
+ *
+ * The 2px offset means the ring is drawn on the page BEHIND the control, not
+ * on the control itself, so the pair WCAG 1.4.11 measures is ink-on-surface
+ * (17.7:1) and ink-on-canvas (15.9:1) - not ink against a blue button. Both
+ * are asserted in test_design_tokens.py.
+ *
+ * :focus-visible only, so a mouse click on a card does not light up, but every
+ * keyboard tab does. Nothing anywhere sets `outline: none`.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/*
+ * The date field's calendar button, which Chrome puts in the tab order and then
+ * does not give a focus ring.
+ *
+ * FOUND BY TABBING, not by reading. `<input type="date">` is FOUR tab stops in
+ * Chrome - day, month, year, and this button inside its shadow root - and on
+ * the fourth the host stops matching :focus-visible, so the rule above does not
+ * apply and the computed outline falls back to `none`. The keyboard traversal
+ * caught it; axe and Lighthouse both scored the page clean, because neither of
+ * them evaluates focus indicators.
+ *
+ * A stop a keyboard user can reach and cannot see is WCAG 2.4.7, whoever put it
+ * in the tab order. It is the same element Phase 4 hides from print, for a
+ * related reason: it is an affordance for a tap, and here it was an affordance
+ * for a tap you could not find.
+ */
+input[type="date"]::-webkit-calendar-picker-indicator:focus,
+input[type="date"]::-webkit-calendar-picker-indicator:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/*
+ * Motion.
+ *
+ * Everything decorative is off by default and only switches on where the reader
+ * has expressed no preference against it - the safe direction, because
+ * `prefers-reduced-motion: no-preference` is absent on a machine that has never
+ * been asked, and the failure mode of guessing wrong is vestibular. Nothing in
+ * FairSlip animates to explain anything, so there is nothing to keep.
+ */
+* {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  * {
+    animation-duration: revert !important;
+    animation-iteration-count: revert !important;
+    transition-duration: revert !important;
+    scroll-behavior: revert !important;
+  }
+}
+
+/*
+ * A string the interface has not been translated into the language on screen.
+ *
+ * It renders in English, marked, with lang="en" on the element so a screen
+ * reader switches voice for it rather than reading English words through a
+ * Bengali synthesiser. The alternative - a key, an empty string, or a machine
+ * translation nobody checked - would each be the interface asserting something
+ * about itself that is not established.
+ */
+.untranslated {
+  text-decoration: underline dotted var(--color-ink-3);
+  text-underline-offset: 3px;
+}
+
+/*
+ * =========================================================== the take-away
+ *
+ * A worker who finds a difference does not screenshot it. They print it and
+ * carry it to an NGO office, where it is photocopied, and the copy is what
+ * reaches the person who can act. So the target here is not "looks fine on a
+ * printer" - it is a second-generation black-and-white photocopy.
+ *
+ * THE SHEET IS THIS DOM, NARROWED. It is not a second render of the figures.
+ * The read-aloud is built the same way and for the same reason: a second copy
+ * of a number is a number that can drift from the one on screen, and the whole
+ * product is an argument against exactly that. What print does is HIDE and
+ * RESTYLE. It never re-states a figure.
+ *
+ * Four rules follow from the photocopier, and every one of them is a constraint
+ * on this block rather than a hope about the printer:
+ *
+ *   1. NO COLOUR CARRIES MEANING. Every token below is #000000 or #ffffff.
+ *      A photocopy has two inks and one of them is the paper.
+ *   2. NO GREY. Mid-grey text survives one copy and dies on the second, and
+ *      `line` (#dcdee2) is invisible on the first. Black or nothing.
+ *   3. NOTHING DEPENDS ON A BACKGROUND FILL. Chrome does not print background
+ *      graphics unless the reader ticks a box in the print dialog, so a status
+ *      carried by a tint is a status that usually does not print at all. Every
+ *      fill here is white and every foreground is black, which makes the output
+ *      IDENTICAL whether that box is ticked or not - verified by rendering both
+ *      and comparing, not by reading this paragraph.
+ *   4. STATUS IS CARRIED BY ICON AND WORD. That was already true on screen -
+ *      backend/tests/test_inclusion.py derives the cases over the FactStatus
+ *      union and asserts no two statuses share a shape or a word - and print is
+ *      where it stops being a WCAG exercise and starts being the only thing
+ *      left. The strokes are thickened below because a 1.6px hairline and a
+ *      dashed ring are what a photocopier loses first.
+ *
+ * `on-solid` is BLACK here, and it is the rule that explains itself worst, so:
+ * it names the text drawn on a solid fill (a primary button). In print the
+ * fill is white, so white-on-solid text would be white on white paper. Every
+ * such element is hidden below anyway; the token is set correctly regardless,
+ * because the next one added will not be.
+ */
+
+/* Hidden on screen, revealed by the print rules below. The pair is deliberate:
+   `print-only` content must never reach the screen, and `print-hide` content
+   must never reach the paper. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /*
+   * The print token set. It overrides the high-contrast set as well as the
+   * default one - a reader who printed while in high-contrast mode was
+   * previously handed that set's near-black-on-white, which is nearly right and
+   * therefore the worst kind of wrong to leave to chance.
+   */
+  :root,
+  :root[data-contrast="high"] {
+    --color-ink: #000000;
+    --color-ink-2: #000000;
+    --color-ink-3: #000000;
+
+    --color-canvas: #ffffff;
+    --color-surface: #ffffff;
+    --color-muted: #ffffff;
+    --color-sunken: #ffffff;
+
+    --color-line: #000000;
+    --color-line-strong: #000000;
+    --color-control: #000000;
+
+    --color-on-solid: #000000;
+    --color-focus: #000000;
+
+    --color-brand: #000000;
+    --color-brand-fg: #000000;
+    --color-brand-bg: #ffffff;
+    --color-brand-line: #000000;
+
+    --color-agreed: #000000;
+    --color-agreed-fg: #000000;
+    --color-agreed-bg: #ffffff;
+    --color-agreed-line: #000000;
+
+    --color-attention-fg: #000000;
+    --color-attention-bg: #ffffff;
+    --color-attention-line: #000000;
+
+    --color-confirmed: #000000;
+    --color-confirmed-fg: #000000;
+    --color-confirmed-bg: #ffffff;
+    --color-confirmed-line: #000000;
+
+    --color-missing-fg: #000000;
+    --color-missing-bg: #ffffff;
+    --color-missing-line: #000000;
+
+    --color-danger-fg: #000000;
+    --color-danger-bg: #ffffff;
+    --color-danger-line: #000000;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm 13mm 15mm;
+  }
+
+  /* The text-size control still applies. A reader who set "Large" because they
+     cannot read 10pt did not stop being that reader at the print dialog, so the
+     multiplier stays in the calculation and only the base changes from a screen
+     unit to a paper one. */
+  html {
+    font-size: calc(10.5pt * var(--ui-scale));
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  /* Rule 3, enforced rather than assumed. `bg-brand` and friends are Tailwind
+     utilities in @layer utilities; this rule is unlayered, and unlayered CSS
+     beats layered CSS whatever the specificity - so no !important is needed and
+     none is used. */
+  *,
+  *::before,
+  *::after {
+    background-color: #ffffff;
+    background-image: none;
+    box-shadow: none;
+    text-shadow: none;
+  }
+
+  .print-hide {
+    display: none;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  /* Rule 4. A photocopier loses a hairline before it loses anything else, and
+     the MISSING chip is a DASHED ring - the first thing on this page to go. */
+  svg {
+    stroke-width: 2.2;
+  }
+
+  /* The layout is a page, not a viewport. `max-w-3xl` and the page padding are
+     screen furniture; A4 has its own margins, set above. */
+  main {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* A rule a photocopier can see. The screen's 1px hairlines are for a display
+     at arm's length. */
+  [class*="border"] {
+    border-color: #000000;
+  }
+
+  /* Things that must not be cut in half by a page break: a component and its
+     formula, a quoted requirement and its source, a field and its status. */
+  li,
+  dl,
+  figure,
+  blockquote {
+    break-inside: avoid;
+  }
+
+  section,
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid-page;
+  }
+
+  /* A link is an affordance on screen and a dead end on paper. The destination
+     is already on the screen - it is what the anchor points at - so printing it
+     states nothing new; withholding it is what would lose something. These are
+     MOM's, TADM's and CPF Board's pages, on the sheet a worker carries to a
+     counter, so they are the last things to drop. */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-family: var(--font-mono);
+    word-break: break-all;
+  }
+
+  /* An answered field is text on paper, not an empty control waiting for a tap.
+     The value stays; the box around it goes. */
+  input,
+  select,
+  textarea {
+    border: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* The date field's calendar button. It is a UA shadow element carrying a
+     background IMAGE, so `appearance: none` above does not remove it and the
+     `background-image: none` rule cannot reach it - a pseudo-element inside a
+     shadow root is not matched by `*`.
+     Found by rendering the sheet twice, with background graphics off and on,
+     and diffing the two: 112 pixels of a 1.17-megapixel page differed, and they
+     were this icon. It is an affordance for a tap, on paper, on a field whose
+     value is printed beside it. */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    display: none;
+  }
 }
