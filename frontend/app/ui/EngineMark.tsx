@@ -21,12 +21,23 @@
 
 import { T } from "./Prefs";
 
-/** The boxed form, for a diagram. Double-ruled, which nothing else on any
- * screen is - the engine is the one thing that appears on both sides. */
+/**
+ * The boxed form, for a diagram.
+ *
+ * A SINGLE RULE, NOT A DOUBLE ONE. It was `border-2 border-ink`, which made the
+ * engine the heaviest object on the landing page - heavier than the promise the
+ * page exists to make. It is the destination of the two lines above it; it does
+ * not need to shout to be read as one.
+ *
+ * AND IT NO LONGER NAMES ITS OWN SOURCE FILES. "rules.py · cpf.py" is a fact
+ * about the repository, on the first screen a worker sees. /scale names the
+ * modules, next to what each one encodes, which is where someone asking that
+ * question is.
+ */
 export function EngineBlock({ className = "" }: { className?: string }) {
   return (
     <div
-      className={`rounded-sm border-2 border-ink bg-surface px-5 py-4 text-center ${className}`}
+      className={`rounded-sm border border-line-strong bg-surface px-5 py-4 text-center ${className}`}
     >
       <p className="text-lead font-semibold text-ink">
         <T k="home.engine" />
@@ -34,7 +45,6 @@ export function EngineBlock({ className = "" }: { className?: string }) {
       <p className="mt-1 text-meta text-ink-2">
         <T k="home.engineWhat" />
       </p>
-      <p className="mt-2 font-mono text-meta text-ink-3">rules.py · cpf.py</p>
     </div>
   );
 }

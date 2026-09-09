@@ -89,6 +89,9 @@ const en = {
      what the system does, and once on the worker's own screen, as the column
      headings of their own trail. Two names for one thing would be two things. */
   "trail.you": "You",
+  "trail.youAnswers": "your answers",
+  "trail.ifChanged": "if changed",
+  "trail.lineGone": "no longer applies",
   "trail.layer.documents": "Documents",
   "trail.layer.readers": "Two readers",
   "trail.layer.facts": "Established facts",
@@ -113,12 +116,12 @@ const en = {
 
   /* ------------------------------------------------------------- the inspector */
   "lens.heading": "How this was worked out",
-  "lens.nothing": "Nothing chosen yet.",
   "lens.status": "Status",
   "lens.source": "Where this came from",
   "lens.readerSaid": "What each reader said",
   "lens.usedBy": "Used by",
   "lens.builtFrom": "Built from",
+  "lens.howLines": "How these lines were drawn",
   "lens.formula": "Formula",
   "lens.role.payslip": "Given to both readers",
   "lens.notRead": "answered nothing",
@@ -245,6 +248,8 @@ const en = {
   "result.reachedBank": "Reached the bank",
   "result.whereFrom": "Where each dollar comes from",
   "result.flags": "Flags",
+  "result.stale": "An answer below has changed since these figures were worked out.",
+  "result.staleAction": "Work them out again",
 
   "check.title": "Does your pay add up?",
   "check.intro":
@@ -280,8 +285,16 @@ const en = {
   "field.typeNumber": "type the number you know to be right",
   "field.answeredNothing": "answered nothing",
   "field.notANumber": "(not a number)",
+  "field.cpfOnlyNote":
+    "This one is for the CPF check, which FairSlip does not run on this screen, so it does not hold up your figures.",
 
   "status.AGREED": "both readers agree",
+  /* The one-word forms, for the money trail's nodes. Same four states, same
+     distinctness rule - a dense diagram gets a label, not a sentence. */
+  "status.short.AGREED": "agreed",
+  "status.short.DISAGREED": "differ",
+  "status.short.MISSING": "not set",
+  "status.short.HUMAN_CONFIRMED": "yours",
   "status.DISAGREED": "readers disagree",
   "status.MISSING": "not established",
   "status.HUMAN_CONFIRMED": "you answered this",
@@ -293,6 +306,8 @@ const en = {
   "gate.reasonWorker": "we ask you, not a reader",
   "gate.ready":
     "Every field the engine needs has an answer — agreed by both readers, or given by you. The engine checks each value when it runs, and refuses any it cannot use.",
+  "gate.stale":
+    "You changed an answer after these figures were worked out. The figures above are still the earlier ones until you work them out again.",
 
   "footer.outside": "Outside what FairSlip checks",
   "footer.outsideBody":
@@ -335,6 +350,8 @@ const en = {
   "chart.cpfOverlap": "Where the money went — and the part that is both",
   "chart.cpfUndrawable":
     "The CPF split is not drawn here: the engine did not return every line this chart needs, and a bar with a segment missing would still look finished.",
+  "chart.differenceNegative":
+    "The amount recorded as reaching the bank is higher than the reconstructed expected net, so this row has no length to draw.",
 } as const;
 
 export type Key = keyof typeof en;
@@ -371,6 +388,9 @@ const zh: Partial<Record<Key, string>> = {
   "home.exampleHide": "隐藏数字",
 
   "trail.you": "你",
+  "trail.youAnswers": "你的回答",
+  "trail.ifChanged": "若改变",
+  "trail.lineGone": "不再适用",
   "trail.layer.documents": "文件",
   "trail.layer.readers": "两个阅读模型",
   "trail.layer.facts": "已确立的事实",
@@ -394,12 +414,12 @@ const zh: Partial<Record<Key, string>> = {
     "这些线来自每个金额自己记录的输入项。这里没有任何一份「什么依赖什么」的清单。",
 
   "lens.heading": "这是怎么算出来的",
-  "lens.nothing": "还没有选择任何内容。",
   "lens.status": "状态",
   "lens.source": "这是从哪里来的",
   "lens.readerSaid": "每个阅读模型说了什么",
   "lens.usedBy": "被用于",
   "lens.builtFrom": "由此算出",
+  "lens.howLines": "这些线是怎么画出来的",
   "lens.formula": "算式",
   "lens.role.payslip": "同时交给两个阅读模型",
   "lens.notRead": "未给出任何答案",
@@ -521,6 +541,8 @@ const zh: Partial<Record<Key, string>> = {
   "result.reachedBank": "实际到账",
   "result.whereFrom": "每一元钱的来源",
   "result.flags": "标记",
+  "result.stale": "算出这些数字之后，下面有一个答案被改动过。",
+  "result.staleAction": "重新算一次",
 
   "check.title": "你的工资对得上吗？",
   "check.intro":
@@ -556,8 +578,14 @@ const zh: Partial<Record<Key, string>> = {
   "field.typeNumber": "请输入你确知正确的数字",
   "field.answeredNothing": "未给出任何答案",
   "field.notANumber": "（不是数字）",
+  "field.cpfOnlyNote":
+    "这一项是给公积金检查用的，FairSlip 在本页并不运行那项检查，所以它不会拖住你的数字。",
 
   "status.AGREED": "两个阅读模型一致",
+  "status.short.AGREED": "一致",
+  "status.short.DISAGREED": "不一致",
+  "status.short.MISSING": "未确立",
+  "status.short.HUMAN_CONFIRMED": "你答的",
   "status.DISAGREED": "阅读模型不一致",
   "status.MISSING": "尚未确立",
   "status.HUMAN_CONFIRMED": "这是你回答的",
@@ -569,6 +597,8 @@ const zh: Partial<Record<Key, string>> = {
   "gate.reasonWorker": "我们问你，而不是问阅读模型",
   "gate.ready":
     "引擎所需的每个字段都有了答案——要么两个阅读模型一致，要么由你给出。引擎运行时会逐一检查每个值，并拒绝任何它无法使用的值。",
+  "gate.stale":
+    "算出这些数字之后，你改动了一个答案。在重新算一次之前，上面的数字仍是先前那次的。",
 
   "footer.outside": "FairSlip 不检查的范围",
   "footer.notADetermination":
@@ -601,10 +631,12 @@ const zh: Partial<Record<Key, string>> = {
   "scale.serverText":
     "上面的计数只包括界面本身的文字。引擎发送的句子——拒绝说明、公式，以及本页对涵盖范围的解释——以英文送达，不计入其中。",
   "chart.reconciliation": "这个月是怎么算出来的",
-  "chart.toScale": "所有条形使用同一比例，长度来自旁边的数字。点按条形可看produce它的算式。",
+  "chart.toScale": "所有条形使用同一比例，长度来自旁边的数字。点按条形可看产生它的算式。",
   "chart.cpfOverlap": "钱去了哪里 — 以及两边重叠的部分",
   "chart.cpfUndrawable":
     "此处不绘制公积金拆分：引擎并未返回本图所需的每一行，而缺少一段的条形看起来仍然是完整的。",
+  "chart.differenceNegative":
+    "记录为到账的金额高于依规则重建的应付净额，所以这一行没有可画的长度。",
 
 };
 
@@ -640,6 +672,9 @@ const bn: Partial<Record<Key, string>> = {
   "home.exampleHide": "সংখ্যাগুলি লুকান",
 
   "trail.you": "আপনি",
+  "trail.youAnswers": "আপনার উত্তর",
+  "trail.ifChanged": "বদলালে",
+  "trail.lineGone": "আর প্রযোজ্য নয়",
   "trail.layer.documents": "কাগজপত্র",
   "trail.layer.readers": "দুই পাঠক",
   "trail.layer.facts": "প্রতিষ্ঠিত তথ্য",
@@ -663,12 +698,12 @@ const bn: Partial<Record<Key, string>> = {
     "রেখাগুলি আঁকা হয়েছে প্রতিটি অঙ্ক নিজের ইনপুট হিসেবে যা লিখে রেখেছে তা থেকে। কোনটি কোনটির উপর নির্ভর করে, তার কোনো তালিকা এখানে নেই।",
 
   "lens.heading": "এটি কীভাবে বেরোল",
-  "lens.nothing": "এখনও কিছু বেছে নেওয়া হয়নি।",
   "lens.status": "অবস্থা",
   "lens.source": "এটি কোথা থেকে এল",
   "lens.readerSaid": "প্রতিটি পাঠক কী বলেছে",
   "lens.usedBy": "কোথায় ব্যবহৃত",
   "lens.builtFrom": "যা থেকে তৈরি",
+  "lens.howLines": "এই রেখাগুলি কীভাবে আঁকা হয়েছে",
   "lens.formula": "সূত্র",
   "lens.role.payslip": "দুজন পাঠককেই দেওয়া হয়েছে",
   "lens.notRead": "কোনো উত্তর দেয়নি",
@@ -790,6 +825,8 @@ const bn: Partial<Record<Key, string>> = {
   "result.reachedBank": "ব্যাংকে পৌঁরানো",
   "result.whereFrom": "প্রতিটি ডলার কোথা থেকে এল",
   "result.flags": "চিহ্ন",
+  "result.stale": "এই সংখ্যাগুলি বের করার পর নিচের একটি উত্তর বদলেছে।",
+  "result.staleAction": "আবার হিসাব করুন",
 
   "check.title": "আপনার বেতন কি মিলছে?",
   "check.intro":
@@ -823,8 +860,14 @@ const bn: Partial<Record<Key, string>> = {
   "field.typeNumber": "আপনি যে সংখ্যাটি সঠিক জানেন সেটি লিখুন",
   "field.answeredNothing": "কোনো উত্তর দেয়নি",
   "field.notANumber": "(সংখ্যা নয়)",
+  "field.cpfOnlyNote":
+    "এটি CPF যাচাইয়ের জন্য, যা FairSlip এই স্ক্রিনে চালায় না, তাই এটি আপনার সংখ্যাগুলিকে আটকে রাখে না।",
 
   "status.AGREED": "দুজন পাঠকই একমত",
+  "status.short.AGREED": "একমত",
+  "status.short.DISAGREED": "ভিন্ন",
+  "status.short.MISSING": "অপ্রতিষ্ঠিত",
+  "status.short.HUMAN_CONFIRMED": "আপনার",
   "status.DISAGREED": "পাঠকরা একমত নন",
   "status.MISSING": "প্রতিষ্ঠিত হয়নি",
   "status.HUMAN_CONFIRMED": "আপনি এটির উত্তর দিয়েছেন",
@@ -834,6 +877,8 @@ const bn: Partial<Record<Key, string>> = {
   "gate.blockedMany": "{n}টি ফিল্ড এখনও অনুত্তরিত, তাই কোনো হিসাব করা হয়নি:",
   "gate.reasonRead": "পাঠকরা এটি নিষ্পত্তি করতে পারেনি",
   "gate.reasonWorker": "আমরা আপনাকে জিজ্ঞাসা করছি, পাঠককে নয়",
+  "gate.stale":
+    "এই সংখ্যাগুলি বের করার পরে আপনি একটি উত্তর বদলেছেন। আবার হিসাব না করা পর্যন্ত উপরের সংখ্যাগুলি আগেরগুলিই থাকবে।",
 
   "footer.outside": "FairSlip যা পরীক্ষা করে না",
   "footer.notADetermination":
@@ -871,6 +916,8 @@ const bn: Partial<Record<Key, string>> = {
   "chart.cpfOverlap": "টাকা কোথায় গেল — আর যে অংশটি দুই দিকেই পড়ে",
   "chart.cpfUndrawable":
     "এখানে CPF ভাগ আঁকা হয়নি: এই চিত্রের জন্য প্রয়োজনীয় প্রতিটি লাইন ইঞ্জিন ফেরত দেয়নি, আর একটি অংশ বাদ পড়া দণ্ডও দেখতে সম্পূর্ণ লাগে।",
+  "chart.differenceNegative":
+    "ব্যাংকে পৌঁছেছে বলে নথিভুক্ত অঙ্কটি নিয়ম থেকে পুনর্গঠিত প্রত্যাশিত নিট-এর চেয়ে বেশি, তাই এই সারিতে আঁকার মতো কোনো দৈর্ঘ্য নেই।",
 
 };
 
@@ -906,6 +953,9 @@ const ta: Partial<Record<Key, string>> = {
   "home.exampleHide": "எண்களை மறை",
 
   "trail.you": "நீங்கள்",
+  "trail.youAnswers": "உங்கள் பதில்கள்",
+  "trail.ifChanged": "மாறினால்",
+  "trail.lineGone": "இனி பொருந்தாது",
   "trail.layer.documents": "ஆவணங்கள்",
   "trail.layer.readers": "இரு வாசிப்பாளர்கள்",
   "trail.layer.facts": "நிலைநிறுத்தப்பட்ட உண்மைகள்",
@@ -929,12 +979,12 @@ const ta: Partial<Record<Key, string>> = {
     "ஒவ்வொரு தொகையும் தன் உள்ளீடுகளாகப் பதிவு செய்ததிலிருந்தே கோடுகள் வரையப்படுகின்றன. எது எதைச் சார்ந்தது என்ற பட்டியல் இங்கு எதுவும் இல்லை.",
 
   "lens.heading": "இது எப்படிக் கணக்கிடப்பட்டது",
-  "lens.nothing": "இன்னும் எதுவும் தேர்ந்தெடுக்கப்படவில்லை.",
   "lens.status": "நிலை",
   "lens.source": "இது எங்கிருந்து வந்தது",
   "lens.readerSaid": "ஒவ்வொரு வாசிப்பாளரும் என்ன சொன்னார்",
   "lens.usedBy": "எங்கே பயன்படுத்தப்பட்டது",
   "lens.builtFrom": "எதிலிருந்து அமைக்கப்பட்டது",
+  "lens.howLines": "இந்த வரிகள் எப்படி வரையப்பட்டன",
   "lens.formula": "சூத்திரம்",
   "lens.role.payslip": "இரு வாசிப்பாளர்களுக்கும் தரப்பட்டது",
   "lens.notRead": "எந்தப் பதிலும் தரவில்லை",
@@ -1048,6 +1098,8 @@ const ta: Partial<Record<Key, string>> = {
   "result.reachedBank": "வங்கிக்கு வந்தது",
   "result.whereFrom": "ஒவ்வொரு டாலரும் எங்கிருந்து வருகிறது",
   "result.flags": "குறியீடுகள்",
+  "result.stale": "இந்த எண்கள் கணக்கிடப்பட்ட பிறகு கீழே ஒரு பதில் மாற்றப்பட்டுள்ளது.",
+  "result.staleAction": "மீண்டும் கணக்கிடு",
 
   "check.title": "உங்கள் சம்பளம் சரியாகக் கூட்டப்பட்டதா?",
   "check.intro":
@@ -1063,13 +1115,21 @@ const ta: Partial<Record<Key, string>> = {
   "group.mostImportant": "மிக முக்கியமானது",
   "group.forCpf": "CPF சரிபார்ப்புக்கு",
   "field.rightFigure": "சரியான எண் என்ன?",
+  "field.cpfOnlyNote":
+    "இது CPF சரிபார்ப்புக்கானது; FairSlip அதை இந்தத் திரையில் இயக்குவதில்லை, எனவே இது உங்கள் எண்களைத் தடுத்து நிறுத்தாது.",
 
   "status.AGREED": "இரு வாசகர்களும் ஒத்துக்கொள்கின்றனர்",
+  "status.short.AGREED": "ஒத்தது",
+  "status.short.DISAGREED": "வேறு",
+  "status.short.MISSING": "நிலைபெறவில்லை",
+  "status.short.HUMAN_CONFIRMED": "உங்களது",
   "status.DISAGREED": "வாசகர்கள் மாறுபடுகின்றனர்",
   "status.MISSING": "நிலைநிறுத்தப்படவில்லை",
   "status.HUMAN_CONFIRMED": "நீங்கள் பதிலளித்தீர்கள்",
 
   "gate.compute": "இந்த மாதம் எவ்வளவு வழங்கப்பட்டிருக்க வேண்டும் என்பதைக் கணக்கிடு",
+  "gate.stale":
+    "இந்த எண்கள் கணக்கிடப்பட்ட பிறகு நீங்கள் ஒரு பதிலை மாற்றியுள்ளீர்கள். மீண்டும் கணக்கிடும் வரை மேலே உள்ள எண்கள் பழையவையாகவே இருக்கும்.",
 
   "footer.outside": "FairSlip சரிபார்க்காதவை",
   "footer.engines": "என்ஜின்கள்",
@@ -1103,6 +1163,8 @@ const ta: Partial<Record<Key, string>> = {
   "chart.cpfOverlap": "பணம் எங்கே போனது — இரண்டிலும் சேரும் பகுதி",
   "chart.cpfUndrawable":
     "CPF பிரிவு இங்கு வரையப்படவில்லை: இந்த வரைபடத்திற்குத் தேவையான ஒவ்வொரு வரியையும் இயந்திரம் திருப்பி அளிக்கவில்லை; ஒரு பகுதி விடுபட்ட கம்பியும் முழுமையாகவே தெரியும்.",
+  "chart.differenceNegative":
+    "வங்கியை அடைந்ததாகப் பதிவான தொகை, விதிகளிலிருந்து மீளமைக்கப்பட்ட எதிர்பார்க்கப்படும் நிகரத் தொகையை விட அதிகம்; எனவே இந்த வரிசைக்கு வரைவதற்கு நீளம் இல்லை.",
 
 };
 

@@ -87,6 +87,18 @@ export function Controls() {
           />
         </Group>
       </div>
+
+      {/* The dotted-underline convention, explained beside the control that
+          brings it about. It used to sit in the persistent strip at the top of
+          every page, where it was a second caveat competing with the first; it
+          only means anything once a language has been chosen, and this is where
+          that happens. Still gated on language, still in this file - the one the
+          caveat registry names. */}
+      {lang !== "en" && (
+        <p className="max-w-measure mt-4 border-t border-line pt-3 text-meta text-ink-2">
+          <T k="ctl.untranslatedLegend" />
+        </p>
+      )}
     </section>
   );
 }
@@ -103,18 +115,20 @@ export function TranslationDisclosure() {
   const cov = coverage(lang);
   if (lang === "en") return null;
   return (
+    // ONE STRIP, NOT FIVE LINES. It carried the disclosure, the dotted-underline
+    // legend and the count as three stacked blocks, which came to 370px above
+    // the h1 of every page in every language but English - a caveat with more
+    // presence than the content it qualified. The sentence that must persist is
+    // the one about who wrote the translations; the legend about the dotted
+    // underline moved into the Display panel, beside the control that chose the
+    // language. Counted, not estimated: the figure is derived from the
+    // dictionary rather than rounded up by whoever wrote the copy.
     <div className="print-hide border-b border-attention-line bg-attention-bg">
-      <div className="mx-auto max-w-6xl px-5 py-3">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-2">
         <p className="max-w-measure text-meta text-attention-fg">
           <T k="ctl.disclosure" />
         </p>
-        <p className="mt-2 max-w-measure text-meta text-attention-fg">
-          <T k="ctl.untranslatedLegend" />
-        </p>
-        {/* Counted, not estimated. A progress claim about a translation is a
-            claim like any other, and this one is derived from the dictionary
-            rather than rounded up by whoever wrote the copy. */}
-        <p className="mt-2 font-mono text-meta text-attention-fg">
+        <p className="font-mono text-meta text-attention-fg">
           {cov.done}/{cov.total}
         </p>
       </div>

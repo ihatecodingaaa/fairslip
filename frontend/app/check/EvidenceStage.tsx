@@ -63,8 +63,21 @@ export function EvidenceStage({
         <T k="evidence.blurb" />
       </p>
 
-      <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {DOCUMENTS.map((d) => (
+      {/* THE PAYSLIP IS NOT ONE OF THREE. It is the only required document -
+          without it there is nothing to read - and the other two are optional
+          evidence that makes the reconstruction better. Three identical cards
+          said they were peers, and a small red asterisk was the only thing
+          saying otherwise. The payslip now takes half the row on a laptop and
+          the other two share the rest. */}
+      <ul className="mt-6 grid gap-4 lg:grid-cols-2">
+        <li className="lg:row-span-2">
+          <DocumentSlot
+            doc={DOCUMENTS[0]}
+            file={files[DOCUMENTS[0].role]}
+            onPick={(f) => onPick(DOCUMENTS[0].role, f)}
+          />
+        </li>
+        {DOCUMENTS.slice(1).map((d) => (
           <li key={d.role}>
             <DocumentSlot doc={d} file={files[d.role]} onPick={(f) => onPick(d.role, f)} />
           </li>
@@ -141,21 +154,34 @@ function DocumentSlot({
         <T k={doc.hint} />
       </p>
 
+      {/* The empty-state word breaks. The Tamil for "no photo chosen yet" ends
+          in a 24-character word, and a word is a grid track's minimum whether or
+          not the box around it is `overflow-hidden` - clipping hides the paint,
+          not the min-content. It sized this card's column to 385px inside a
+          335px phone, and the whole page scrolled sideways with it. Breaking
+          inside the word is the only thing that makes the column narrower than
+          the word. */}
       <div className="mt-3 flex flex-1 items-center justify-center overflow-hidden rounded-sm border border-line bg-muted">
         {file ? (
           <FilePreview file={file} alt={`${t(doc.label)} — ${t("evidence.preview")}`} />
         ) : (
-          <span className="px-3 py-8 text-center text-meta text-ink-3">
+          <span className="px-3 py-8 text-center text-meta text-ink-3 [overflow-wrap:anywhere]">
             <T k="evidence.noneYet" />
           </span>
         )}
       </div>
 
-      <span className="mt-3 flex items-baseline justify-between gap-3">
+      {/* WRAPS, because "choose a photo" is three words in English and one
+          287px Tamil phrase at 125% text. Held on one line beside a filename it
+          made the card 25px wider than a 390px phone, which scrolls the whole
+          PAGE sideways - a filename column cannot shrink a `shrink-0` pill. The
+          pill drops to its own line instead, and breaks inside itself if even a
+          full-width line is not enough. */}
+      <span className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
         <span className="min-w-0 break-all font-mono text-meta text-ink-3">
           {file ? file.name : t("check.noFile")}
         </span>
-        <span className="shrink-0 rounded-sm border border-control px-3 py-1 text-meta font-semibold text-ink">
+        <span className="max-w-full shrink-0 rounded-sm border border-control px-3 py-1 text-meta font-semibold text-ink [overflow-wrap:anywhere]">
           {file ? <T k="evidence.replace" /> : <T k="evidence.choose" />}
         </span>
       </span>

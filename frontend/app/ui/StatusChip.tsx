@@ -24,7 +24,7 @@
 
 import type { ReactNode } from "react";
 import type { Fact } from "@/lib/api";
-import { T } from "./Prefs";
+import { T, useT } from "./Prefs";
 
 type Status = Fact["status"];
 
@@ -62,11 +62,24 @@ const ICON: Record<Status, ReactNode> = {
   ),
 };
 
+/* FOUR TONES, NOT THREE.
+ *
+ * AGREED and HUMAN_CONFIRMED shared the green family, because both mean "this
+ * field is usable". They are not the same fact. One says two independent models
+ * read the same thing off a document; the other says a person answered, and no
+ * model was involved or believed. On the money trail those two appear side by
+ * side, nine at a time, and sharing a colour made the screen say that half the
+ * month came from the readers when in fact half of it came from the worker.
+ *
+ * `confirmed` is the family globals.css already reserves for "the worker's own
+ * answers", and it is held to the same contrast floors as every other. The icon
+ * and the word were always distinct; the tone is now distinct too, which is what
+ * makes the difference legible from across a room rather than on inspection. */
 const TONE: Record<Status, string> = {
   AGREED: "border-agreed-line bg-agreed-bg text-agreed-fg",
   DISAGREED: "border-attention-line bg-attention-bg text-attention-fg",
   MISSING: "border-missing-line bg-missing-bg text-missing-fg",
-  HUMAN_CONFIRMED: "border-agreed-line bg-agreed-bg text-agreed-fg",
+  HUMAN_CONFIRMED: "border-confirmed-line bg-confirmed-bg text-confirmed-fg",
 };
 
 /* The words. Kept as i18n keys rather than literals so the chip translates with
@@ -77,6 +90,25 @@ const WORDS = {
   DISAGREED: "status.DISAGREED",
   MISSING: "status.MISSING",
   HUMAN_CONFIRMED: "status.HUMAN_CONFIRMED",
+} as const;
+
+/* THE SAME FOUR STATES IN ONE WORD EACH, for the money trail.
+ *
+ * "you answered this" is the right sentence in a table row and the wrong one in
+ * a 160px node on a phone, where it broke over three lines and made the box that
+ * carried it half again as tall as its neighbour. The trail is a dense diagram;
+ * a diagram gets a label, not a sentence.
+ *
+ * NOTHING IS LOST. The compact chip still carries icon, tone AND a word - the
+ * three encodings - and the full sentence is on the same page in the
+ * side-by-side reading table, and one tap away in the inspector. The short words
+ * are held to the same distinctness rule as the long ones in
+ * backend/tests/test_inclusion.py. */
+const SHORT_WORDS = {
+  AGREED: "status.short.AGREED",
+  DISAGREED: "status.short.DISAGREED",
+  MISSING: "status.short.MISSING",
+  HUMAN_CONFIRMED: "status.short.HUMAN_CONFIRMED",
 } as const;
 
 export function StatusIcon({ status }: { status: Status }) {
@@ -103,6 +135,26 @@ export function StatusChip({ status }: { status: Status }) {
     >
       <StatusIcon status={status} />
       <T k={WORDS[status]} />
+    </span>
+  );
+}
+
+/**
+ * The same chip, one word wide.
+ *
+ * For the money trail, where twenty-two of these sit in a diagram rather than in
+ * a table. It keeps all three encodings and adds the long sentence for a screen
+ * reader, so nothing a chip said before is unavailable here.
+ */
+export function StatusChipCompact({ status }: { status: Status }) {
+  const t = useT();
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-meta font-semibold ${TONE[status]}`}
+    >
+      <StatusIcon status={status} />
+      <T k={SHORT_WORDS[status]} />
+      <span className="sr-only">, {t(WORDS[status])}</span>
     </span>
   );
 }

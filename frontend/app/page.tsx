@@ -121,29 +121,33 @@ export default function Home() {
       {/* ---------------------------------------------------------- the claim */}
       <section className="grid items-start gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,1fr)_26rem]">
         <div>
-          <h1 className="text-page font-semibold tracking-tight sm:text-hero">
+          <h1 className="text-hero font-semibold tracking-tight [overflow-wrap:anywhere] sm:text-display">
             <T k="home.promise" />
           </h1>
-          <p className="max-w-measure mt-4 text-lead text-ink-2">
+          <p className="max-w-measure mt-6 text-lead text-ink-2 [overflow-wrap:anywhere]">
             <T k="home.lede" />
           </p>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          {/* The secondary line, at reading size. It was a 14px uppercase
+              micro-label under the buttons, which is the typography of a legal
+              footnote - and this is the sentence that says what the architecture
+              is. */}
+          <p className="mt-4 text-lead font-medium text-ink [overflow-wrap:anywhere]">
+            <T k="home.secondary" />
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               href="/check"
-              className="tap inline-flex items-center rounded-sm bg-brand px-5 py-3 text-lead font-semibold text-on-solid"
+              className="tap inline-flex items-center rounded-sm bg-brand px-5 py-3 text-lead font-semibold text-on-solid [overflow-wrap:anywhere]"
             >
               <T k="home.ctaWorker" />
             </Link>
             <Link
               href="/employer"
-              className="tap inline-flex items-center rounded-sm border border-control bg-surface px-5 py-3 text-body font-semibold text-ink hover:border-ink"
+              className="tap inline-flex items-center rounded-sm border border-control bg-surface px-5 py-3 text-body font-semibold text-ink hover:border-ink [overflow-wrap:anywhere]"
             >
               <T k="home.ctaEmployer" />
             </Link>
           </div>
-          <p className="mt-6 text-meta font-semibold uppercase tracking-wide text-ink-3">
-            <T k="home.secondary" />
-          </p>
         </div>
 
         <TwoSides />
@@ -154,20 +158,36 @@ export default function Home() {
         <h2 id="pipeline-heading" className="text-title font-semibold">
           <T k="home.pipeline" />
         </h2>
-        <ol className="mt-6 grid gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-6">
-          {PIPELINE.map((step, i) => (
-            <li key={step.label} className="border-t-2 border-line-strong pt-3">
-              <p className="font-mono text-meta text-ink-3">{i + 1}</p>
-              <p className="mt-1 text-body font-semibold text-ink">
-                <T k={step.label} />
-              </p>
-              <p className="mt-1 text-meta text-ink-2">
-                <T k={step.what} />
-              </p>
-            </li>
-          ))}
+        {/* A PATH, NOT SIX CARDS.
+            Six columns, each with its own rule, its own number and its own
+            paragraph, is a feature grid - and a feature grid was the one thing
+            this section could not afford to be, because what it is describing is
+            a SEQUENCE. Dropping the horizontal gap joins the six rules into one
+            continuous rail; a dot marks each stop on it; the last dot is filled
+            dark, because the difference is where the path ends. Same six names,
+            same six sentences, read as a line. */}
+        <ol className="mt-8 grid gap-y-10 sm:grid-cols-2 lg:grid-cols-6">
+          {PIPELINE.map((step, i) => {
+            const last = i === PIPELINE.length - 1;
+            return (
+              <li key={step.label} className="relative border-t border-line-strong pr-6 pt-5">
+                <span
+                  aria-hidden
+                  className={`absolute left-0 top-0 block h-2 w-2 -translate-y-1/2 rounded-full ${
+                    last ? "bg-ink" : "bg-ink-3"
+                  }`}
+                />
+                <p className="text-body font-semibold text-ink">
+                  <T k={step.label} />
+                </p>
+                <p className="mt-1 text-meta text-ink-2">
+                  <T k={step.what} />
+                </p>
+              </li>
+            );
+          })}
         </ol>
-        <p className="max-w-measure mt-4 text-meta text-ink-3">
+        <p className="max-w-measure mt-8 text-meta text-ink-3">
           <T k="home.pipelineNote" />
         </p>
       </section>
@@ -227,7 +247,11 @@ export default function Home() {
  */
 function TwoSides() {
   return (
-    <figure className="rounded-lg border border-line-strong bg-surface p-5 shadow-card">
+    // NO CARD AROUND IT. The diagram was a bordered, shadowed panel containing
+    // two bordered boxes containing a double-bordered block: three nested
+    // surfaces, and the outermost one carried no meaning at all. A diagram is an
+    // object on the page, not a widget in a frame.
+    <figure>
       <div className="grid grid-cols-2 gap-x-4">
         <Side href="/check" label="nav.worker" when="nav.workerHint" what="home.sideWorkerWhat" />
         <Side
@@ -266,7 +290,7 @@ function Side({
   return (
     <Link
       href={href}
-      className="block rounded-sm border border-line-strong bg-muted px-4 py-3 hover:border-ink"
+      className="block rounded-sm border border-line-strong bg-muted px-4 py-3 [overflow-wrap:anywhere] hover:border-ink"
     >
       <p className="text-body font-semibold text-ink">
         <T k={label} />
@@ -297,8 +321,12 @@ function PersonaRow({ persona, result }: { persona: Persona; result?: PersonaRes
   const headline = !result ? null : result.breakdown.ok ? result.breakdown.value : null;
 
   return (
-    <details className="group px-5 py-4">
-      <summary className="cursor-pointer">
+    // The native marker is hidden: it rendered as a bare black triangle above
+    // the name, disconnected from everything, while the "Show the figures" line
+    // below already said what it did. Two affordances for one action, and the
+    // one the browser drew was the one nobody could read.
+    <details className="group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none">
         <span className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
           <span>
             <span className="block text-lead font-semibold text-ink">{persona.name}</span>

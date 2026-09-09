@@ -54,6 +54,7 @@ export function ReconcileStage({
   extract,
   documents,
   headingRef,
+  stale = false,
 }: {
   breakdown: PayBreakdown;
   /** The exact facts that produced this breakdown. The trail's fact layer is
@@ -62,6 +63,9 @@ export function ReconcileStage({
   extract: ExtractOut;
   documents: { role: DocumentRole; name: string }[];
   headingRef?: React.Ref<HTMLParagraphElement>;
+  /** An answer has been edited since these figures were worked out, so what is
+   * on screen below no longer matches what produced them. */
+  stale?: boolean;
 }) {
   const t = useT();
   const [selected, setSelected] = useState<string | null>(null);
@@ -132,28 +136,53 @@ export function ReconcileStage({
         >
           <T k="result.difference" />
         </p>
-        <p className="mt-2 text-hero font-semibold tabular-nums text-ink sm:text-display">
-          {money(breakdown.difference)}
-        </p>
 
-        <dl className="mt-6 flex flex-wrap gap-x-12 gap-y-4">
-          <div className="flex flex-col">
-            <dd className="order-1 text-title font-medium tabular-nums text-ink">
-              {money(breakdown.expected_net)}
-            </dd>
-            <dt className="order-2 text-meta text-ink-3">
-              <T k="reconcile.rulesGive" />
-            </dt>
-          </div>
-          <div className="flex flex-col">
-            <dd className="order-1 text-title font-medium tabular-nums text-ink">
-              {money(breakdown.net_paid)}
-            </dd>
-            <dt className="order-2 text-meta text-ink-3">
-              <T k="reconcile.reachedBank" />
-            </dt>
-          </div>
-        </dl>
+        {/* ABOVE THE FIGURE, AND ON PAPER TOO.
+            A qualifier under the number it qualifies is read after the number
+            has been believed, and this one changes what the number is: an
+            amount worked out from an answer the worker has since replaced. It
+            is deliberately NOT print-hidden - a sheet carried into an NGO
+            office is the worst place for the caveat to be the part that was
+            left on the screen. The link is a link rather than a button for the
+            same reason: it prints as a sentence. */}
+        {stale && (
+          <p className="max-w-measure mt-3 border-y-2 border-attention-line py-2 text-body font-semibold text-attention-fg">
+            <T k="result.stale" />{" "}
+            <a href="#stage-establish" className="underline underline-offset-2">
+              <T k="result.staleAction" />
+            </a>
+          </p>
+        )}
+
+        {/* THE ANSWER AND ITS TWO OPERANDS ON ONE BASELINE.
+            The figure was alone on a 1112px row with six hundred pixels of
+            nothing beside it, and the two amounts it is the difference BETWEEN
+            were a separate row underneath. Put them side by side and the
+            subtraction is the composition: what the rules gave, what arrived,
+            and the gap - readable without moving your eye down the page. */}
+        <div className="mt-2 flex flex-wrap items-end gap-x-12 gap-y-6">
+          <p className="text-hero font-semibold tabular-nums text-ink sm:text-display">
+            {money(breakdown.difference)}
+          </p>
+          <dl className="flex flex-wrap gap-x-10 gap-y-4 border-l border-line-strong pl-8">
+            <div className="flex flex-col">
+              <dd className="order-1 text-title font-medium tabular-nums text-ink">
+                {money(breakdown.expected_net)}
+              </dd>
+              <dt className="order-2 text-meta text-ink-3">
+                <T k="reconcile.rulesGive" />
+              </dt>
+            </div>
+            <div className="flex flex-col">
+              <dd className="order-1 text-title font-medium tabular-nums text-ink">
+                {money(breakdown.net_paid)}
+              </dd>
+              <dt className="order-2 text-meta text-ink-3">
+                <T k="reconcile.reachedBank" />
+              </dt>
+            </div>
+          </dl>
+        </div>
 
         <div className="print-hide mt-6 flex flex-wrap gap-3">
           <button
@@ -213,17 +242,22 @@ export function ReconcileStage({
           {/* The standing hypothetical, with a way out of it. It is above the
               graph because it qualifies every marked figure in it, and a caveat
               below the thing it qualifies has already been read too late. */}
+          {/* ONE LINE. It was a 165px block that pushed the whole trail down the
+              page to say four short things - and the reader is looking at the
+              trail, where every affected amount is already marked. What the strip
+              has to carry is the qualifier, the change, the two counts, and the
+              way out. */}
           {standing && hypothetical && (
-            <div className="mt-4 rounded-sm border-2 border-dashed border-attention-line bg-attention-bg px-4 py-3">
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-y-2 border-dashed border-attention-line py-2">
               <p className="text-body font-semibold text-attention-fg">
                 <T k="lens.hypothetical" />
               </p>
-              <p className="mt-1 font-mono text-meta text-attention-fg">
+              <p className="font-mono text-meta text-attention-fg">
                 {standing.changed_fields
-                  .map((f) => `${f.name}: ${f.before_value} → ${f.after_value}`)
+                  .map((f) => `${f.name.replace(/_/g, " ")}  ${f.before_value} → ${f.after_value}`)
                   .join(" · ")}
               </p>
-              <p className="mt-2 text-meta text-attention-fg">
+              <p className="text-meta text-attention-fg">
                 <T k="lens.movedCount" vars={{ n: standing.moved_count }} />
                 {" · "}
                 <T k="lens.heldCount" vars={{ n: standing.unchanged_count }} />
@@ -231,15 +265,20 @@ export function ReconcileStage({
               <button
                 type="button"
                 onClick={() => setHypothetical(null)}
-                className="tap-sm mt-2 rounded-sm border border-attention-line bg-surface px-4 py-2 text-meta font-semibold text-attention-fg"
+                className="tap-sm ml-auto rounded-sm border border-attention-line bg-surface px-4 py-2 text-meta font-semibold text-attention-fg"
               >
                 <T k="lens.clearHypothetical" />
               </button>
             </div>
           )}
 
-          <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          {/* THE INSPECTOR COMES FIRST ON A PHONE. In one column it would
+              otherwise sit under two thousand pixels of trail, so choosing a box
+              near the top meant scrolling to the bottom to read what you chose.
+              On a laptop it is the right-hand rail, where it belongs. */}
+          <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <ProofGraph
+              className="order-2 lg:order-1"
               proof={proof}
               selected={selected}
               traced={traced}
@@ -252,7 +291,7 @@ export function ReconcileStage({
                 read what they had just selected. The panel follows instead.
                 Below `lg` the layout is one column and the inspector sits
                 directly under the trail, where sticky would be in the way. */}
-            <div className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+            <div className="order-1 lg:order-2 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
               <EvidenceLens
                 proof={proof}
                 selected={selected}

@@ -29,10 +29,16 @@ half of it would check nothing.
 
 from __future__ import annotations
 
+import dataclasses
 import re
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
+
+import demo.fixtures as fx
+from app.schemas import Money
+from fairslip.rules import Fact, Status, compute_expected
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CHART = REPO / "frontend" / "app" / "check" / "Waterfall.tsx"
@@ -313,3 +319,138 @@ def test_the_chart_refuses_rather_than_drawing_a_partial_bar() -> None:
         "present before drawing"
     )
     assert "chart.cpfUndrawable" in src, "the refusal renders no explanation"
+
+
+# ------------------------- claim 3: a signed value is not drawn as a length
+
+
+# The gap row is the only signed one, and a bar has no way to be negative.
+#
+# `difference` is `expected_net - net_paid`, and it goes negative whenever more
+# money reached the bank than the published rules reconstruct. The bar was drawn
+# `Math.max(u(to - from), 2)`, so a negative value fell through to the floor and
+# rendered as the same small positive mark a tiny POSITIVE difference gets - a
+# magnitude the data does not carry, on the one row a reader reads for its sign.
+#
+# The engine half is checked by running the engine; the drawing half by reading
+# the file. Both are here because the defect lives between them.
+
+
+def _difference_when_bank_shows(amount: str) -> Decimal:
+    """The engine's own difference for a month whose only change is net_paid."""
+    base = fx.rahim_month1_established()
+    inputs = dataclasses.replace(
+        base,
+        net_paid=Fact(Decimal(amount), Status.HUMAN_CONFIRMED, "test: bank amount"),
+    )
+    return compute_expected(inputs).difference
+
+
+def test_the_engine_really_produces_all_three_signs() -> None:
+    """Non-vacuity for everything below: if the negative case were unreachable,
+    a chart that mishandles it would still be a chart nobody could break."""
+    expected_net = compute_expected(fx.rahim_month1_established()).expected_net
+    assert _difference_when_bank_shows("1120.00") > 0, "the demo month is not a positive difference"
+    assert _difference_when_bank_shows(str(expected_net)) == 0, "an exact month is not zero"
+    assert _difference_when_bank_shows("1600.00") < 0, "a bank amount above expected net is not negative"
+
+
+def test_the_signed_amount_survives_the_backend_untouched() -> None:
+    """What the row prints is `money(<field>)` of this Money. The sign has to be
+    in it, or the chart is not showing a signed value at all."""
+    negative = Money.of(_difference_when_bank_shows("1600.00"))
+    assert negative.exact.startswith("-"), negative.exact
+    assert negative.display.startswith("-"), negative.display
+
+
+def _row_source() -> tuple[str, str, str]:
+    """(everything above the bar, the drawn branch, the fallback branch).
+
+    Split on the two structural anchors around the conditional, so the three
+    assertions below are about three different regions of the same row rather
+    than about the file as a whole.
+    """
+    src = chart_source()
+    i = src.index("drawableAsLength(s) ?")
+    j = src.index(") : (", i)
+    end = src.index("{isOpen && s.formula", j)
+    above = src[src.index("steps.map((s) => {") : i]
+    return above, src[i:j], src[j:end]
+
+
+def test_the_split_finds_three_distinct_regions() -> None:
+    """The guard for the three tests that follow: a split that landed in the
+    wrong place would make all of them pass by looking at nothing."""
+    above, drawn, fallback = _row_source()
+    assert above and drawn and fallback
+    assert "<svg" in drawn, "the drawn branch has no chart in it"
+    assert "chart.differenceNegative" in fallback, "the fallback branch is not the explanation"
+
+
+def test_a_positive_difference_still_draws_its_length() -> None:
+    """The geometry is unchanged for every row that has a length: start at the
+    step's own `from`, run to its own `to`, on the shared axis."""
+    _, drawn, _ = _row_source()
+    assert "x={u(s.from)}" in drawn, drawn
+    assert "width={Math.max(u(s.to - s.from), MIN_MARK)}" in drawn, drawn
+
+
+def test_zero_does_not_manufacture_magnitude() -> None:
+    """A zero difference gets the presence mark and nothing else.
+
+    The floor must be a CONSTANT. A floor computed from the value, or from the
+    axis, would grow with the chart and become a length - which is the thing a
+    zero row must not have.
+    """
+    src = chart_source()
+    m = re.search(r"const MIN_MARK = (\d+);", src)
+    assert m, "MIN_MARK is not a literal constant in the chart"
+    assert int(m.group(1)) == 2, f"the presence mark is {m.group(1)} of 1000 axis units"
+    floors = set(re.findall(r"Math\.max\(u\([^)]*\),\s*([^)]+)\)", src))
+    assert floors == {"MIN_MARK"}, f"a bar is floored by something other than MIN_MARK: {floors}"
+
+
+def test_a_negative_difference_renders_no_bar_at_all() -> None:
+    """Not a stub, not an empty track: no rectangle and no svg.
+
+    An empty track beside a signed amount is still a picture, and it is a
+    picture of zero.
+    """
+    _, _, fallback = _row_source()
+    assert "<rect" not in fallback, f"the negative branch still draws a rectangle: {fallback}"
+    assert "<svg" not in fallback, f"the negative branch still draws a chart: {fallback}"
+
+
+def test_the_negative_branch_invents_no_replacement_figure() -> None:
+    """The missing bar is replaced by a SENTENCE, not by a number this file
+    worked out to stand in for it."""
+    _, _, fallback = _row_source()
+    assert "money(" not in fallback, f"the negative branch renders an amount of its own: {fallback}"
+    # No interpolated expression in a text position at all - the same scan
+    # test_no_arithmetic_reaches_a_text_position runs over the whole file,
+    # narrowed to the branch that had to invent something and did not.
+    interpolated = [e for e in re.findall(r">\s*\{([^{}]*)\}\s*<", fallback) if "<" not in e]
+    assert not interpolated, f"the negative branch interpolates {interpolated} into its text"
+
+
+def test_the_signed_amount_is_rendered_outside_the_conditional() -> None:
+    """Whether the row can be drawn decides the PICTURE, never the FIGURE. The
+    amount is printed above the branch, so it is on screen either way."""
+    above, drawn, fallback = _row_source()
+    assert "money(s.amount)" in above, "the row no longer prints its own amount above the bar"
+    assert "money(s.amount)" not in drawn and "money(s.amount)" not in fallback, (
+        "the amount is printed inside a branch, so one path could omit it"
+    )
+
+
+def test_only_the_gap_row_can_refuse_to_draw() -> None:
+    """Scope. Every other step runs between two positions the engine's running
+    total put in order, and there is no sign there to get wrong."""
+    src = chart_source()
+    body = re.search(r"function drawableAsLength\(s: Step\): boolean \{(.*?)\n\}", src, re.DOTALL)
+    assert body, "drawableAsLength not found"
+    assert 's.kind !== "gap"' in body.group(1), body.group(1)
+    assert "value(s.amount) >= 0" in body.group(1), (
+        "drawability is not read off the step's own Money; it must come from the "
+        "engine's exact Decimal, not from a subtraction done here"
+    )

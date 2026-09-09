@@ -177,7 +177,6 @@ function UnsettledField({
 }) {
   const t = useT();
   const status = field.fact.status;
-  const answered = readers.filter((r) => field.readings[r.key] != null);
 
   return (
     <div className="flex h-full flex-col rounded-lg border-2 border-attention-line bg-surface p-4">
@@ -195,13 +194,18 @@ function UnsettledField({
       </p>
 
       {/* What each reader said, in the position it was said in. An empty cell
-          beside a full one is the finding, before any word is read. */}
-      <dl className="mt-3 grid grid-cols-2 gap-3">
-        {readers.slice(0, 2).map((r) => {
+          beside a full one is the finding, before any word is read.
+          NO BOX AROUND EACH CELL. This card is already a bordered surface; a
+          bordered, filled panel inside it for each reader was a third nesting
+          level, and it made two transcribed numbers look like two form fields.
+          A hairline between them separates them; the READING is what should
+          carry the weight, so it is the largest thing in the cell. */}
+      <dl className="mt-4 grid grid-cols-2 divide-x divide-line">
+        {readers.slice(0, 2).map((r, i) => {
           const said = field.readings[r.key];
           const unreadable = field.unreadable.includes(r.key);
           return (
-            <div key={r.key} className="rounded-sm border border-line bg-muted px-3 py-2">
+            <div key={r.key} className={i === 0 ? "pr-4" : "pl-4"}>
               <dt className="text-meta text-ink-3">{r.provider}</dt>
               <dd className="mt-1">
                 {said == null ? (
@@ -213,7 +217,7 @@ function UnsettledField({
                   </span>
                 ) : (
                   <span
-                    className={`block font-mono text-lead tabular-nums ${
+                    className={`block font-mono text-title tabular-nums ${
                       unreadable ? "text-attention-fg" : "text-ink"
                     }`}
                   >
@@ -229,22 +233,17 @@ function UnsettledField({
         })}
       </dl>
 
-      <p className="max-w-measure mt-3 break-words text-meta text-ink-3">{field.fact.source}</p>
-
-      <div className="mt-auto pt-3">
+      <div className="mt-auto pt-4">
         {cpfOnly ? (
           <p className="max-w-measure text-meta text-ink-3">
-            This one is for the CPF check, which FairSlip does not run on this screen, so it
-            does not hold up your figures.
+            <T k="field.cpfOnlyNote" />
           </p>
         ) : (
           <label className="block text-meta font-semibold text-ink">
+            {/* The one reader's value was stated THREE TIMES on this card: in the
+                cell above, inside the engine's source sentence, and in brackets
+                here. The cell is where a reader looks for it. */}
             <T k="field.rightFigure" />
-            {answered.length === 1 && (
-              <span className="ml-1 font-normal text-ink-2">
-                ({answered[0].provider}: {field.readings[answered[0].key]})
-              </span>
-            )}
             <input
               type="text"
               inputMode="decimal"
@@ -256,6 +255,14 @@ function UnsettledField({
           </label>
         )}
       </div>
+
+      {/* The engine's own sentence about why nothing was established, last and
+          quiet. It names model identifiers and repeats in prose what the two
+          cells above show in position - useful to anyone chasing it, and not the
+          thing to read first. */}
+      <p className="mt-4 max-w-measure break-words border-t border-line pt-3 font-mono text-meta text-ink-3">
+        {field.fact.source}
+      </p>
     </div>
   );
 }

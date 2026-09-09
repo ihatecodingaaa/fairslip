@@ -151,7 +151,16 @@ export function PayrollConstellation({
               aria-label={`${t("employer.rowSelected", { n: f.row_number })}, ${
                 f.employee_name
               }, ${t(MARK[f.outcome].word)}${f.reason ? `, ${f.reason}` : ""}`}
-              className={`rounded-sm ${isSelected ? "bg-sunken" : ""}`}
+              /* THE SELECTED MARK HAS TO BE FINDABLE AMONG THREE HUNDRED. A
+                 `bg-sunken` fill behind a 16px glyph was invisible at this
+                 density - a reader who clicked a triangle and read the row in the
+                 inspector could not then point at which triangle it was. A ring
+                 in the ink colour, drawn OUTSIDE the mark so it does not touch
+                 the shape, is legible at a glance and costs no layout: the
+                 element keeps its size and only its outline changes. */
+              className={`rounded-full ${
+                isSelected ? "outline outline-2 outline-offset-1 outline-ink" : ""
+              }`}
             >
               <svg
                 viewBox="0 0 16 16"

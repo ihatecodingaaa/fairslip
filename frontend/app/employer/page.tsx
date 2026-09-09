@@ -184,7 +184,7 @@ export default function EmployerPage() {
               onPick={(r) => setFilterReason((prev) => (prev === r ? null : r))}
             />
 
-            <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="mt-6 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
               <PayrollConstellation
                 key={runId}
                 findings={findings}
@@ -192,7 +192,9 @@ export default function EmployerPage() {
                 onSelect={setSelectedRow}
                 filterReason={filterReason}
               />
-              <RowInspector finding={selected} />
+              <div className="lg:sticky lg:top-6">
+                <RowInspector finding={selected} />
+              </div>
             </div>
           </section>
 
@@ -365,36 +367,50 @@ function ReasonFilter({
   onPick: (reason: string | null) => void;
 }) {
   if (result.by_reason.length === 0) return null;
+  /* THE COUNT LEADS. These were seven full-width cards carrying a sentence, a
+     trailing number and an engine enum in monospace - 250px of controls above
+     the 300 marks they filter, each one bigger than the finding it stands for.
+     The count is what an employer is scanning; the sentence says which kind; the
+     engine's own code is the smallest thing on the chip, because it is there for
+     the person who wants to look it up and for nobody else. */
+  const chip = (on: boolean) =>
+    `tap-sm flex w-full items-baseline gap-3 rounded-sm border px-3 py-2 text-left ${
+      on
+        ? "border-ink bg-muted text-ink"
+        : "border-line bg-surface text-ink-2 hover:border-control"
+    }`;
   return (
-    <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      <li>
+    <ul className="mt-4 flex flex-wrap gap-2">
+      <li className="min-w-[10rem] flex-1">
         <button
           type="button"
           onClick={() => onPick(null)}
           aria-pressed={active === null}
-          className={`tap-sm h-full w-full rounded-sm border px-3 py-2 text-left text-meta font-semibold ${
-            active === null
-              ? "border-ink bg-muted text-ink"
-              : "border-line-strong bg-surface text-ink-2 hover:border-ink"
-          }`}
+          className={chip(active === null)}
         >
-          <T k="employer.filterAll" /> <span className="tabular-nums">{result.rows_read}</span>
+          <span className="text-lead font-semibold tabular-nums text-ink">
+            {result.rows_read}
+          </span>
+          <span className="text-meta font-medium">
+            <T k="employer.filterAll" />
+          </span>
         </button>
       </li>
       {result.by_reason.map(([reason, n]) => (
-        <li key={reason}>
+        <li key={reason} className="min-w-[14rem] flex-1">
           <button
             type="button"
             onClick={() => onPick(reason)}
             aria-pressed={active === reason}
-            className={`tap-sm h-full w-full rounded-sm border px-3 py-2 text-left text-meta font-semibold ${
-              active === reason
-                ? "border-ink bg-muted text-ink"
-                : "border-line-strong bg-surface text-ink-2 hover:border-ink"
-            }`}
+            className={chip(active === reason)}
           >
-            {REASON_WORDS[reason] ?? reason} <span className="tabular-nums">{n}</span>
-            <span className="block font-mono font-normal text-ink-3">{reason}</span>
+            <span className="text-lead font-semibold tabular-nums text-ink">{n}</span>
+            <span className="min-w-0">
+              <span className="block text-meta font-medium">
+                {REASON_WORDS[reason] ?? reason}
+              </span>
+              <span className="block break-all font-mono text-meta text-ink-3">{reason}</span>
+            </span>
           </button>
         </li>
       ))}

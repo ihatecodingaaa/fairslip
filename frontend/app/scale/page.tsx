@@ -255,8 +255,12 @@ function Value({ value }: { value: EngineValue }) {
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <span className="text-body text-ink-2">{value.label}</span>
-      <span className="flex items-baseline gap-3">
-        <span className="font-mono text-meta text-ink-3">{value.engine_symbol}</span>
+      {/* The engine symbol is one unbreakable token - `rules.NON_WORKMAN_BASIC_CAP`
+          is 27 characters of monospace - and beside its amount in a non-wrapping
+          row it pushed this page 65px wider than a 390px phone at 125% text.
+          It wraps now, and the pair wraps as a pair. */}
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+        <span className="break-all font-mono text-meta text-ink-3">{value.engine_symbol}</span>
         <span className="text-body font-semibold tabular-nums">{value.display}</span>
       </span>
     </li>
@@ -329,13 +333,18 @@ function InterfaceSection({ pack }: { pack: CoverageOut }) {
           <h3 className="text-meta font-semibold uppercase tracking-wide text-ink-3">
             <T k="scale.questions" />
           </h3>
+          {/* The count wraps. "6 of 6 translated" is one long Tamil word next to
+              two numerals, and at 125% text on a 390px phone it was 281px inside
+              a 253px row - a flex item's default min-width is its longest token,
+              so the row grew rather than the word breaking, and the page scrolled
+              sideways. Both coverage lists carry the same pair. */}
           <ul className="mt-2 space-y-2">
             {LANGS.map((l) => (
               <li key={l.code} className="flex items-baseline justify-between gap-4">
                 <span className="text-body" lang={l.code}>
                   {l.endonym}
                 </span>
-                <span className="font-mono text-meta tabular-nums text-ink-2">
+                <span className="min-w-0 text-right font-mono text-meta tabular-nums text-ink-2 [overflow-wrap:anywhere]">
                   {t("scale.translatedOf", {
                     done: l.code === "en" ? pack.interface.question_count : (questions.get(l.code) ?? 0),
                     total: pack.interface.question_count,
@@ -358,7 +367,7 @@ function InterfaceSection({ pack }: { pack: CoverageOut }) {
                   <span className="text-body" lang={l.code}>
                     {l.endonym}
                   </span>
-                  <span className="font-mono text-meta tabular-nums text-ink-2">
+                  <span className="min-w-0 text-right font-mono text-meta tabular-nums text-ink-2 [overflow-wrap:anywhere]">
                     {t("scale.translatedOf", { done: c.done, total: c.total })}
                   </span>
                 </li>

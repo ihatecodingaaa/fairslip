@@ -128,6 +128,31 @@ export default function CheckPage() {
 
   const unresolved = useMemo(() => unresolvedFields(extract, answers), [extract, answers]);
 
+  /* AN ANSWER EDITED AFTER THE ENGINE RAN.
+   *
+   * The answers stay live once the figures are on screen - that is deliberate,
+   * and it is why `computedFrom` exists: the trail is drawn from the facts that
+   * actually produced the breakdown, so an edit cannot silently become the
+   * lineage of a figure it never touched.
+   *
+   * That freezes the trail. It does not stop the SCREEN from contradicting
+   * itself. Type 1120.00 into "what actually reached your bank" after computing
+   * and the arithmetic above still reads "reached the bank $1,400.00", with
+   * nothing on the page saying which of the two the reader is looking at. That
+   * is a month the system did not establish, presented as one it did.
+   *
+   * So the drift is detected against the frozen inputs, said where the figures
+   * are, and given the way back: the compute gate returns.
+   *
+   * It compares PayInputs, not `answers`, and that is the correct boundary. The
+   * CPF-only answers - date of birth, residency - are collected on this screen
+   * but are not part of what /compute was sent, so editing one changes no figure
+   * on the page and must not raise a warning about figures that did not move. */
+  const edited = useMemo(() => {
+    if (!extract || !computedFrom) return false;
+    return JSON.stringify(payInputsFrom(extract, answers)) !== JSON.stringify(computedFrom);
+  }, [extract, answers, computedFrom]);
+
   async function compute() {
     if (!extract) return;
     setComputeError(null);
@@ -182,14 +207,25 @@ export default function CheckPage() {
       {/* print-hide: the masthead above IS this heading on paper - same
           dictionary key, one line up - and a document that opens with its title
           twice reads as two documents stapled together. */}
+      {/* THE PREAMBLE IS FOR THE STAGE THAT NEEDS IT.
+          "Two readers transcribe your documents independently..." tells a worker
+          what is about to happen; once it HAS happened, it is a paragraph
+          between them and their answer. With the engine mark, the title and the
+          stage bar it put 430px above the figure this page exists to show - so
+          the two lines that describe the process retire when the process is
+          done, and the stage bar carries the navigation on alone. */}
       <header className="print-hide">
         <h1 className="text-page font-semibold tracking-tight">
           <T k="check.title" />
         </h1>
-        <p className="max-w-measure mt-2 text-lead text-ink-2">
-          <T k="check.intro" />
-        </p>
-        <EngineMark className="mt-4" />
+        {!breakdown && (
+          <>
+            <p className="max-w-measure mt-2 text-lead text-ink-2">
+              <T k="check.intro" />
+            </p>
+            <EngineMark className="mt-4" />
+          </>
+        )}
         <StageBar reached={stageReached} current={breakdown ? 2 : extract ? 1 : 0} />
       </header>
 
@@ -224,6 +260,7 @@ export default function CheckPage() {
             extract={extract}
             documents={documents}
             headingRef={resultRef}
+            stale={edited}
           />
         </section>
       )}
@@ -271,9 +308,9 @@ export default function CheckPage() {
               restDay={restDayVerdict(extract, answers)}
               onAnswer={(name, value) => setAnswers((a) => ({ ...a, [name]: value }))}
             />
-            {!breakdown && (
+            {(!breakdown || edited) && (
               <div className="print-hide">
-                <ComputeGate unresolved={unresolved} onCompute={compute} />
+                <ComputeGate unresolved={unresolved} onCompute={compute} stale={edited} />
               </div>
             )}
           </div>
@@ -353,14 +390,27 @@ function StageBar({ reached, current }: { reached: boolean[]; current: number })
 function ComputeGate({
   unresolved,
   onCompute,
+  stale = false,
 }: {
   unresolved: { name: string; label: string; group: "read" | "worker" }[];
   onCompute: () => void;
+  /** The figures on screen were worked out from an answer that has since been
+   * edited. The gate is here a second time because of it, so it says so. */
+  stale?: boolean;
 }) {
   const t = useT();
   const blocked = unresolved.length > 0;
   return (
-    <section className="rounded-lg border border-line-strong bg-surface p-5 shadow-card">
+    <section
+      className={`rounded-lg border bg-surface p-5 shadow-card ${
+        stale ? "border-attention-line" : "border-line-strong"
+      }`}
+    >
+      {stale && (
+        <p className="max-w-measure mb-3 text-body font-semibold text-attention-fg">
+          <T k="gate.stale" />
+        </p>
+      )}
       <button
         type="button"
         onClick={onCompute}

@@ -265,6 +265,29 @@ body {
 }
 
 /*
+ * A HEADING MAY NOT PUSH THE PAGE SIDEWAYS.
+ *
+ * FairSlip is offered in four scripts at three text sizes on screens down to
+ * 390px, and Tamil and Bengali build long single words: "மொழிபெயர்க்கப்பட்டது" is
+ * one token. At 125% on a phone, one such word is wider than the viewport, and
+ * because a grid or flex column is at least as wide as its MIN-CONTENT, the
+ * column grew and the whole page scrolled horizontally. Two pages did this and
+ * neither was findable by reading the markup.
+ *
+ * `anywhere` rather than `break-word`, and the difference is the entire point:
+ * only `anywhere` reduces the min-content width, so only `anywhere` stops the
+ * column growing in the first place. Scoped to headings because that is where a
+ * single long token sits alone; body prose has spaces to break at, and leaving
+ * the default there keeps normal text breaking at word boundaries.
+ */
+h1,
+h2,
+h3,
+h4 {
+  overflow-wrap: anywhere;
+}
+
+/*
  * Minimum size for anything a worker taps.
  *
  * THE AUTHORITIES DISAGREE, so this picks and says which:

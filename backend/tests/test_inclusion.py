@@ -63,9 +63,9 @@ def icon_shapes() -> dict[str, str]:
     return out
 
 
-def word_keys() -> dict[str, str]:
-    block = re.search(r"const WORDS = \{(.*?)\n\} as const;", chip_source(), re.DOTALL)
-    assert block, "WORDS map not found"
+def word_keys(name: str = "WORDS") -> dict[str, str]:
+    block = re.search(rf"const {name} = \{{(.*?)\n\}} as const;", chip_source(), re.DOTALL)
+    assert block, f"{name} map not found"
     return dict(re.findall(r'(\w+):\s*"([^"]+)"', block.group(1)))
 
 
@@ -90,6 +90,31 @@ def test_no_two_statuses_share_an_icon_shape() -> None:
         seen[shape] = status
 
 
+def status_tones() -> dict[str, str]:
+    block = re.search(r"const TONE: Record<Status, string> = \{(.*?)\n\};", chip_source(), re.DOTALL)
+    assert block, "TONE map not found"
+    return dict(re.findall(r'(\w+):\s*"([^"]+)"', block.group(1)))
+
+
+def test_no_two_statuses_share_a_tone() -> None:
+    """Colour is the redundant encoding, and it still has to say four things.
+
+    AGREED and HUMAN_CONFIRMED shared the green family, because both mean the
+    field is usable. They are not the same fact: one is two models agreeing off a
+    document, the other is a person answering with no model involved. On the
+    money trail they appear nine at a time, side by side, and one colour for both
+    made the screen say that half the month came from the readers when half of it
+    came from the worker.
+
+    The icon and the word were always distinct - this is the third encoding
+    catching up with them.
+    """
+    tones = status_tones()
+    for status in fact_statuses():
+        assert status in tones, f"{status} has no tone"
+    assert len(set(tones.values())) == len(tones), f"two statuses share a tone: {tones}"
+
+
 def test_no_two_statuses_share_a_word() -> None:
     keys = word_keys()
     assert len(set(keys.values())) == len(keys), f"duplicate label keys: {keys}"
@@ -101,6 +126,49 @@ def test_no_two_statuses_share_a_word() -> None:
         assert m, f"{key} has no English entry"
         english[status] = m.group(1)
     assert len(set(english.values())) == len(english), f"duplicate English labels: {english}"
+
+
+@pytest.mark.parametrize("vocabulary", ["WORDS", "SHORT_WORDS"])
+def test_every_status_vocabulary_covers_every_status_and_repeats_nothing(
+    vocabulary: str,
+) -> None:
+    """Two vocabularies now, and both have to say four different things.
+
+    The money trail needed a one-word form: "you answered this" broke over three
+    lines inside a 160px node on a phone. A second set of words is a second place
+    for two states to collapse into one, so it is held to the same rule as the
+    first - every status present, no two sharing a word, in English and in the
+    dictionary that renders it.
+    """
+    keys = word_keys(vocabulary)
+    for status in fact_statuses():
+        assert status in keys, f"{vocabulary} has no entry for {status}"
+    assert len(set(keys.values())) == len(keys), f"{vocabulary} repeats a key: {keys}"
+
+    i18n = I18N_TS.read_text(encoding="utf-8")
+    english: dict[str, str] = {}
+    for status, key in keys.items():
+        m = re.search(rf'"{re.escape(key)}":\s*"([^"]+)"', i18n)
+        assert m, f"{key} has no English entry"
+        english[status] = m.group(1)
+    assert len(set(english.values())) == len(english), (
+        f"{vocabulary} maps two statuses onto one English word: {english}"
+    )
+
+
+def test_the_compact_chip_still_carries_the_long_sentence() -> None:
+    """The short word is an ABBREVIATION on screen, not a reduction of what was
+    said. A screen reader gets the full sentence from the same element, so the
+    trail's chips announce exactly what the table's chips do."""
+    body = re.search(
+        r"export function StatusChipCompact\(.*?\n\}", chip_source(), re.DOTALL
+    )
+    assert body, "StatusChipCompact not found"
+    assert "<StatusIcon" in body.group(0), "the compact chip drops its icon"
+    assert "SHORT_WORDS[status]" in body.group(0), "the compact chip renders no short word"
+    assert 'className="sr-only"' in body.group(0) and "WORDS[status]" in body.group(0), (
+        "the compact chip does not carry the full sentence for assistive technology"
+    )
 
 
 def test_the_chip_renders_the_icon_and_the_word_together() -> None:

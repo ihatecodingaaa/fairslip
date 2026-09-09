@@ -39,7 +39,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { money, type ImpactOut } from "@/lib/api";
 import { T, useT } from "../ui/Prefs";
-import { StatusChip, StatusIcon } from "../ui/StatusChip";
+import { StatusChipCompact, StatusIcon } from "../ui/StatusChip";
 import { LAYERS, type Proof, type ProofNode } from "./proof";
 
 type Box = { left: number; top: number; width: number; height: number };
@@ -52,7 +52,9 @@ export function ProofGraph({
   traced,
   onSelect,
   impact,
+  className = "",
 }: {
+  className?: string;
   proof: Proof;
   selected: string | null;
   /** The ids in the current trace, or null for "show everything". Computed by the
@@ -119,7 +121,7 @@ export function ProofGraph({
   const impactByLabel = new Map(impact?.components.map((c) => [c.label, c]) ?? []);
 
   return (
-    <div ref={container} className="relative">
+    <div ref={container} className={`relative ${className}`}>
       {/* Decorative by construction: every relationship an edge draws is stated
           in words in the inspector, under "Built from" and "Used by". A screen
           reader is given the graph as structure, not as thirty-five arrows. */}
@@ -191,8 +193,22 @@ export function ProofGraph({
  */
 function hypotheticalFor(node: ProofNode, impact: ImpactOut | null): string | null {
   if (!impact || !node.money) return null;
-  if (node.money.field === "expected_net") return money(impact.after_expected_net);
-  if (node.money.field === "difference") return money(impact.after_difference);
+  // A FIGURE THAT DID NOT MOVE GETS NO BADGE. The endpoint returns an after
+  // value for these two whether or not the change reached them, and rendering it
+  // regardless put "if changed -> $1,182.24" under "$1,182.24" - which reads as a
+  // line that changed into itself, on the surface whose whole claim is that it
+  // can tell what moved from what did not. Both sides are the engine's own
+  // Decimals, compared as the engine wrote them.
+  if (node.money.field === "expected_net") {
+    return impact.before_expected_net.exact === impact.after_expected_net.exact
+      ? null
+      : money(impact.after_expected_net);
+  }
+  if (node.money.field === "difference") {
+    return impact.before_difference.exact === impact.after_difference.exact
+      ? null
+      : money(impact.after_difference);
+  }
   return null;
 }
 
@@ -225,15 +241,24 @@ function NodeBox({
 }) {
   const hero = node.kind === "difference";
   const moved = impact !== null && impact.status !== "UNCHANGED";
+  // ONLY A MOVED LINE. `impact.after` is present on UNCHANGED rows as well, so
+  // reading the badge off its existence marked every component in the breakdown
+  // - "if changed -> $1,200.00" under "$1,200.00" on a line that did not move,
+  // which says the opposite of what the view exists to say.
+  const after = impact ? (moved && impact.after ? money(impact.after) : null) : hypotheticalMoney;
 
-  // BORDER WIDTH NEVER CHANGES, only its colour. A selected node that grew a
-  // pixel would reflow its row, move every box after it and drag the measured
-  // edges with it - a layout shift on every click, on the surface whose whole
-  // job is to hold still while you read it.
+  // DE-EMPHASIS IS A SURFACE, NOT A SHADE. An untraced node keeps its border
+  // width and loses its EDGE and its FILL: it stops being a card on the page and
+  // becomes text on it. A merely lighter border was not enough - with 22 boxes
+  // on screen, "grey border" and "grey-er border" read as the same box, and a
+  // trace that nobody can see at a glance is a trace that has to be read.
+  //
+  // BORDER WIDTH NEVER CHANGES, only its colour, so nothing reflows on a click
+  // and the measured edges do not move under the reader.
   const edge = selected
     ? "border-ink bg-muted"
     : dim
-      ? "border-line bg-surface"
+      ? "border-transparent bg-canvas"
       : node.kind === "difference"
         ? "border-ink-2 bg-attention-bg"
         : node.kind === "source"
@@ -246,8 +271,13 @@ function NodeBox({
       type="button"
       onClick={() => onSelect(node.id)}
       aria-pressed={selected}
-      className={`tap-sm flex w-full min-w-[7rem] max-w-[13rem] flex-col justify-between rounded-sm border-2 px-3 py-2 text-left transition-colors ${edge} ${
-        hero ? "min-w-[9rem]" : ""
+      /* 10rem, and it is a phone decision as much as a desktop one: at 390px the
+         column is 335px, so two of these fit where one 13rem box did, and four
+         fit the workspace column where three did. Measured, not guessed - at
+         10.5rem the pair came to 348px and wrapped, which is the difference
+         between a trail two screens long and one four screens long. */
+      className={`tap-sm flex w-full min-w-[7rem] flex-col items-start rounded-sm border-2 px-3 py-2 text-left transition-colors ${edge} ${
+        hero ? "min-w-[11rem] max-w-[14rem]" : "max-w-[10rem]"
       }`}
     >
       <span className="sr-only">{layerLabel}: </span>
@@ -259,43 +289,60 @@ function NodeBox({
         {node.titleKey ? <T k={node.titleKey} /> : node.title}
       </span>
 
-      {node.value && (
-        <span
-          className={`mt-1 block font-mono tabular-nums ${
-            hero ? "text-title font-semibold" : "text-body"
-          } ${dim ? "text-ink-3" : "text-ink"}`}
-        >
-          {node.value}
-        </span>
-      )}
-
-      {node.status && (
-        <span className="mt-2 block">
-          {dim ? (
-            // The chip's own colours would fight the de-emphasis, so a dimmed
-            // node keeps the SHAPE - which is the encoding that survives
-            // greyscale anyway - and drops the tint.
-            <span className="inline-flex items-center gap-2 text-meta text-ink-3">
-              <StatusIcon status={node.status} />
-              <span className="sr-only">{node.status}</span>
+      {/* The value and its status on ONE line. They were two, which cost a line
+          per node across twenty-two of them - and they belong together anyway:
+          the status is a claim about that value. */}
+      {(node.value || node.valueKey || node.status) && (
+        <span className="mt-1 flex w-full flex-wrap items-center gap-x-2 gap-y-1">
+          {node.valueKey ? (
+            <span className={`text-meta ${dim ? "text-ink-3" : "text-ink-2"}`}>
+              <T k={node.valueKey} />
             </span>
           ) : (
-            <StatusChip status={node.status} />
+            node.value && (
+              <span
+                className={`font-mono tabular-nums ${
+                  hero ? "text-title font-semibold" : "text-body"
+                } ${dim ? "text-ink-3" : "text-ink"}`}
+              >
+                {node.value}
+              </span>
+            )
           )}
+          {node.status &&
+            (dim ? (
+              // The chip's own colours would fight the de-emphasis, so a dimmed
+              // node keeps the SHAPE - the encoding that survives greyscale
+              // anyway - and drops the tint and the word.
+              <span className="inline-flex items-center text-ink-3">
+                <StatusIcon status={node.status} />
+                <span className="sr-only">{node.status}</span>
+              </span>
+            ) : (
+              <StatusChipCompact status={node.status} />
+            ))}
         </span>
       )}
 
-      {/* A hypothetical, marked as one. The word comes before the figure, so a
-          number is never read before the thing that qualifies it. */}
-      {(moved || hypotheticalMoney) && (
-        <span className="mt-2 block border-t border-dashed border-ink-2 pt-1">
-          <span className="block text-meta font-semibold text-attention-fg">
-            <T k="lens.hypothetical" />
-          </span>
-          <span className="block font-mono text-meta tabular-nums text-attention-fg">
-            {impact
-              ? `${impact.status} ${impact.after ? money(impact.after) : "—"}`
-              : hypotheticalMoney}
+      {/* A hypothetical, marked as one, on ONE line directly under the figure it
+          would replace - so the two numbers can be compared without reading a
+          label between them. It was three lines carrying the same eleven-word
+          sentence on every affected node, plus the engine's own status enum. */}
+      {(moved || after) && (
+        <span className="mt-2 block w-full border-t border-dashed border-attention-line pt-1">
+          <span className="flex flex-wrap items-baseline gap-x-2 text-attention-fg">
+            <span className="text-meta font-semibold">
+              <T k="trail.ifChanged" />
+            </span>
+            <span className="font-mono text-body tabular-nums">
+              {after ? (
+                <>&rarr; {after}</>
+              ) : (
+                <>
+                  &rarr; <T k="trail.lineGone" />
+                </>
+              )}
+            </span>
           </span>
         </span>
       )}

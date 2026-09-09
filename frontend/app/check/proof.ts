@@ -90,6 +90,9 @@ export type ProofNode = {
   titleKey?: Key;
   /** What the node is worth, as text. Already a string the backend produced. */
   value?: string;
+  /** A dictionary key rendered instead of `value`, for the one node whose second
+   * line is an interface word rather than a figure: the worker's own. */
+  valueKey?: Key;
   status?: FactStatus;
   /** Ids this node rests on. The edge set, per node. */
   from: string[];
@@ -175,7 +178,10 @@ export function buildProof(args: {
       layer: 1,
       title: "",
       titleKey: "trail.you",
-      value: undefined,
+      // The reader is a SOURCE and is drawn like one, so it carries a second
+      // line where the models carry theirs. An empty half-box beside two full
+      // ones reads as something that failed to load.
+      valueKey: "trail.youAnswers",
       // No upstream, and that is the point: this is the one input with no
       // document behind it.
       from: [],

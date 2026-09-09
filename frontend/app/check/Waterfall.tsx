@@ -154,6 +154,40 @@ function StepLabel({ label }: { label: string }) {
   return <span>{label}</span>;
 }
 
+/**
+ * The smallest mark a produced value gets, in axis units out of 1000.
+ *
+ * It is a PRESENCE mark, not a length: it says "the engine returned a value on
+ * this line", and it is deliberately too small to be read as a magnitude and
+ * too big to disappear. A difference of exactly zero gets this and nothing
+ * more - the row reads $0.00 beside it, and no width is manufactured to stand
+ * for a number that is not there.
+ */
+const MIN_MARK = 2;
+
+/**
+ * Whether this step's bar can be drawn as a length at all.
+ *
+ * A LENGTH CANNOT BE NEGATIVE, AND A MINIMUM MARK IS NOT AN HONEST SUBSTITUTE
+ * FOR ONE. When more money reached the bank than the rules reconstruct, the
+ * engine's difference is a negative Decimal - and `Math.max(negative, MIN_MARK)`
+ * drew the presence mark, which on a signed row reads as a small positive
+ * quantity. That is the one thing a bar chart must never do: say a magnitude
+ * the data does not carry.
+ *
+ * So the gap row draws no bar in that case and says why, in words, in the
+ * reader's language - the same answer the CPF chart already gives when its
+ * split is incomplete. The SIGNED AMOUNT IS UNTOUCHED: it is still
+ * `money(s.amount)` beside the label, exactly as the backend supplied it.
+ *
+ * Scoped to the gap. Every other step is drawn between two positions the
+ * engine's own running total put in order, and widening this would be a change
+ * to rows that have no sign to get wrong.
+ */
+function drawableAsLength(s: Step): boolean {
+  return s.kind !== "gap" || value(s.amount) >= 0;
+}
+
 const SIGN: Record<Step["kind"], string> = {
   add: "+",
   subtract: "−",
@@ -223,34 +257,49 @@ export function Waterfall({ breakdown }: { breakdown: PayBreakdown }) {
                   which is why every bar here is a plain rect. A stroke or a
                   pattern would be stretched with it; those live in the CPF
                   chart, which counters the stretch explicitly.
+
+                  A row that cannot be drawn as a length gets no <svg> at all,
+                  not an empty one: an empty track beside a signed amount is
+                  still a picture, and it is a picture of zero. The sentence
+                  that replaces it is real text, in the reader's language, which
+                  keeps this row's contract - everything the bar said, the row
+                  already says in words - true from the other direction.
                 */}
-                <svg
-                  viewBox="0 0 1000 10"
-                  preserveAspectRatio="none"
-                  role="presentation"
-                  aria-hidden
-                  className={`mt-1 block w-full ${hero ? "h-4" : "h-2.5"}`}
-                >
-                  <rect x="0" y="0" width="1000" height="10" className="fill-sunken" />
-                  <rect
-                    x={u(s.from)}
-                    y="0"
-                    /* A value the engine produced is always at least a visible
-                       mark: the floor is 2 of 1000 units, which is too small to
-                       be mistaken for a length and too big to disappear. */
-                    width={Math.max(u(s.to - s.from), 2)}
-                    height="10"
-                    className={
-                      s.kind === "subtotal"
-                        ? "fill-line-strong"
-                        : hero
-                          ? "fill-ink"
-                          : s.kind === "subtract"
-                            ? "fill-ink-3"
-                            : "fill-brand"
-                    }
-                  />
-                </svg>
+                {drawableAsLength(s) ? (
+                  <svg
+                    viewBox="0 0 1000 10"
+                    preserveAspectRatio="none"
+                    role="presentation"
+                    aria-hidden
+                    className={`mt-1 block w-full ${hero ? "h-4" : "h-2.5"}`}
+                  >
+                    <rect x="0" y="0" width="1000" height="10" className="fill-sunken" />
+                    <rect
+                      x={u(s.from)}
+                      y="0"
+                      /* A value the engine produced is always at least a visible
+                         mark - see MIN_MARK. The floor only ever raises a length
+                         towards visibility; it is never reached from below by a
+                         negative one, because a step that could be negative does
+                         not get here at all. */
+                      width={Math.max(u(s.to - s.from), MIN_MARK)}
+                      height="10"
+                      className={
+                        s.kind === "subtotal"
+                          ? "fill-line-strong"
+                          : hero
+                            ? "fill-ink"
+                            : s.kind === "subtract"
+                              ? "fill-ink-3"
+                              : "fill-brand"
+                      }
+                    />
+                  </svg>
+                ) : (
+                  <span className="max-w-measure mt-1 block text-meta font-normal text-ink-2">
+                    <T k="chart.differenceNegative" />
+                  </span>
+                )}
               </button>
 
               {isOpen && s.formula && (

@@ -28,6 +28,7 @@ import { T, useT } from "../ui/Prefs";
 import { StatusChip } from "../ui/StatusChip";
 import { ImpactRefusal, ImpactResult, WhatIfForm, isVariable } from "./ImpactRadius";
 import { LAYERS, factValueText, type Proof, type ProofNode } from "./proof";
+import type { Key } from "@/lib/i18n";
 
 export type Hypothetical = {
   /** The PayInputs field being varied. One at a time: the endpoint compares one
@@ -62,6 +63,14 @@ export function EvidenceLens({
   const t = useT();
   const node = selected ? proof.byId[selected] : null;
 
+  /* The changed-field record for THIS node, when a hypothetical is standing on
+   * it. Read off the backend's own `changed_fields`, so the before and after
+   * shown here are the two values the engine actually compared. */
+  const varied =
+    node?.fact && hypothetical?.result
+      ? (hypothetical.result.changed_fields.find((c) => c.name === node.fact!.name) ?? null)
+      : null;
+
   return (
     <section
       aria-labelledby="lens-heading"
@@ -71,11 +80,7 @@ export function EvidenceLens({
         <T k="lens.heading" />
       </h2>
 
-      {!node && (
-        <p className="max-w-measure mt-3 text-body text-ink-2">
-          <T k="lens.nothing" /> <T k="trail.selectPrompt" />
-        </p>
-      )}
+      {!node && <TrailSummary proof={proof} />}
 
       {node && (
         <>
@@ -94,33 +99,33 @@ export function EvidenceLens({
               {node.value}
             </p>
           )}
+          {/* THE FACT BEING VARIED SHOWS ITS OWN BEFORE AND AFTER, HERE.
+              It did not, and that was the worst gap in the interaction: the
+              reader typed 13, the trail below marked three amounts as
+              hypothetical, and the one panel they were looking at went on
+              displaying 18 as though nothing had been asked. */}
+          {varied && (
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-attention-fg">
+              <span className="text-meta font-semibold">
+                <T k="trail.ifChanged" />
+              </span>
+              <span className="font-mono text-lead tabular-nums">
+                &rarr; {varied.after_value}
+              </span>
+            </p>
+          )}
           {node.status && (
             <p className="mt-2">
               <StatusChip status={node.status} />
             </p>
           )}
 
-          {node.document && <DocumentBody node={node} />}
-          {node.reader && <ReaderBody node={node} />}
-          {node.id === "source:you" && <YouBody />}
-          {node.fact && <FactBody node={node} proof={proof} />}
-          {node.component && <ComponentBody node={node} />}
-          {node.kind === "difference" && <DifferenceBody breakdown={breakdown} />}
-
-          <Related
-            titleKey="lens.builtFrom"
-            ids={node.from}
-            proof={proof}
-            onSelect={onSelect}
-          />
-          <Related
-            titleKey="lens.usedBy"
-            ids={proof.usedBy[node.id] ?? []}
-            proof={proof}
-            onSelect={onSelect}
-          />
-
-          {/* The change-a-fact question, asked where it arises. */}
+          {/* THE ACTION COMES BEFORE THE PROVENANCE, for a fact.
+              "What is this, what is it worth, what could it be" is the order a
+              person asks in; the reader transcripts and the engine's own source
+              sentence answer "how do you know", which is the next question and
+              not the first. It was below both, which put the product's signature
+              interaction under a scroll. */}
           {node.fact && isVariable(node.fact.fact) && (
             <>
               <WhatIfForm
@@ -156,9 +161,71 @@ export function EvidenceLens({
               )}
             </>
           )}
+
+          {node.document && <DocumentBody node={node} />}
+          {node.reader && <ReaderBody node={node} />}
+          {node.id === "source:you" && <YouBody />}
+          {node.fact && <FactBody node={node} proof={proof} />}
+          {node.component && <ComponentBody node={node} />}
+          {node.kind === "difference" && <DifferenceBody breakdown={breakdown} />}
+
+          <Related
+            titleKey="lens.builtFrom"
+            ids={node.from}
+            proof={proof}
+            onSelect={onSelect}
+          />
+          <Related
+            titleKey="lens.usedBy"
+            ids={proof.usedBy[node.id] ?? []}
+            proof={proof}
+            onSelect={onSelect}
+          />
+
+          {node.fact && <FactSource source={node.fact.fact.source} />}
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * What the panel says before anything is chosen.
+ *
+ * NOT AN EMPTY STATE. "Nothing chosen yet" occupied the most valuable column on
+ * the screen and told the reader nothing they could not see. What a reader
+ * actually needs first is what the trail beside them IS: how many documents went
+ * in, how much of the month the two readers settled between them, and how much
+ * the worker settled - which is the product's whole argument, in four numbers.
+ *
+ * Every figure here is a COUNT OF NODES, walked from the same model the graph
+ * draws. Nothing is money and nothing is asserted; if the trail changes shape,
+ * these change with it.
+ */
+function TrailSummary({ proof }: { proof: Proof }) {
+  const facts = proof.nodes.filter((n) => n.kind === "fact");
+  const rows: { key: Key; n: number }[] = [
+    { key: "trail.layer.documents", n: proof.nodes.filter((n) => n.kind === "document").length },
+    { key: "status.AGREED", n: facts.filter((n) => n.status === "AGREED").length },
+    { key: "status.HUMAN_CONFIRMED", n: facts.filter((n) => n.status === "HUMAN_CONFIRMED").length },
+    { key: "trail.layer.rules", n: proof.nodes.filter((n) => n.kind === "component").length },
+  ];
+  return (
+    <div className="mt-3">
+      <dl className="divide-y divide-line">
+        {rows.map((r) => (
+          <div key={r.key} className="flex items-baseline justify-between gap-4 py-2">
+            <dt className="text-body text-ink-2">
+              <T k={r.key} />
+            </dt>
+            <dd className="text-title font-semibold tabular-nums text-ink">{r.n}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="max-w-measure mt-3 text-meta text-ink-3">
+        <T k="trail.selectPrompt" />
+      </p>
+    </div>
   );
 }
 
@@ -218,18 +285,22 @@ function YouBody() {
   );
 }
 
+/**
+ * What each reader said, and what that made the field.
+ *
+ * THE RAW PROVENANCE STRING IS NOT HERE. It used to be the FIRST thing under the
+ * value - "both readers agree: Claude (claude-haiku-4-5) 18, OpenAI
+ * (gpt-5.6-luna) 18" - immediately above a table that says the same thing in
+ * columns. One of the two was the machine's phrasing of the other, and it was
+ * winning the position. It now renders last, in <FactSource />, where a reader
+ * who wants the engine's own words can find them.
+ */
 function FactBody({ node, proof }: { node: ProofNode; proof: Proof }) {
   const t = useT();
   const f = node.fact!;
   const readings = f.readings;
   return (
     <>
-      <dl className="mt-4 space-y-2">
-        <Field label={<T k="lens.source" />}>
-          <span className="break-words">{f.fact.source}</span>
-        </Field>
-      </dl>
-
       {readings && (
         <div className="mt-4">
           <p className="text-meta font-semibold uppercase tracking-wide text-ink-3">
@@ -271,6 +342,23 @@ function FactBody({ node, proof }: { node: ProofNode; proof: Proof }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * The engine's own sentence about where this value came from.
+ *
+ * Kept, because it is the record and a reader chasing a figure to its origin
+ * should be able to see exactly what the reconciler wrote. Demoted, because it
+ * is written for the log and not for a person: it names model identifiers and
+ * repeats in prose what the panel above lays out in structure.
+ */
+function FactSource({ source }: { source: string }) {
+  if (!source.trim()) return null;
+  return (
+    <p className="mt-4 break-words border-t border-line pt-3 font-mono text-meta text-ink-3">
+      {source}
+    </p>
   );
 }
 
@@ -336,7 +424,30 @@ function DifferenceBody({ breakdown }: { breakdown: PayBreakdown }) {
           <span className="font-mono tabular-nums">{money(breakdown.net_paid)}</span>
         </Field>
       </dl>
-      <p className="max-w-measure mt-3 text-meta text-ink-3">{breakdown.provenance_note}</p>
+      {/* THE ENGINE'S ACCOUNT OF ITS OWN EDGES, FOLDED AWAY.
+          Five lines of the backend's English about provenance strings, matched
+          facts and unresolved inputs, and they sat directly under the two
+          amounts - the first thing a worker read after tapping the difference,
+          which is the most-tapped box on the screen. It is engineering
+          narration in the one panel that is supposed to answer what this is,
+          what it says and where it came from.
+
+          NOT DELETED. A trail is worth what its account of its own edges is
+          worth, and this is that account, in the engine's words rather than a
+          paraphrase of them. It is disclosed instead - under a summary the
+          dictionary translates - and marked lang="en", because the string comes
+          from the API in English and a Bengali screen should not be read aloud
+          with Bengali phonemes. The worker-language version of the same fact is
+          already on the page: `trail.edgesNote`, under the graph, in all four
+          languages. */}
+      <details className="mt-4 border-t border-line pt-3">
+        <summary className="tap-sm cursor-pointer text-meta font-semibold uppercase tracking-wide text-ink-3">
+          <T k="lens.howLines" />
+        </summary>
+        <p lang="en" className="max-w-measure mt-2 text-meta text-ink-3">
+          {breakdown.provenance_note}
+        </p>
+      </details>
     </>
   );
 }
