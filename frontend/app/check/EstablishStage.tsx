@@ -49,6 +49,8 @@ import { ReaderComparison, effectiveStatus, countFields } from "./ReaderComparis
 import { ReaderStrip } from "./ReaderStrip";
 import { factValueText } from "./proof";
 import type { RestDayVerdict } from "./facts";
+import { FocusMode } from "./FocusMode";
+import { askedQuestions, unanswered } from "./questions";
 
 export function EstablishStage({
   extract,
@@ -61,15 +63,74 @@ export function EstablishStage({
   restDay: RestDayVerdict;
   onAnswer: (name: string, value: string) => void;
 }) {
+  /* FOCUS BY DEFAULT WHILE THERE IS MORE THAN ONE QUESTION LEFT.
+     A worker with one question left does not need a sequence, and a worker with
+     none needs the grid - which is also the state the printed sheet is built
+     from. The mode is a preference the worker can change either way and back;
+     what it CANNOT do is change which questions exist. Both views are drawn
+     from questions.ts, and the compute gate reads facts.ts, so no view can hide
+     a field that is still blocking the calculation. */
+  const waiting = unanswered(askedQuestions(extract, answers, restDay));
+  const [mode, setMode] = useState<"focus" | "all">(() =>
+    waiting.length > 1 ? "focus" : "all",
+  );
+
   return (
     <div className="grid gap-8">
-      <ReadGroup extract={extract} answers={answers} onAnswer={onAnswer} />
-      <WorkerGroup
-        fields={extract.worker_fields}
-        answers={answers}
-        restDay={restDay}
-        onAnswer={onAnswer}
-      />
+      {mode === "focus" ? (
+        <section aria-labelledby="focus-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+            <h2 id="focus-heading" className="text-title font-semibold text-ink">
+              <T k="establish.needYou" />
+            </h2>
+          </div>
+          <div className="mt-4">
+            <FocusMode
+              extract={extract}
+              answers={answers}
+              restDay={restDay}
+              onAnswer={onAnswer}
+              onShowAll={() => setMode("all")}
+            />
+          </div>
+          {/* THE FULL EVIDENCE IS STILL HERE, AND IT HAS TO BE.
+              The sheet a worker prints is this DOM narrowed, so the map of what
+              is settled, the two-reader table and every worker answer must stay
+              in the tree whichever mode is on screen. Focus mode changes what
+              leads; it does not remove the record. */}
+          <div className="mt-8 border-t border-line pt-6">
+            <ReadGroup extract={extract} answers={answers} onAnswer={onAnswer} settledOnly />
+            <div className="mt-8">
+              <WorkerGroup
+                fields={extract.worker_fields}
+                answers={answers}
+                restDay={restDay}
+                onAnswer={onAnswer}
+                answeredOnly
+              />
+            </div>
+          </div>
+        </section>
+      ) : (
+        <>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setMode("focus")}
+              className="tap-sm rounded-sm border border-control bg-surface px-4 py-2 text-meta font-semibold text-ink hover:border-ink"
+            >
+              <T k="focus.oneAtATime" />
+            </button>
+          </div>
+          <ReadGroup extract={extract} answers={answers} onAnswer={onAnswer} />
+          <WorkerGroup
+            fields={extract.worker_fields}
+            answers={answers}
+            restDay={restDay}
+            onAnswer={onAnswer}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -80,10 +141,16 @@ function ReadGroup({
   extract,
   answers,
   onAnswer,
+  settledOnly = false,
 }: {
   extract: ExtractOut;
   answers: Record<string, string>;
   onAnswer: (name: string, value: string) => void;
+  /** In focus mode the unsettled fields are being asked one at a time above,
+   * so this renders the RECORD - what is settled, and the full two-reader
+   * table - without repeating the questions underneath the sequence. Nothing
+   * is dropped: the map still names every field that is still waiting. */
+  settledOnly?: boolean;
 }) {
   const fields = extract.read_fields;
   const counts = countFields(fields, answers);
@@ -137,7 +204,7 @@ function ReadGroup({
 
       {/* The fields the readers did NOT settle, in full, each anchored so the
           map above can point at it. */}
-      {waiting.length > 0 && (
+      {waiting.length > 0 && !settledOnly && (
         <ul className="mt-6 grid gap-4 lg:grid-cols-2">
           {waiting.map((f) => (
             <li key={f.name} id={`field-${f.name}`} className="scroll-mt-6">
@@ -338,18 +405,24 @@ function ReadingPair({ field, readers }: { field: ReadField; readers: ReaderInfo
  * is already on their screen. A reading that would not parse as a number is not
  * offered, because the engine would refuse it.
  */
-function UnsettledField({
+export function UnsettledField({
   field,
   readers,
   cpfOnly,
   answer,
   onAnswer,
+  onConfirmed,
 }: {
   field: ReadField;
   readers: ReaderInfo[];
   cpfOnly: boolean;
   answer: string;
   onAnswer: (v: string) => void;
+  /** Fired ONLY by the confirm buttons, which carry a complete value - never by
+   * the text field, where every keystroke is an `onAnswer` and advancing on the
+   * first character would move the question out from under the worker. Focus
+   * mode uses it to go to the next question; the grid does not pass it. */
+  onConfirmed?: () => void;
 }) {
   const t = useT();
   const [typing, setTyping] = useState(false);
@@ -392,7 +465,10 @@ function UnsettledField({
                 <button
                   key={v}
                   type="button"
-                  onClick={() => onAnswer(v)}
+                  onClick={() => {
+                    onAnswer(v);
+                    onConfirmed?.();
+                  }}
                   className="tap-sm rounded-sm border-2 border-confirmed-line bg-confirmed-bg px-4 py-2 text-body font-semibold text-confirmed-fg"
                 >
                   {t("establish.confirm", { v })}
@@ -436,14 +512,21 @@ function WorkerGroup({
   answers,
   restDay,
   onAnswer,
+  answeredOnly = false,
 }: {
   fields: WorkerField[];
   answers: Record<string, string>;
   restDay: RestDayVerdict;
   onAnswer: (name: string, value: string) => void;
+  /** In focus mode the unanswered ones are being asked above. What stays here
+   * is the record of what the worker has already said - which is what the
+   * printed sheet needs and what they need in order to change an answer. */
+  answeredOnly?: boolean;
 }) {
   const netPaid = fields.find((f) => f.name === "net_paid");
-  const rest = fields.filter((f) => f.name !== "net_paid");
+  const rest = fields
+    .filter((f) => f.name !== "net_paid")
+    .filter((f) => !answeredOnly || Boolean(answers[f.name]?.trim()));
 
   return (
     <section aria-labelledby="worker-heading">
@@ -474,7 +557,7 @@ function WorkerGroup({
           THE LEFT BOX IS EMPTY ON PURPOSE AND SAYS SO. FairSlip does not read
           the payslip's printed net - that is the whole point of the split - so
           there is no figure to put there and none is invented. */}
-      {netPaid && (
+      {netPaid && (!answeredOnly || answers.net_paid?.trim()) && (
         <div className="mt-4 overflow-hidden rounded-lg border-2 border-confirmed-line bg-surface shadow-card">
           <p className="border-b border-confirmed-line bg-confirmed-bg px-5 py-2 text-meta font-semibold uppercase tracking-wide text-confirmed-fg">
             <T k="establish.onlyYou" /> &middot; <T k="group.mostImportant" />
@@ -609,7 +692,7 @@ function WorkerGroup({
  * `display: none` keeps the collapsed region out of the accessibility tree
  * rather than merely out of sight.
  */
-function Disclosure({
+export function Disclosure({
   titleKey,
   className = "",
   children,
@@ -661,7 +744,7 @@ function ServerPrompt({ field }: { field: WorkerField }) {
   );
 }
 
-function WorkerInput({
+export function WorkerInput({
   field,
   value,
   onChange,

@@ -215,7 +215,7 @@ function TrailSummary({ proof }: { proof: Proof }) {
     <div className="mt-3">
       <dl className="divide-y divide-line">
         {rows.map((r) => (
-          <div key={r.key} className="flex items-baseline justify-between gap-4 py-2">
+          <div key={r.key} className="flex flex-wrap items-baseline justify-between gap-x-4 py-2">
             <dt className="text-body text-ink-2">
               <T k={r.key} />
             </dt>

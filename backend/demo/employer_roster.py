@@ -264,3 +264,118 @@ def build_csv() -> str:
     writer.writeheader()
     writer.writerows(build_rows())
     return out.getvalue()
+
+
+# ==================================================== the corrected second file
+#
+# What an employer's payroll system exports AFTER they have read the X-ray and
+# fixed what it found. FairSlip did not produce this file and could not: it
+# never edits a payroll. This module fabricates what a corrected export would
+# look like, so the Recheck flow has two real files to compare.
+#
+# FOUR THINGS ARE DELIBERATE, and each exists to stop the before/after being a
+# demonstration that can only ever look good:
+#
+#   1. IT IS IN A DIFFERENT ORDER. Re-shuffled with its own seed, so a
+#      comparison keyed on row number would be visibly wrong rather than
+#      invisibly wrong. This is the whole reason the match is on the CPF account
+#      number, and a corrected file in the original order would prove nothing.
+#
+#   2. NOT EVERYTHING IS FIXED. Two exceptions are left exactly as they were. A
+#      recheck where every finding disappears is a recheck nobody should trust.
+#
+#   3. ONE NEW EXCEPTION IS INTRODUCED, on a row that matched the first time. A
+#      correction pass can break something, and a product that cannot show that
+#      is not a check - it is a congratulation.
+#
+#   4. ONE EMPLOYEE LEAVES AND ONE JOINS. A row that vanished is not a row that
+#      was fixed, and a new joiner's exception was not caused by the correction.
+#      Both have their own state, and both are in this file so those states are
+#      exercised by the demo rather than only by a unit test.
+#
+# The refusals are untouched. Additional Wages and graduated PR years are
+# FairSlip's limits, not the employer's mistakes, so there is nothing for an
+# employer to correct and they stay refused in both runs.
+
+CORRECTION_SEED = 20260912  # the day after the pitch: the corrected re-export
+
+# What the corrected file does, and therefore what the comparison must report.
+# tests/test_employer_recheck.py asserts each of these against the real run.
+CORRECTED = {
+    "RESOLVED": SEEDED_EXCEPTIONS - 2,  # 9 of the 11 fixed
+    "STILL_EXCEPTION": 2,
+    "NEW_EXCEPTION": 1,
+    "STILL_REFUSED": SEEDED_REFUSALS,
+    "REMOVED": 1,
+    "ADDED": 1,
+}
+
+
+def build_corrected_rows() -> list[dict[str, str]]:
+    """The second export. Deterministic, and derived from the first."""
+    from fairslip.employer import Outcome, check_row
+
+    rng = random.Random(CORRECTION_SEED)
+    rows = [dict(r) for r in build_rows()]
+
+    # Which rows the check calls exceptions - asked of the ENGINE, not tracked
+    # by hand while building. If the engine's verdict on a row changes, this
+    # follows it instead of drifting away from it.
+    exceptions = [
+        i for i, r in enumerate(rows) if check_row(r, i + 1).outcome is Outcome.EXCEPTION
+    ]
+    assert len(exceptions) == SEEDED_EXCEPTIONS, (
+        f"the roster now yields {len(exceptions)} exceptions, not {SEEDED_EXCEPTIONS}; "
+        f"the corrected file's counts are derived from this and would be wrong"
+    )
+
+    # 1. Fix all but the last two, by writing what the engine says the row owes.
+    #    The employer's payroll system would have recomputed it; here the engine
+    #    does, which is the only way a "correct" row cannot drift.
+    for i in exceptions[: CORRECTED["RESOLVED"]]:
+        row = rows[i]
+        ow = Decimal(row["ordinary_wages"])
+        dob = date.fromisoformat(row["date_of_birth"])
+        residency = Residency(row["residency"])
+        band = band_for(dob, RELEVANT_MONTH)
+        rows[i]["contribution_detail_amount"] = f"{cpf_contribution(ow, band, residency).total:.2f}"
+
+    # 2. Break one row that was correct. A plain amount error: off by an amount
+    #    that is no other band's answer, so it is reported as a mismatch rather
+    #    than mistaken for a missed age band.
+    correct_rows = [
+        i for i, r in enumerate(rows) if check_row(r, i + 1).outcome is Outcome.OK
+    ]
+    broken = correct_rows[len(correct_rows) // 2]
+    rows[broken]["contribution_detail_amount"] = (
+        f"{Decimal(rows[broken]['contribution_detail_amount']) - Decimal(29):.2f}"
+    )
+
+    # 3. One leaver. Chosen from the rows that MATCHED, so the demo's headline
+    #    counts are not disturbed by an exception silently leaving the file -
+    #    which would itself be a finding, and a different one.
+    leaver = correct_rows[0]
+    del rows[leaver]
+
+    # 4. One new joiner, correct by construction: a new employee is not an
+    #    exception the correction created.
+    name = f"{rng.choice(GIVEN)} {rng.choice(FAMILY)}"
+    dob = date(RELEVANT_MONTH.year - 29, 4, 17)
+    ow = Decimal("3450.00")
+    band = band_for(dob, RELEVANT_MONTH)
+    expected = cpf_contribution(ow, band, Residency.CITIZEN)
+    rows.append(
+        _row(name, _account_no(rng, dob), dob, Residency.CITIZEN, ow, expected.total, status="N")
+    )
+
+    # A payroll export may come back in any order, and this one does.
+    rng.shuffle(rows)
+    return rows
+
+
+def build_corrected_csv() -> str:
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=list(CSV_COLUMNS), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(build_corrected_rows())
+    return out.getvalue()

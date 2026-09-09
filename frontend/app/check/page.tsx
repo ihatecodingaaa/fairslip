@@ -46,6 +46,8 @@ import { AgentPanel } from "./AgentPanel";
 import { DOCUMENTS, EvidenceStage, EvidenceStrip } from "./EvidenceStage";
 import { EstablishStage } from "./EstablishStage";
 import { ReconcileStage } from "./ReconcileStage";
+import { LensBar, lensPanel, type WorkerLens } from "./ResultLenses";
+import { EvidencePack, PackOmissionNote, type PackPreset } from "./EvidencePack";
 import { EvidenceFlow } from "./EvidenceFlow";
 import { payInputsFrom, restDayVerdict, unresolvedFields } from "./facts";
 import { countFields } from "./ReaderComparison";
@@ -91,6 +93,17 @@ export default function CheckPage() {
   // other than where the reader is looking, and a sighted reader gets a page
   // that visibly grew. `announce` is what a screen reader gets instead.
   const [announce, setAnnounce] = useState("");
+  /* WHICH QUESTION THE SCREEN IS ANSWERING once there are figures.
+     A SCREEN-ONLY CHOICE. Every panel stays in the DOM whichever tab is
+     open, because the sheet a worker prints is this markup narrowed - and a
+     conditional render would have made the printed evidence depend on which
+     tab happened to be selected when somebody pressed print. See
+     check/ResultLenses.tsx. */
+  const [lens, setLens] = useState<WorkerLens>("summary");
+  /* HOW MUCH OF THIS GOES ON PAPER. A PRINT choice and nothing else - the
+     screen is identical either way, so the sheet and the screen never become
+     two accounts of one month. See check/EvidencePack.tsx. */
+  const [packPreset, setPackPreset] = useState<PackPreset>("detailed");
   const establishRef = useRef<HTMLHeadingElement>(null);
   const resultRef = useRef<HTMLParagraphElement>(null);
 
@@ -118,6 +131,7 @@ export default function CheckPage() {
       setComputedFrom(null);
       setComputedAt(null);
       setReopened(false);
+      setLens("summary");
       setPhase("reconciled");
       setAnnounce(t("a11y.readersLanded"));
     } catch (e) {
@@ -169,6 +183,7 @@ export default function CheckPage() {
       }
       setBreakdown(out.value);
       setComputedFrom(sent);
+      setLens("summary");
       // Taken here, where the engine's answer arrived - not in the render, which
       // would restamp the sheet every time React re-ran it and quietly turn "when
       // these figures were worked out" into "when you last touched the page".
@@ -194,7 +209,7 @@ export default function CheckPage() {
   const collecting = phase !== "reconciled" || reopened;
 
   return (
-    <AppShell>
+    <AppShell className={packPreset === "simple" ? "pack-simple" : undefined}>
       {/* Present in the DOM BEFORE anything is injected into it. A live region
           created at the same moment as its content is not announced - the
           assistive technology has nothing to observe changing. */}
@@ -268,6 +283,11 @@ export default function CheckPage() {
       {/* ---------------------------------------------------------- the answer */}
       {breakdown && computedFrom && extract && (
         <section id="stage-reconcile" className="mt-10">
+          <LensBar lens={lens} onPick={setLens} />
+          {/* ReconcileStage owns TWO of the four panels - the answer and the
+              trail - because the trace control in one selects the node the
+              other draws. One instance, one selection; it carries the panel
+              identity on its own two halves. */}
           <ReconcileStage
             breakdown={breakdown}
             inputs={computedFrom}
@@ -275,12 +295,21 @@ export default function CheckPage() {
             documents={documents}
             headingRef={resultRef}
             stale={edited}
+            lens={lens === "trail" ? "trail" : "summary"}
+            onTrace={() => setLens("trail")}
           />
         </section>
       )}
 
       {/* ------------------------------------------------------- the evidence */}
-      <section id="stage-evidence" className="mt-12">
+      {/* Before there are figures this is the evidence stage and nothing else;
+          after them it is one of the four lenses and takes that identity. */}
+      <section
+        {...(breakdown
+          ? lensPanel("evidence", lens === "evidence", "pack-detail pt-4")
+          : { className: "mt-12" })}
+      >
+        <span id="stage-evidence" />
         {breakdown && (
           <h2 className="text-title font-semibold">
             <T k="establish.heading" />
@@ -363,10 +392,30 @@ export default function CheckPage() {
 
       {/* ----------------------------------------------------------- what next */}
       {breakdown && (
-        <section id="stage-act" className="mt-12">
+        <section {...lensPanel("next", lens === "next", "pack-detail pt-4")}>
+          <span id="stage-act" />
+          {/* The pack sits at the head of "what next", because taking the
+              evidence away IS the next step for a worker who is not ready to
+              draft anything - and because the follow-through panel below it is
+              about an example worker, not this month. */}
+          {computedFrom && extract && (
+            <div className="mb-10">
+              <EvidencePack
+                preset={packPreset}
+                onPreset={setPackPreset}
+                breakdown={breakdown}
+                inputs={computedFrom}
+                extract={extract}
+                documents={documents}
+                computedAt={computedAt}
+              />
+            </div>
+          )}
           <AgentPanel />
         </section>
       )}
+
+      {breakdown && <PackOmissionNote preset={packPreset} />}
 
       <Footer />
     </AppShell>
@@ -459,7 +508,11 @@ function ComputeGate({
         type="button"
         onClick={onCompute}
         disabled={blocked}
-        className="tap rounded-sm bg-brand px-5 py-3 text-lead font-semibold text-on-solid disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3"
+        /* `overflow-wrap: anywhere` for the same reason globals.css applies it
+           to headings: this label is one long token in Tamil at the largest
+           text size, and a button will not shrink below its longest word.
+           `max-w-full` keeps it inside the card it sits in. */
+        className="tap max-w-full rounded-sm bg-brand px-5 py-3 text-lead font-semibold text-on-solid [overflow-wrap:anywhere] disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3"
       >
         <T k="gate.compute" />
       </button>
@@ -473,14 +526,21 @@ function ComputeGate({
           </p>
           <ul className="mt-2 space-y-1 text-body">
             {unresolved.map((f) => (
-              <li key={f.name} className="flex items-baseline gap-2">
+              /* FLEX-WRAP AND min-w-0, because this row is a field LABEL beside
+                 a reason and both are translated. At 390px in Tamil at the
+                 largest text size the two sat on one unbreakable line 424px
+                 wide and pushed the whole page 143px sideways - the same class
+                 of defect globals.css records for headings, in a flex row
+                 rather than a grid column. Found by measuring at that size, not
+                 by reading the markup. */
+              <li key={f.name} className="flex flex-wrap items-baseline gap-x-2">
                 <span
                   className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
                     f.group === "read" ? "bg-brand" : "bg-confirmed"
                   }`}
                 />
-                <span className="text-ink">{f.label}</span>
-                <span className="text-meta text-ink-3">
+                <span className="min-w-0 text-ink">{f.label}</span>
+                <span className="min-w-0 text-meta text-ink-3">
                   {f.group === "read" ? t("gate.reasonRead") : t("gate.reasonWorker")}
                 </span>
               </li>

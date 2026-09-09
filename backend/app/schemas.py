@@ -805,14 +805,101 @@ class EmployerFindingOut(BaseModel):
     engine_flags: list[str]
 
 
+class ReasonAggregateOut(BaseModel):
+    """One reason code, with the rows and the signed money behind it.
+
+    `checked_rows` is not decoration. A reason that only ever refuses has
+    `checked_rows == 0`, and the screen must then print the row count without a
+    money figure: nothing was computed for those rows, and $0.00 beside them
+    would read as three rows that were checked and agreed.
+    """
+
+    reason_code: str
+    count: int
+    checked_rows: int
+    signed_difference_total: Money
+
+
+class CheckedTotalsOut(BaseModel):
+    """The two ends of the payroll and the gap between them, over checked rows.
+
+    `declared_total - expected_total == signed_difference` exactly. Refused rows
+    are in none of the three - see fairslip/employer.CheckedTotals - so `rows`
+    travels with them to say how much of the file they cover.
+    """
+
+    rows: int
+    declared_total: Money
+    expected_total: Money
+    signed_difference: Money
+
+
 class EmployerCheckOut(BaseModel):
     rows_read: int
     checked: int
     exceptions: int
     refused: int
     total_difference: Money
-    by_reason: list[tuple[str, int]]
+    reasons: list[ReasonAggregateOut]
+    totals: CheckedTotalsOut
     findings: list[EmployerFindingOut]
+
+
+class RecheckRowOut(BaseModel):
+    """One employee across both runs.
+
+    BOTH ROW NUMBERS TRAVEL because after a reorder they are different numbers,
+    and a person holding the two files needs to find the row in each. A `null`
+    on either side means the row is in only one file - which is a state of its
+    own, never a zero.
+    """
+
+    employee_account_no: str
+    employee_name: str
+    state: str
+    before_row_number: int | None
+    after_row_number: int | None
+    before_outcome: Literal["OK", "EXCEPTION", "REFUSED"] | None
+    after_outcome: Literal["OK", "EXCEPTION", "REFUSED"] | None
+    before_declared: Money | None
+    after_declared: Money | None
+    before_expected: Money | None
+    after_expected: Money | None
+    before_difference: Money | None
+    after_difference: Money | None
+    before_reason: str | None
+    after_reason: str | None
+    after_detail: str
+
+
+class EmployerRecheckOut(BaseModel):
+    """The two runs, and what moved between them.
+
+    BOTH SUMMARIES SHIP WHOLE. The before/after headline is two X-rays rather
+    than two numbers, so the screen can show the second run's coverage strip
+    exactly as it showed the first's - and an employer can see that "3
+    exceptions" is still a claim about 293 checked rows out of 300.
+
+    FIVE MONEY FIELDS. `before_difference` and `after_difference` are each run's
+    own total over its own checked rows. `both_before`, `both_after` and
+    `both_change` are over `rows_checked_in_both` only, and balance exactly.
+    Subtracting the first pair would attribute a refused-then-checked row's whole
+    contribution to a correction that never touched it - see
+    fairslip/employer.EmployerRecheck.
+    """
+
+    before_summary: EmployerCheckOut
+    after_summary: EmployerCheckOut
+    rows: list[RecheckRowOut]
+    counts: dict[str, int]
+
+    before_difference: Money
+    after_difference: Money
+
+    rows_checked_in_both: int
+    both_before: Money
+    both_after: Money
+    both_change: Money
 
 
 class EmployerSchemaOut(BaseModel):

@@ -46,8 +46,13 @@ const ROUTES: { href: string; label: Key; hint: Key }[] = [
 export function AppShell({
   children,
   width = "wide",
+  className = "",
 }: {
   children: ReactNode;
+  /** A class for the whole page. Used by the worker's one-page evidence pack,
+   * which is a PRINT scope and nothing else - see `.pack-simple` in
+   * globals.css. */
+  className?: string;
   /** `reading` is prose measure for the coverage page; `wide` is the workspace
    * width the trail and the payroll grid need. Two values, not a free number:
    * a layout knob with a range is a layout that drifts page to page. */
@@ -57,7 +62,7 @@ export function AppShell({
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-full flex-1 flex-col bg-canvas text-ink">
+    <div className={`flex min-h-full flex-1 flex-col bg-canvas text-ink ${className}`}>
       {/* Off-screen until focused, then the first thing in the tab order. */}
       <a
         href={`#${MAIN_ID}`}

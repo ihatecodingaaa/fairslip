@@ -129,9 +129,17 @@ export function StatusIcon({ status }: { status: Status }) {
 }
 
 export function StatusChip({ status }: { status: Status }) {
+  /* THE WORD INSIDE IT IS TRANSLATED, AND SOME LANGUAGES BUILD IT AS ONE TOKEN.
+     Tamil's "not established" is நிலைநிறுத்தப்படவில்லை - a single unbreakable
+     word 370px wide at the largest text size, in a chip sitting in a 198px
+     column on a 390px phone. An inline-flex box will not wrap its own content,
+     so the chip pushed the page sideways by the difference. `max-w-full` lets
+     the chip shrink to its column and `overflow-wrap: anywhere` lets the word
+     break inside it - the same remedy globals.css already applies to headings,
+     for the same reason and in the same four scripts. */
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-sm border px-2 py-1 text-meta font-semibold ${TONE[status]}`}
+      className={`inline-flex max-w-full items-center gap-2 rounded-sm border px-2 py-1 text-meta font-semibold [overflow-wrap:anywhere] ${TONE[status]}`}
     >
       <StatusIcon status={status} />
       <T k={WORDS[status]} />

@@ -668,3 +668,132 @@ def test_every_measured_opacity_entry_says_where_it_was_measured() -> None:
     for entry, note in sorted(MEASURED_OPACITY.items()):
         assert "axe" in note.lower(), f"{entry}: the note does not name the tool that measured it"
         assert len(note) >= 60, f"{entry}: the note is too short to be a measurement"
+
+
+# ------------------------------------- a layout may not push the page sideways
+
+
+def test_an_implicit_grid_column_is_allowed_to_shrink() -> None:
+    """THE HEADING RULE, IN A LAYOUT.
+
+    `overflow-wrap: anywhere` on headings exists because one long Tamil token is
+    wider than a 390px phone and a column is at least as wide as its min-content.
+    A `display: grid` with NO `grid-template-columns` has the same problem one
+    level up: every child lands in an IMPLICIT column, an implicit column is
+    sized `auto`, and `auto` will not shrink below its content's min-content
+    width. A card holding a long field label resolved its column to 485px inside
+    a 312px page, and the page scrolled by the difference.
+
+    It was three separate places when it was found - the establish stage, the
+    report studio's preview column, and the studio's controls - which is what
+    makes it a class rather than three bugs, and why the fix is one rule rather
+    than three `min-w-0`s that the fourth one will be written without.
+
+    `grid-auto-columns` governs IMPLICIT tracks only, so every grid that
+    declares its own template - the X-ray's canvas-and-inspector split, the
+    studio's controls-and-preview split, every `sm:grid-cols-2` - keeps exactly
+    what it set. Verified by measuring the rendered page at 390px in all four
+    languages at the largest text size.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    rule = re.search(
+        r':where\(\[class~="grid"\]\)\s*\{([^}]*)\}', css, re.DOTALL
+    )
+    assert rule, (
+        "the implicit-grid-column rule is gone. Without it a one-column grid "
+        "takes the width of its widest child and the page scrolls sideways in "
+        "any language whose words are long."
+    )
+    assert "grid-auto-columns" in rule.group(1)
+    assert "minmax(0, 1fr)" in rule.group(1), (
+        f"the rule no longer gives implicit columns a zero minimum: {rule.group(1)!r}"
+    )
+
+
+def test_the_implicit_grid_rule_does_not_touch_explicit_templates() -> None:
+    """It must be `grid-auto-columns` and never `grid-template-columns`.
+
+    The second would overwrite every deliberate layout in the app - the payroll
+    X-ray's 70/30 split among them - and the damage would be invisible in a
+    test that only checked that the rule exists.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    rule = re.search(r':where\(\[class~="grid"\]\)\s*\{([^}]*)\}', css, re.DOTALL)
+    assert rule, "the implicit-grid-column rule was not found"
+    assert "grid-template-columns" not in rule.group(1), (
+        "the rule sets grid-template-columns, which overrides every explicit "
+        "layout in the app rather than only the implicit one-column case"
+    )
+
+
+# ------------------------------------------------------------------- motion
+
+
+def _motion_block(name: str) -> str:
+    """The default reset, or the `no-preference` revert."""
+    css = CSS.read_text(encoding="utf-8")
+    if name == "reset":
+        m = re.search(r"\n\* \{\n(.*?)\n\}", css, re.DOTALL)
+    else:
+        m = re.search(
+            r"@media \(prefers-reduced-motion: no-preference\) \{\s*\*\s*\{(.*?)\}",
+            css,
+            re.DOTALL,
+        )
+    assert m, f"the {name} motion block was not found in globals.css"
+    return m.group(1)
+
+
+def test_motion_is_off_by_default_and_only_reverted_by_a_stated_preference() -> None:
+    """The safe direction, and the reason it is the safe one.
+
+    `prefers-reduced-motion: no-preference` is ABSENT on a machine that has
+    never been asked, so a rule written the other way round - animate by
+    default, disable under `reduce` - animates for everyone the question was
+    never put to. The failure mode of guessing wrong here is vestibular.
+    """
+    reset = _motion_block("reset")
+    assert "animation-duration: 0.01ms" in reset
+    revert = _motion_block("revert")
+    assert "animation-duration: revert" in revert
+
+
+@pytest.mark.parametrize(
+    "prop", ["animation-duration", "animation-delay", "transition-duration", "transition-delay"]
+)
+def test_every_timing_property_is_in_both_motion_blocks(prop: str) -> None:
+    """THE DELAY HAS TO GO WITH THE DURATION, and once it did not.
+
+    The payroll reveal staggers three hundred marks with a per-mark
+    `animation-delay`. Collapsing only the DURATION leaves the delay intact, and
+    with `fill-mode: both` each mark then holds its `from` state - opacity zero -
+    for up to 600ms before appearing. That is the same staggered reveal,
+    performed on exactly the machine that asked not to see one, and no
+    screenshot of a still page would ever show it.
+    """
+    reset = _motion_block("reset")
+    revert = _motion_block("revert")
+    assert prop in reset, (
+        f"{prop} is not reset by default, so a component setting it animates on a "
+        f"machine that asked for reduced motion"
+    )
+    assert prop in revert, (
+        f"{prop} is reset by default and never reverted, so it stays disabled even "
+        f"where motion is welcome"
+    )
+
+
+def test_the_payroll_reveal_holds_its_end_state() -> None:
+    """`fill-mode: both`, so a collapsed duration lands the mark at `to` - which
+    is what makes "renders instantly" true rather than "renders invisible"."""
+    css = CSS.read_text(encoding="utf-8")
+    utility = re.search(r"@utility mark-in \{(.*?)\}", css, re.DOTALL)
+    assert utility, "the mark-in utility was not found"
+    assert "fairslip-mark-in" in utility.group(1)
+    assert "both" in utility.group(1), (
+        "the reveal does not use fill-mode: both, so a mark is unstyled before "
+        "its delay and after its duration"
+    )
+    frames = re.search(r"@keyframes fairslip-mark-in \{(.*?)\n\}", css, re.DOTALL)
+    assert frames, "the reveal keyframes were not found"
+    assert "opacity: 1" in frames.group(1), "the reveal does not end fully visible"

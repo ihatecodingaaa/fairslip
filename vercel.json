@@ -28,7 +28,7 @@
       "destination": { "service": "backend" }
     },
     {
-      "source": "/employer/(check|schema|demo-csv)",
+      "source": "/employer/(check|recheck|schema|demo-csv|demo-csv-corrected)",
       "destination": { "service": "backend" }
     },
     {

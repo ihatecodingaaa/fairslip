@@ -47,6 +47,7 @@ import { EvidenceLens, type Hypothetical } from "./EvidenceLens";
 import { ProofGraph } from "./ProofGraph";
 import { Waterfall } from "./Waterfall";
 import { buildProof, downstream, upstream } from "./proof";
+import { lensPanel } from "./ResultLenses";
 
 export function ReconcileStage({
   breakdown,
@@ -55,6 +56,8 @@ export function ReconcileStage({
   documents,
   headingRef,
   stale = false,
+  lens,
+  onTrace,
 }: {
   breakdown: PayBreakdown;
   /** The exact facts that produced this breakdown. The trail's fact layer is
@@ -66,6 +69,14 @@ export function ReconcileStage({
   /** An answer has been edited since these figures were worked out, so what is
    * on screen below no longer matches what produced them. */
   stale?: boolean;
+  /** Which of this component's two halves the SCREEN is showing. Both are
+   * always in the DOM - the printed sheet is this markup narrowed, and it
+   * carries the arithmetic whether or not anyone opened that tab. See
+   * check/ResultLenses.tsx. */
+  lens: "summary" | "trail";
+  /** Tracing a figure is a move to the money trail, and the page owns which
+   * lens is on screen - so the button asks rather than reaching for it. */
+  onTrace: () => void;
 }) {
   const t = useT();
   const [selected, setSelected] = useState<string | null>(null);
@@ -127,7 +138,7 @@ export function ReconcileStage({
   return (
     <div className="grid gap-10">
       {/* ------------------------------------------------------------- the answer */}
-      <section aria-labelledby="answer-heading">
+      <section {...lensPanel("summary", lens === "summary", "pt-8")}>
         <p
           ref={headingRef}
           id="answer-heading"
@@ -187,7 +198,10 @@ export function ReconcileStage({
         <div className="print-hide mt-6 flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => setSelected("money:difference")}
+            onClick={() => {
+              setSelected("money:difference");
+              onTrace();
+            }}
             className="tap rounded-sm bg-brand px-5 py-3 text-body font-semibold text-on-solid"
           >
             <T k="reconcile.trace" />
@@ -214,6 +228,7 @@ export function ReconcileStage({
       </section>
 
       {/* --------------------------------------------------------------- the trail */}
+      <div {...lensPanel("trail", lens === "trail", "pt-8")}>
       <ScreenOnly id="money-trail">
         <section aria-labelledby="trail-heading">
           <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
@@ -316,7 +331,10 @@ export function ReconcileStage({
       </ScreenOnly>
 
       {/* ----------------------------------------------------------- the arithmetic */}
-      <section aria-labelledby="arithmetic-heading">
+      {/* `pack-detail`: dropped from the ONE-PAGE printed pack and from nothing
+          else. See the rule in globals.css, and PackOmissionNote, which names
+          this on the sheet when it is left off. */}
+      <section aria-labelledby="arithmetic-heading" className="pack-detail mt-10">
         <h2 id="arithmetic-heading" className="text-title font-semibold">
           <T k="reconcile.arithmetic" />
         </h2>
@@ -334,7 +352,7 @@ export function ReconcileStage({
             <ul className="mt-2 divide-y divide-line">
               {breakdown.components.map((c) => (
                 <li key={c.label} className="py-2">
-                  <div className="flex items-baseline justify-between gap-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                     <span className="font-medium">{c.label.replace(/_/g, " ")}</span>
                     <span className="font-medium tabular-nums">{money(c.amount)}</span>
                   </div>
@@ -381,6 +399,7 @@ export function ReconcileStage({
           </div>
         </div>
       </section>
+      </div>
     </div>
   );
 }

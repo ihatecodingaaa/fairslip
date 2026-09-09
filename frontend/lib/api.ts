@@ -753,13 +753,39 @@ export type EmployerFinding = {
   engine_flags: string[];
 };
 
+/** One reason code, with the rows and the signed money behind it.
+ *
+ * `checked_rows` is load-bearing. A reason that only ever REFUSES carries
+ * `checked_rows: 0`, and the screen must then print the row count with no money
+ * figure beside it: nothing was computed for those rows, and $0.00 next to them
+ * reads as rows that were checked and agreed. */
+export type ReasonAggregate = {
+  reason_code: string;
+  count: number;
+  checked_rows: number;
+  signed_difference_total: Money;
+};
+
+/** The two ends of the payroll and the gap, over CHECKED rows only.
+ *
+ * `declared_total - expected_total === signed_difference` exactly, which is the
+ * only reason a screen may draw a bridge from one end to the other. The engine
+ * asserts it (backend/tests/test_employer_xray.py); nothing here re-derives it. */
+export type CheckedTotals = {
+  rows: number;
+  declared_total: Money;
+  expected_total: Money;
+  signed_difference: Money;
+};
+
 export type EmployerCheckOut = {
   rows_read: number;
   checked: number;
   exceptions: number;
   refused: number;
   total_difference: Money;
-  by_reason: [string, number][];
+  reasons: ReasonAggregate[];
+  totals: CheckedTotals;
   findings: EmployerFinding[];
 };
 
@@ -781,6 +807,66 @@ export type EmployerSchemaOut = {
   mistakes: [string, string[]][];
 };
 
+/** What happened to one employee between two runs of the same payroll.
+ *
+ * TEN STATES, EXHAUSTIVE AND DISJOINT, and the backend decides which. The
+ * distinctions that matter are the ones a browser would be tempted to collapse:
+ * STILL_REFUSED is not STILL_MATCHED (nothing was computed in either run), and
+ * REMOVED is not RESOLVED (an employee who left the payroll was not corrected).
+ * See fairslip/employer.RecheckState. */
+export type RecheckState =
+  | "STILL_MATCHED"
+  | "RESOLVED"
+  | "STILL_EXCEPTION"
+  | "NEW_EXCEPTION"
+  | "NEWLY_REFUSED"
+  | "STILL_REFUSED"
+  | "NEWLY_CHECKED_MATCHED"
+  | "NEWLY_CHECKED_EXCEPTION"
+  | "REMOVED"
+  | "ADDED";
+
+export type RecheckRow = {
+  employee_account_no: string;
+  employee_name: string;
+  state: RecheckState;
+  /** null on either side means the row is in only one of the two files. */
+  before_row_number: number | null;
+  after_row_number: number | null;
+  before_outcome: EmployerFinding["outcome"] | null;
+  after_outcome: EmployerFinding["outcome"] | null;
+  before_declared: Money | null;
+  after_declared: Money | null;
+  before_expected: Money | null;
+  after_expected: Money | null;
+  before_difference: Money | null;
+  after_difference: Money | null;
+  before_reason: string | null;
+  after_reason: string | null;
+  after_detail: string;
+};
+
+/** Two runs, and what moved between them.
+ *
+ * FIVE MONEY FIELDS, NOT THREE. `before_difference` and `after_difference` are
+ * each run's own total over its own checked rows - the two figures the two
+ * X-rays show. Subtracting them is NOT the change: whenever a row was refused
+ * in one run and checked in the other, that subtraction spans two different
+ * sets of rows. The change is `both_change`, over `rows_checked_in_both`, and
+ * `both_change === both_after - both_before` exactly. */
+export type EmployerRecheckOut = {
+  before_summary: EmployerCheckOut;
+  after_summary: EmployerCheckOut;
+  rows: RecheckRow[];
+  counts: Record<RecheckState, number>;
+  before_difference: Money;
+  after_difference: Money;
+  rows_checked_in_both: number;
+  both_before: Money;
+  both_after: Money;
+  both_change: Money;
+};
+
 export function getEmployerSchema(): Promise<Outcome<EmployerSchemaOut>> {
   return call<EmployerSchemaOut>("/employer/schema");
 }
@@ -798,5 +884,26 @@ export async function postEmployerCheck(file: File): Promise<Outcome<EmployerChe
   throw new Error(`/employer/check returned HTTP ${res.status}`);
 }
 
+/** Both files, checked and compared in one request.
+ *
+ * The comparison is the backend's: nothing here diffs two responses. A browser
+ * that decided for itself which rows "resolved" would be a second source of
+ * truth about which employee a row in the second file is. */
+export async function postEmployerRecheck(
+  before: File,
+  after: File,
+): Promise<Outcome<EmployerRecheckOut>> {
+  const body = new FormData();
+  body.append("before", before);
+  body.append("after", after);
+  const res = await fetch(`${API_BASE}/employer/recheck`, { method: "POST", body });
+  const payload = await res.json();
+  if (res.ok) return { ok: true, value: payload as EmployerRecheckOut };
+  if (payload && typeof payload.error === "string")
+    return { ok: false, refusal: payload as Refusal };
+  throw new Error(`/employer/recheck returned HTTP ${res.status}`);
+}
+
 export const EMPLOYER_DEMO_CSV = `${API_BASE}/employer/demo-csv`;
+export const EMPLOYER_DEMO_CSV_CORRECTED = `${API_BASE}/employer/demo-csv-corrected`;
 

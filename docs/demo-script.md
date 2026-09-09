@@ -36,6 +36,42 @@ touches a surface - the check is `/demo-check`, and it takes two minutes.
 >
 > Nothing here is a reason to change what is SAID. It is a list of what to re-point at.
 
+> ### What moved again, 10 Sept 2026 (the X-ray pass). Re-walk before the pitch.
+>
+> - **/employer is now FOUR LENSES beside a permanent row inspector**, not a summary
+>   followed by a grid followed by three lists. The tabs are Status, Difference, Reasons,
+>   Rows. The 300-mark grid is the STATUS lens and is still what the page opens on, so the
+>   "three hundred rows, eleven triangles" beat is unchanged - it is just no longer
+>   followed by two thousand pixels of list.
+> - **The headline gained a bridge**: declared $326,800.00 less rule-derived $324,201.00
+>   equals the $2,599.00 that was already on the screen. Same number, now with both ends of
+>   it visible. The identity is asserted in test_employer_xray.py, so it can be said aloud.
+> - **DIFFERENCE is the new signature picture.** One bar per checked row, signed, around a
+>   zero line, with the 282 matched rows drawn as the ground and the 7 refused rows in their
+>   own lane beneath it. "The exceptions arrive already ranked" is the line; the tallest bar
+>   is labelled ($1,173.00 on the fictional roster).
+> - **RECHECK IS NEW AND IS THE STRONGEST BEAT ON THIS SIDE.** "Run the corrected roster"
+>   compares two runs of the same payroll: 11 exceptions -> 3, nine now matching, two still
+>   differing, one NEW exception the correction introduced, one leaver, one joiner. The two
+>   grids underneath put the same employee at the same position in both, which is what makes
+>   "matched on the CPF account number, not the row number" a thing you can point at rather
+>   than assert. Say the new exception out loud - a before/after that can only improve is
+>   one nobody should trust.
+> - **BUILD A REVIEW PACK** opens a report studio: audience preset on the left, live preview
+>   on the right, Print/PDF + Excel + CSV + JSON. The coverage block cannot be unticked and
+>   its checkbox says so - that is the honesty beat, and it is visible without clicking.
+> - **/check asks ONE QUESTION AT A TIME** now ("Question 2 of 7"), with "View all questions"
+>   for the grid. The six-cards-at-once shot is gone; the counter and the two reader values
+>   side by side are the shot.
+> - **The worker's result is four lenses too** - Summary, Money trail, Evidence, What next.
+>   The money trail is one click from the answer rather than a scroll. Every panel is still
+>   in the DOM, so the printed sheet is unchanged whichever tab is open.
+> - **"Take this with you"** sits at the head of What next: one-page or full evidence pack,
+>   plus the facts as JSON, and three sentences saying what it is NOT.
+>
+> Nothing here changes a figure. Both engines, both rule packs and every refusal are as
+> they were.
+
 TIMED AGAINST PRODUCTION, three runs, 7 Sept 2026. The SYSTEM contributes 3.1-3.8 seconds to
 the whole scripted run and, apart from the extraction, nothing it does takes longer than 1.3s -
 every remaining second is a person typing or talking.

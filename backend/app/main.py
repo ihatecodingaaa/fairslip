@@ -26,6 +26,7 @@ from app.schemas import (
     AgentPersonaOut,
     BlockedFieldOut,
     ChangedFieldOut,
+    CheckedTotalsOut,
     ChoiceOut,
     CitedFigureOut,
     ComponentImpactOut,
@@ -42,6 +43,7 @@ from app.schemas import (
     DraftOut,
     EmployerCheckOut,
     EmployerFindingOut,
+    EmployerRecheckOut,
     EmployerSchemaOut,
     EncodedRuleOut,
     EngineValueOut,
@@ -70,6 +72,8 @@ from app.schemas import (
     QuoteOut,
     ReaderInfoOut,
     ReadFieldOut,
+    ReasonAggregateOut,
+    RecheckRowOut,
     RefusalOut,
     ResidencyOutcomeOut,
     RulePackOut,
@@ -135,6 +139,7 @@ from fairslip.employer import (
     SPEC_ROUNDING_B,
     SPEC_SOURCE,
     check_csv,
+    recheck,
 )
 from fairslip.extract import (
     DOCUMENT_ROLES,
@@ -1595,13 +1600,32 @@ async def employer_check(file: UploadFile) -> EmployerCheckOut:
     except ValueError as e:
         raise InvalidInputError(str(e)) from e
 
+    return _employer_check_out(result)
+
+
+def _employer_check_out(result) -> EmployerCheckOut:
+    """The engine's run, on the wire. Nothing is computed here."""
     return EmployerCheckOut(
         rows_read=result.rows_read,
         checked=result.checked,
         exceptions=result.exceptions,
         refused=result.refused,
         total_difference=_money(result.total_difference),
-        by_reason=[(k, v) for k, v in result.by_reason],
+        reasons=[
+            ReasonAggregateOut(
+                reason_code=a.reason_code,
+                count=a.count,
+                checked_rows=a.checked_rows,
+                signed_difference_total=_money(a.signed_difference_total),
+            )
+            for a in result.reasons
+        ],
+        totals=CheckedTotalsOut(
+            rows=result.totals.rows,
+            declared_total=_money(result.totals.declared_total),
+            expected_total=_money(result.totals.expected_total),
+            signed_difference=_money(result.totals.signed_difference),
+        ),
         findings=[
             EmployerFindingOut(
                 row_number=f.row_number,
@@ -1619,5 +1643,96 @@ async def employer_check(file: UploadFile) -> EmployerCheckOut:
                 engine_flags=list(f.engine_flags),
             )
             for f in result.findings
+        ],
+    )
+
+
+@app.get("/employer/demo-csv-corrected")
+def employer_demo_csv_corrected() -> Response:
+    """The same fictional roster after a correction pass, for the Recheck flow.
+
+    FairSlip did not produce this file and could not - it never edits a payroll.
+    It stands in for what an employer's own system would export after they fixed
+    what the X-ray found. It is deliberately in a different ORDER, deliberately
+    leaves two exceptions unfixed, deliberately introduces one, and has a leaver
+    and a joiner. See backend/demo/employer_roster.py.
+    """
+    from demo.employer_roster import build_corrected_csv
+
+    return Response(
+        content=build_corrected_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="fairslip-demo-roster-corrected.csv"'},
+    )
+
+
+async def _read_csv(file: UploadFile, which: str) -> str:
+    raw = await file.read()
+    if len(raw) > 5_000_000:
+        raise InvalidInputError(f"the {which} file is larger than 5 MB")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise InvalidInputError(f"the {which} file is not UTF-8 text") from e
+
+
+@app.post("/employer/recheck", response_model=EmployerRecheckOut)
+async def employer_recheck(before: UploadFile, after: UploadFile) -> EmployerRecheckOut:
+    """Two exports of the same payroll, checked separately and then compared.
+
+    THE COMPARISON IS ON THE CPF ACCOUNT NUMBER, which is the Employer
+    Contribution Detail Record's own employee identifier. A file whose rows
+    cannot be told apart by it - blank or repeated - is refused whole rather
+    than paired by position: an export may reorder, and a comparison keyed on
+    position reports corrections against the wrong people while looking
+    entirely confident.
+
+    Both files are run through the same engine as a single check, so nothing
+    here re-derives an outcome, a count or an amount.
+    """
+    first_text = await _read_csv(before, "first")
+    second_text = await _read_csv(after, "second")
+
+    try:
+        first = check_csv(first_text)
+        second = check_csv(second_text)
+        comparison = recheck(first, second)
+    except ValueError as e:
+        raise InvalidInputError(str(e)) from e
+
+    return EmployerRecheckOut(
+        before_summary=_employer_check_out(comparison.before_summary),
+        after_summary=_employer_check_out(comparison.after_summary),
+        counts=dict(comparison.counts),
+        before_difference=_money(comparison.before_difference),
+        after_difference=_money(comparison.after_difference),
+        rows_checked_in_both=comparison.rows_checked_in_both,
+        both_before=_money(comparison.both_before),
+        both_after=_money(comparison.both_after),
+        both_change=_money(comparison.both_change),
+        rows=[
+            RecheckRowOut(
+                employee_account_no=r.employee_account_no,
+                employee_name=r.employee_name,
+                state=r.state.value,
+                before_row_number=r.before_row_number,
+                after_row_number=r.after_row_number,
+                before_outcome=r.before_outcome.value if r.before_outcome else None,
+                after_outcome=r.after_outcome.value if r.after_outcome else None,
+                before_declared=_money(r.before_declared) if r.before_declared is not None else None,
+                after_declared=_money(r.after_declared) if r.after_declared is not None else None,
+                before_expected=_money(r.before_expected) if r.before_expected is not None else None,
+                after_expected=_money(r.after_expected) if r.after_expected is not None else None,
+                before_difference=(
+                    _money(r.before_difference) if r.before_difference is not None else None
+                ),
+                after_difference=(
+                    _money(r.after_difference) if r.after_difference is not None else None
+                ),
+                before_reason=r.before_reason.value if r.before_reason else None,
+                after_reason=r.after_reason.value if r.after_reason else None,
+                after_detail=r.after_detail,
+            )
+            for r in comparison.rows
         ],
     )

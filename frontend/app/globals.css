@@ -288,6 +288,32 @@ h4 {
 }
 
 /*
+ * A SINGLE-COLUMN GRID MAY NOT PUSH THE PAGE SIDEWAYS EITHER.
+ *
+ * The rule above is the same defect in a heading. This is it in a layout.
+ *
+ * `display: grid` with no `grid-template-columns` puts every child in an
+ * IMPLICIT column, and an implicit column is sized `auto` - which is bounded
+ * below by its content's min-content width and will not shrink past it. So a
+ * card holding a long field label inside a 312px page resolved its column to
+ * 485px, and the page scrolled by the difference. It is invisible at 1440px,
+ * invisible in the markup, and invisible in any language whose words are short.
+ *
+ * `grid-auto-columns` governs IMPLICIT tracks only, so this changes nothing for
+ * any grid that declares its own `grid-template-columns` - the payroll X-ray's
+ * canvas-and-inspector split, the report studio's controls-and-preview split,
+ * and every `sm:grid-cols-2` in the app keep exactly the templates they set.
+ * What it fixes is the case nobody writes down: the one-column stack.
+ *
+ * Found by measuring the rendered page at 390px in Tamil at the largest text
+ * size - three separate places, which is what makes it a class rather than
+ * three bugs. backend/tests/test_design_tokens.py holds this rule.
+ */
+:where([class~="grid"]) {
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+/*
  * Minimum size for anything a worker taps.
  *
  * THE AUTHORITIES DISAGREE, so this picks and says which:
@@ -360,18 +386,56 @@ input[type="date"]::-webkit-calendar-picker-indicator:focus-visible {
  */
 * {
   animation-duration: 0.01ms !important;
+  /* THE DELAY HAS TO GO WITH THE DURATION, and it did not.
+     The payroll reveal staggers three hundred marks by setting an
+     `animation-delay` per mark. Collapsing only the DURATION leaves the delay
+     intact, so with `fill-mode: both` each mark holds its `from` state - opacity
+     zero - for up to 600ms and then appears. That is the same staggered reveal,
+     performed on exactly the machine that asked not to see one. */
+  animation-delay: 0ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
   scroll-behavior: auto !important;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   * {
     animation-duration: revert !important;
+    animation-delay: revert !important;
     animation-iteration-count: revert !important;
     transition-duration: revert !important;
+    transition-delay: revert !important;
     scroll-behavior: revert !important;
   }
+}
+
+/*
+ * The payroll reveal.
+ *
+ * IT PRESENTS A FINISHED RESULT AND DOES NOT PRETEND TO BE COMPUTING ONE. The
+ * response has already arrived when the first mark is drawn; the stagger is a
+ * reading order across a field of three hundred marks, so the eye lands on the
+ * shape of the file rather than on all of it at once. Nothing here is tied to
+ * progress, because there is no progress left to report.
+ *
+ * `both` so a mark is invisible during its own delay and stays put afterwards.
+ * Under the block above, the duration and the delay both collapse and every
+ * mark is simply there - which is the required behaviour, not a degraded one.
+ */
+@keyframes fairslip-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility mark-in {
+  animation: fairslip-mark-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 /*
@@ -542,6 +606,24 @@ input[type="date"]::-webkit-calendar-picker-indicator:focus-visible {
   }
 
   .print-hide {
+    display: none;
+  }
+
+  /*
+   * THE ONE-PAGE EVIDENCE PACK.
+   *
+   * A worker choosing "One page" is choosing what goes on PAPER, and nothing
+   * else: `pack-simple` is only ever consulted in here, so the screen shows the
+   * same month in both modes. A preset that hid sections from the screen would
+   * make the screen and the sheet two accounts of one reconciliation, which is
+   * the defect this whole product is an argument against.
+   *
+   * What it drops - the two readers' full transcriptions, the line-by-line
+   * arithmetic, and the follow-through panel - is named ON THE SHEET by
+   * PackOmissionNote, which renders only in this mode. An omission a reader
+   * cannot see is a decision made on their behalf.
+   */
+  .pack-simple .pack-detail {
     display: none;
   }
 

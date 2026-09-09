@@ -307,7 +307,14 @@ export function PrintPreResult({
  * the page to say which. A named month cannot be read two ways. The rest of the
  * format follows the language the reader chose, like every other string here.
  */
-function stamp(iso: string, lang: Lang): string {
+/** An ISO instant, in the reader's language.
+ *
+ * EXPORTED SO THE REVIEW PACK USES THIS ONE. A second formatter would be a
+ * second answer to "when was this worked out" on two artefacts produced from
+ * the same run - and the header of a forwarded report is exactly where that
+ * would go unnoticed. The machine-readable ISO still travels, in the pack's Run
+ * details and in the JSON export. */
+export function stamp(iso: string, lang: Lang): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return new Intl.DateTimeFormat(BCP47[lang], {

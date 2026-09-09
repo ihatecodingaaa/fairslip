@@ -257,6 +257,44 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class ReasonAggregate:
+    """One reason, its rows, and the signed money behind the checked ones.
+
+    `count` is every row carrying the reason. `checked_rows` is how many of those
+    were actually computed - which for a refusal reason is zero, and that zero is
+    the point: it is what lets the screen print "3 rows, not checked" instead of
+    "3 rows, $0.00". A refused row has no expected amount, so a money figure
+    beside it would be a computation nobody performed.
+    """
+
+    reason_code: str
+    count: int
+    checked_rows: int
+    signed_difference_total: Decimal
+
+
+@dataclass(frozen=True)
+class CheckedTotals:
+    """What the checked rows declare, what the rules give, and the gap.
+
+    REFUSED ROWS ARE ABSENT FROM ALL THREE, deliberately and not merely because
+    `expected` is None on them: some refusals DO carry a declared amount, so
+    including declared and excluding expected would produce a "difference" the
+    size of an unchecked row's whole contribution.
+
+    `declared_total - expected_total == signed_difference` holds exactly, because
+    each checked row's own difference is its declared less its expected. That
+    identity is the only reason a screen may draw a bridge between the two ends;
+    backend/tests/test_employer_xray.py asserts it.
+    """
+
+    rows: int
+    declared_total: Decimal
+    expected_total: Decimal
+    signed_difference: Decimal
+
+
+@dataclass(frozen=True)
 class EmployerCheck:
     findings: tuple[Finding, ...]
     rows_read: int
@@ -264,7 +302,10 @@ class EmployerCheck:
     exceptions: int
     refused: int
     total_difference: Decimal
-    by_reason: tuple[tuple[str, int], ...] = field(default=())
+    reasons: tuple[ReasonAggregate, ...] = field(default=())
+    totals: CheckedTotals = field(
+        default=CheckedTotals(0, Decimal(0), Decimal(0), Decimal(0))
+    )
 
 
 # ---------------------------------------------------------------- the parse
@@ -509,22 +550,308 @@ def check_csv(text: str) -> EmployerCheck:
         )
 
     findings = [check_row(row, i) for i, row in enumerate(reader, start=1)]
+    return _summarise(findings)
+
+
+def _summarise(findings: list[Finding]) -> EmployerCheck:
+    """The run's aggregates, computed once, here.
+
+    EVERY SUM THE SCREEN SHOWS IS ONE OF THESE. A chart that added up `findings`
+    in the browser would be a second source of truth about the same payroll, and
+    the two would agree right up until a filter, a sort or a rounding differed.
+    """
     exceptions = [f for f in findings if f.outcome is Outcome.EXCEPTION]
     refused = [f for f in findings if f.outcome is Outcome.REFUSED]
+    checked = [f for f in findings if f.outcome is not Outcome.REFUSED]
 
+    # rows and money per reason, in one pass over the rows that carry one.
     counts: dict[str, int] = {}
-    for f in exceptions + refused:
-        if f.reason is not None:
-            counts[f.reason.value] = counts.get(f.reason.value, 0) + 1
+    checked_rows: dict[str, int] = {}
+    money: dict[str, Decimal] = {}
+    for f in findings:
+        if f.reason is None:
+            continue
+        code = f.reason.value
+        counts[code] = counts.get(code, 0) + 1
+        checked_rows.setdefault(code, 0)
+        money.setdefault(code, Decimal(0))
+        if f.outcome is not Outcome.REFUSED:
+            checked_rows[code] += 1
+            money[code] += f.difference or Decimal(0)
+
+    reasons = tuple(
+        ReasonAggregate(code, counts[code], checked_rows[code], money[code])
+        for code in sorted(counts, key=lambda c: (-counts[c], c))
+    )
+
+    declared_total = sum((f.declared or Decimal(0) for f in checked), Decimal(0))
+    expected_total = sum((f.expected or Decimal(0) for f in checked), Decimal(0))
+    signed_difference = sum((f.difference or Decimal(0) for f in checked), Decimal(0))
 
     return EmployerCheck(
         findings=tuple(findings),
         rows_read=len(findings),
-        checked=len(findings) - len(refused),
+        checked=len(checked),
         exceptions=len(exceptions),
         refused=len(refused),
         # The sum of the differences on the rows that WERE checked. Refused rows
         # contribute nothing, because nothing was computed for them.
         total_difference=sum((f.difference or Decimal(0) for f in exceptions), Decimal(0)),
-        by_reason=tuple(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+        reasons=reasons,
+        totals=CheckedTotals(
+            rows=len(checked),
+            declared_total=declared_total,
+            expected_total=expected_total,
+            signed_difference=signed_difference,
+        ),
+    )
+
+
+# ============================================================ the second run
+#
+# An employer reads the X-ray, fixes what it found IN THEIR OWN PAYROLL SYSTEM,
+# and exports the file again. This is what happens next: the two runs compared,
+# row by row, so "nine of the eleven now match" is arithmetic rather than a
+# reading of two screens side by side.
+#
+# THE COMPARISON IS ON THE CPF ACCOUNT NUMBER AND NOTHING ELSE.
+#
+# It is the Employer Contribution Detail Record's own employee identifier - cols
+# 29-37, "First byte is either S or T and last byte is the check digit" - so
+# using it is reading the spec rather than inventing a key. Row number is NOT an
+# identity: an export may reorder, and a comparison keyed on position would
+# report a correction against whichever employee happened to land in that slot.
+# Name is not an identity either; the fictional roster alone has 300 rows and
+# 262 distinct names.
+#
+# A FILE WHOSE ROWS CANNOT BE IDENTIFIED IS REFUSED, WHOLE. There is no partial
+# answer worth giving here. Falling back to row order would produce a confident
+# comparison that is wrong about people, which is the exact failure this product
+# exists to find, committed by the product.
+
+
+class RecheckState(str, Enum):
+    """What happened to one employee between the two runs.
+
+    TEN STATES, EXHAUSTIVE AND DISJOINT over (before outcome, after outcome)
+    plus the two cases where a row is in only one file. Every pair maps to
+    exactly one of these, and tests/test_employer_recheck.py derives its cases
+    from the Outcome enum's own product rather than listing them.
+
+    THE DISTINCTIONS THAT MATTER, and why each is its own state rather than
+    folded into a neighbour:
+
+    - STILL_REFUSED is not STILL_MATCHED. Nothing was computed for that row in
+      either run. Calling it matched would report a check nobody performed.
+    - REMOVED is not RESOLVED. An employee who has left the payroll has not been
+      corrected; the difference recorded against them is unaccounted for, not
+      fixed.
+    - ADDED is not an exception the correction created. A new joiner's row was
+      never in the first file, so nothing about it changed.
+    - NEWLY_REFUSED is one state for both OK and EXCEPTION before it, because it
+      is one fact: this row could be checked and now cannot.
+    """
+
+    STILL_MATCHED = "STILL_MATCHED"
+    RESOLVED = "RESOLVED"
+    STILL_EXCEPTION = "STILL_EXCEPTION"
+    NEW_EXCEPTION = "NEW_EXCEPTION"
+    NEWLY_REFUSED = "NEWLY_REFUSED"
+    STILL_REFUSED = "STILL_REFUSED"
+    NEWLY_CHECKED_MATCHED = "NEWLY_CHECKED_MATCHED"
+    NEWLY_CHECKED_EXCEPTION = "NEWLY_CHECKED_EXCEPTION"
+    REMOVED = "REMOVED"
+    ADDED = "ADDED"
+
+
+def state_for(before: Outcome | None, after: Outcome | None) -> RecheckState:
+    """The one state a (before, after) pair has.
+
+    A total function over the pairs that can occur. `None` on either side means
+    the row is in only one of the two files.
+    """
+    if before is None and after is None:
+        raise ValueError("a row absent from both files is not a row")
+    if before is None:
+        return RecheckState.ADDED
+    if after is None:
+        return RecheckState.REMOVED
+    if after is Outcome.REFUSED:
+        return (
+            RecheckState.STILL_REFUSED
+            if before is Outcome.REFUSED
+            else RecheckState.NEWLY_REFUSED
+        )
+    if before is Outcome.REFUSED:
+        return (
+            RecheckState.NEWLY_CHECKED_MATCHED
+            if after is Outcome.OK
+            else RecheckState.NEWLY_CHECKED_EXCEPTION
+        )
+    if before is Outcome.OK:
+        return RecheckState.STILL_MATCHED if after is Outcome.OK else RecheckState.NEW_EXCEPTION
+    return RecheckState.RESOLVED if after is Outcome.OK else RecheckState.STILL_EXCEPTION
+
+
+@dataclass(frozen=True)
+class RecheckRow:
+    """One employee across both runs.
+
+    Both row numbers travel, because after a reorder they are different numbers
+    and a person holding the two files needs to find the row in each.
+    """
+
+    employee_account_no: str
+    employee_name: str
+    state: RecheckState
+    before_row_number: int | None
+    after_row_number: int | None
+    before_outcome: Outcome | None
+    after_outcome: Outcome | None
+    before_declared: Decimal | None
+    after_declared: Decimal | None
+    before_expected: Decimal | None
+    after_expected: Decimal | None
+    before_difference: Decimal | None
+    after_difference: Decimal | None
+    before_reason: Reason | None
+    after_reason: Reason | None
+    after_detail: str
+
+
+@dataclass(frozen=True)
+class EmployerRecheck:
+    """The two runs, and what moved between them.
+
+    FIVE MONEY FIELDS, NOT THREE, and the reason is the whole honesty of the
+    before/after headline:
+
+      `before_difference` and `after_difference` are each run's OWN total over
+      its OWN checked rows. They are the two figures the two X-rays show, so the
+      screen cannot contradict itself.
+
+      `after_difference - before_difference` is NOT the change. Whenever a row
+      was refused in one run and checked in the other, that subtraction is a
+      difference between sums over two different sets of rows, and it attributes
+      that row's whole contribution to a correction that never touched it.
+
+      So the change is computed over `rows_checked_in_both` and reported as
+      `both_before`, `both_after` and `both_change`, which balance exactly:
+      `both_change == both_after - both_before`.
+    """
+
+    rows: tuple[RecheckRow, ...]
+    before_summary: EmployerCheck
+    after_summary: EmployerCheck
+    counts: dict[str, int]
+
+    before_difference: Decimal
+    after_difference: Decimal
+
+    rows_checked_in_both: int
+    both_before: Decimal
+    both_after: Decimal
+    both_change: Decimal
+
+
+def _index(check: EmployerCheck, which: str) -> dict[str, Finding]:
+    """Findings by CPF account number, or a refusal naming which file is at fault.
+
+    THE REFUSAL IS THE FEATURE. A blank or repeated identifier means the rows of
+    that file cannot be told apart, and every alternative to refusing - pairing
+    by position, taking the first, dropping the duplicate - produces a
+    comparison that is confidently wrong about a named person.
+    """
+    out: dict[str, Finding] = {}
+    for f in check.findings:
+        account = f.employee_account_no.strip()
+        if not account:
+            raise ValueError(
+                f"row {f.row_number} of the {which} file has no employee_account_no, so it "
+                f"cannot be matched to a row in the other file. The comparison needs the "
+                f"CPF account number the Employer Contribution Detail Record already carries "
+                f"(cols 29-37); FairSlip will not compare rows by position, because a payroll "
+                f"export may reorder them."
+            )
+        if account in out:
+            raise ValueError(
+                f"the {which} file uses the employee_account_no {account!r} on rows "
+                f"{out[account].row_number} and {f.row_number}. An account number identifies "
+                f"one CPF member, so FairSlip cannot tell which of those two rows the other "
+                f"file's row belongs to, and will not guess."
+            )
+        out[account] = f
+    return out
+
+
+def recheck(before: EmployerCheck, after: EmployerCheck) -> EmployerRecheck:
+    """Two runs of the same payroll, compared on the identity the spec provides."""
+    first = _index(before, "first (original)")
+    second = _index(after, "second (corrected)")
+
+    rows: list[RecheckRow] = []
+    for account in list(first) + [a for a in second if a not in first]:
+        b = first.get(account)
+        a = second.get(account)
+        held = a or b
+        assert held is not None  # one of the two dicts produced this key
+        rows.append(
+            RecheckRow(
+                employee_account_no=account,
+                # The LATER file's name, because it is the one the employer is
+                # holding. Falls back to the earlier one for a row that left.
+                employee_name=held.employee_name,
+                state=state_for(b.outcome if b else None, a.outcome if a else None),
+                before_row_number=b.row_number if b else None,
+                after_row_number=a.row_number if a else None,
+                before_outcome=b.outcome if b else None,
+                after_outcome=a.outcome if a else None,
+                before_declared=b.declared if b else None,
+                after_declared=a.declared if a else None,
+                before_expected=b.expected if b else None,
+                after_expected=a.expected if a else None,
+                before_difference=b.difference if b else None,
+                after_difference=a.difference if a else None,
+                before_reason=b.reason if b else None,
+                after_reason=a.reason if a else None,
+                after_detail=a.detail if a else "",
+            )
+        )
+
+    # Every state present, including the empty ones: a category missing from the
+    # map renders as nothing rather than as zero, and "0 new exceptions" is a
+    # finding an employer wants to read.
+    counts = {s.value: 0 for s in RecheckState}
+    for r in rows:
+        counts[r.state.value] += 1
+
+    comparable = [r for r in rows if _checked_in_both(r)]
+    both_before = sum((r.before_difference or Decimal(0) for r in comparable), Decimal(0))
+    both_after = sum((r.after_difference or Decimal(0) for r in comparable), Decimal(0))
+
+    return EmployerRecheck(
+        rows=tuple(rows),
+        before_summary=before,
+        after_summary=after,
+        counts=counts,
+        before_difference=before.totals.signed_difference,
+        after_difference=after.totals.signed_difference,
+        rows_checked_in_both=len(comparable),
+        both_before=both_before,
+        both_after=both_after,
+        both_change=both_after - both_before,
+    )
+
+
+def _checked_in_both(r: RecheckRow) -> bool:
+    """Present in both files AND computed in both runs.
+
+    This is the set the change in money is measured over. A row refused in
+    either run was never computed there, so it has no amount to move.
+    """
+    return (
+        r.before_outcome is not None
+        and r.after_outcome is not None
+        and r.before_outcome is not Outcome.REFUSED
+        and r.after_outcome is not Outcome.REFUSED
     )

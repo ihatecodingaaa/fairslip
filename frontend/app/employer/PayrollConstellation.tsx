@@ -33,24 +33,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { EmployerFinding } from "@/lib/api";
 import { T, useT } from "../ui/Prefs";
-
-/** The three outcomes, and the mark each gets. Keyed by the union the API
- * publishes, so a fourth outcome does not compile until it has a shape. */
-const MARK: Record<EmployerFinding["outcome"], { path: React.ReactNode; word: "employer.matched" | "employer.exception" | "employer.notChecked" }> = {
-  // A filled disc: checked, and it agreed.
-  OK: { path: <circle cx="8" cy="8" r="4.4" />, word: "employer.matched" },
-  // A triangle - the only angular silhouette, as everywhere else in this product.
-  EXCEPTION: { path: <path d="M8 2.6l5.6 10.2H2.4z" />, word: "employer.exception" },
-  // A HOLLOW diamond. Open on purpose: nothing was established about this row,
-  // and a filled mark would read as a finding.
-  REFUSED: { path: <path d="M8 2.4L13.6 8 8 13.6 2.4 8z" />, word: "employer.notChecked" },
-};
-
-const FILL: Record<EmployerFinding["outcome"], string> = {
-  OK: "fill-ink-3",
-  EXCEPTION: "fill-attention-fg",
-  REFUSED: "fill-surface stroke-ink-2",
-};
+// ONE DEFINITION OF THE GLYPHS, shared with the recheck grids and the
+// transition summary. Two copies would eventually disagree, and a recheck
+// whose "after" triangle means something other than its "before" one is a
+// comparison between two vocabularies.
+import { FILL, MARK } from "./outcomeMark";
 
 export function PayrollConstellation({
   findings,
@@ -89,7 +76,12 @@ export function PayrollConstellation({
     // the container actually fits at this width and text size.
     const measure = () => {
       const width = el.clientWidth;
-      const per = 22; // one mark plus its gap, in px
+      // One mark plus its gap: a 20px mark on an 8px gap. The marks grew from
+      // 16px when the grid moved into a 70%-width canvas - at the old 22px pitch
+      // a 1100px row was fifty columns of pinheads, which is a texture rather
+      // than a picture. 28 is 20 + gap-2, and gap-2 is what the spacing grid
+      // allows: test_design_tokens.py rejected the 6px gap this first used.
+      const per = 28;
       setColumns(Math.max(4, Math.floor(width / per)));
     };
     measure();
@@ -113,7 +105,7 @@ export function PayrollConstellation({
         aria-label={t("employer.constellation")}
         aria-rowcount={Math.ceil(findings.length / columns)}
         aria-colcount={columns}
-        className="flex flex-wrap gap-1"
+        className="flex flex-wrap gap-2"
         onKeyDown={(e) => {
           const step: Record<string, number> = {
             ArrowRight: 1,
@@ -158,14 +150,22 @@ export function PayrollConstellation({
                  in the ink colour, drawn OUTSIDE the mark so it does not touch
                  the shape, is legible at a glance and costs no layout: the
                  element keeps its size and only its outline changes. */
-              className={`rounded-full ${
-                isSelected ? "outline outline-2 outline-offset-1 outline-ink" : ""
+              className={`mark-in rounded-full ${
+                isSelected
+                  ? "outline outline-[3px] outline-offset-2 outline-ink"
+                  : ""
               }`}
+              /* THE STAGGER IS A READING ORDER, NOT A PROGRESS BAR. The result
+                 is already in hand when the first mark is drawn - see the
+                 keyframe's note in globals.css. Capped so the last mark of a
+                 three-hundred-row file lands well inside half a second, and
+                 collapsed entirely under prefers-reduced-motion. */
+              style={{ animationDelay: `${Math.min(i * 1.6, 420)}ms` }}
             >
               <svg
                 viewBox="0 0 16 16"
                 aria-hidden
-                className={`h-4 w-4 ${dim ? "text-ink-3" : ""}`}
+                className={`h-5 w-5 ${dim ? "text-ink-3" : ""}`}
                 fill="none"
                 stroke="none"
               >

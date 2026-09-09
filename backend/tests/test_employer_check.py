@@ -76,9 +76,10 @@ def test_each_seeded_kind_of_error_was_caught_as_that_kind(result, reason: str, 
 
 
 def test_the_reason_breakdown_covers_every_exception_and_refusal(result) -> None:
-    """The chart on the screen is drawn from by_reason. If it did not sum to the
-    findings, the bars would be a picture of a subset."""
-    assert sum(n for _, n in result.by_reason) == result.exceptions + result.refused
+    """The bars on the screen are drawn from `reasons`. If they did not sum to the
+    findings, the picture would be of a subset. The money behind each of them is
+    held separately, in test_employer_xray.py."""
+    assert sum(a.count for a in result.reasons) == result.exceptions + result.refused
 
 
 def test_no_correct_row_was_reported_as_an_exception(result) -> None:
