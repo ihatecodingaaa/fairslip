@@ -105,21 +105,14 @@ export function EventTimeline({
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h3 className="text-title font-semibold tracking-tight text-ink">
-          {employee.name}
-          <span className="ml-3 font-mono text-meta font-normal text-ink-3">
-            {employee.employee_id}
-          </span>
-        </h3>
-        <p className="text-meta text-ink-3">
-          {events.length} recorded changes, left. What payroll did with each one, right.
-        </p>
-      </div>
+      <p className="text-meta text-ink-3">
+        <span className="font-mono tabular-nums">{events.length}</span> recorded changes, left.
+        What payroll did with each one, right.
+      </p>
 
       {/* The rail. One border down the left, and the dots sit on it. It darkens
           for the last stretch, which is the only run of it with a deadline. */}
-      <div className="mt-6">
+      <div className="mt-4">
         <ol className="border-l-2 border-line-strong">
           {events.map((event) => (
             <TimelineRow
@@ -180,15 +173,18 @@ function TimelineRow({
             <span className="text-meta text-ink-3">{EVENT_LABEL[event.event_type]}</span>
           </span>
           <span className="mt-1 text-body font-medium text-ink">{event.description}</span>
-          <span className="mt-1 text-meta text-ink-3">
-            {SOURCE_LABEL[event.source.system]}
-            {event.source.row !== null ? `, row ${event.source.row}` : ""}
-            {event.approval_state === "APPROVED"
-              ? ". Approved."
-              : event.approval_state === "PENDING"
-                ? ". No approval recorded."
-                : ""}
-          </span>
+          {/* THE SOURCE LINE APPEARS WHERE IT CHANGES THE ANSWER. Which file a
+              row came from is in the inspector for every event and on the
+              finding's own Evidence fold; repeating it under all eight rows is
+              a texture a reader learns to skip. What stays here is the one
+              thing that can contradict the row above it: whether anybody
+              approved it. */}
+          {event.approval_state !== "APPROVED" && (
+            <span className="mt-1 text-meta text-ink-3">
+              {SOURCE_LABEL[event.source.system]}
+              {event.approval_state === "PENDING" ? ". No approval recorded." : ""}
+            </span>
+          )}
         </span>
 
         {/* The crossing */}

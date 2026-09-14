@@ -58,14 +58,51 @@ FRONTEND = REPO / "frontend"
 LIB = FRONTEND / "lib" / "concept-preflight"
 APP = FRONTEND / "app" / "concept" / "preflight"
 RULE_DERIVED_TS = LIB / "ruleDerived.ts"
+COPILOT_ROUTE = FRONTEND / "app" / "api" / "concept" / "preflight" / "copilot"
 
 
 def concept_sources() -> list[Path]:
     """Every file the concept owns. Both halves, because the copy rules and the
-    no-network rule apply to the data as much as to the screens."""
-    files = sorted(LIB.rglob("*.ts")) + sorted(APP.rglob("*.tsx")) + sorted(LIB.rglob("*.mjs"))
+    network rules apply to the data as much as to the screens.
+
+    THE ROUTE IS IN HERE TOO. The Brief's endpoint lives outside app/concept/
+    because Next resolves API routes by path, and a file that reads a
+    credential is the last one that should sit outside the scans."""
+    files = (
+        sorted(LIB.rglob("*.ts"))
+        + sorted(APP.rglob("*.tsx"))
+        + sorted(LIB.rglob("*.mjs"))
+        + sorted(COPILOT_ROUTE.rglob("*.ts"))
+    )
     assert files, "no concept sources found; every scan below would pass by examining nothing"
     return files
+
+
+# The three files that are allowed to reach the network, named rather than
+# pattern-matched: the point of the list is that it is short and that adding to
+# it is a deliberate act somebody reviews.
+BRIEF_FILES = {
+    "lib/concept-preflight/copilotServer.ts",
+    "app/concept/preflight/FairSlipBrief.tsx",
+    "app/api/concept/preflight/copilot/route.ts",
+}
+
+
+def deterministic_sources() -> list[Path]:
+    """The concept minus the Brief: everything that must work with no network,
+    no key and no provider. It is the whole product except one button.
+
+    TEST FILES ARE EXCLUDED HERE AND NOWHERE ELSE. They run under node, ship to
+    no browser, and the Brief's own suite has to unset an environment variable
+    to prove the no-key path works. That they stay OFF the network is asserted
+    separately, in test_only_the_brief_reaches_the_network_and_nothing_else_does.
+    """
+    return [
+        p
+        for p in concept_sources()
+        if p.relative_to(FRONTEND).as_posix() not in BRIEF_FILES
+        and not p.name.endswith(".test.ts")
+    ]
 
 
 def _blank(match: re.Match[str]) -> str:
@@ -113,9 +150,33 @@ def strip_authority_quotes(src: str) -> str:
     return _QUOTE_FIELD.sub(_blank, src)
 
 
+# The FORBIDDEN_WORDS table in lib/concept-preflight/copilot.ts: the list the
+# Brief's own output guard checks against.
+_GUARD_TABLE = re.compile(
+    r"export const FORBIDDEN_WORDS = \[.*?\] as const;", re.DOTALL
+)
+
+
+def strip_guard_table(src: str) -> str:
+    """Take out the list of words the Brief refuses to print.
+
+    THE SAME CARVE-OUT AS THE AUTHORITY QUOTES, FOR THE SAME REASON. A guard has
+    to name what it forbids. copilot.ts declares the words so that
+    `findForbiddenWord` can refuse an answer containing one, and a copy scan
+    that failed on the guard would be a scan that made the guard impossible to
+    write. The carve-out is one array literal wide, and
+    test_the_briefs_guard_still_names_the_words_it_refuses asserts the table is
+    still there and still complete - so deleting the guard to pass this scan
+    fails a different test.
+    """
+    return _GUARD_TABLE.sub(_blank, src)
+
+
 def scannable(path: Path) -> str:
     """One file, with the prose about it and the authorities' own words removed."""
-    return strip_authority_quotes(strip_comments(path.read_text(encoding="utf-8")))
+    return strip_guard_table(
+        strip_authority_quotes(strip_comments(path.read_text(encoding="utf-8")))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +578,14 @@ def test_the_concept_never_says(word: str) -> None:
     # positive is a test people learn to route around.
     pattern = re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
     hits = []
-    for path in concept_sources():
+    # TEST FILES ARE EXCLUDED FROM THE COPY SCAN AND FROM NOTHING ELSE IN
+    # THIS MODULE. This rule is about what the concept SAYS to a reader, and
+    # a suite renders nothing to anybody; the tests that prove the Brief
+    # refuses "underpaid" have to write "underpaid" to do it, the same way
+    # this module has to contain an em dash in order to look for one.
+    scanned = [p for p in concept_sources() if not p.name.endswith(".test.ts")]
+    assert len(scanned) >= 10, "the copy scan is not reaching the concept"
+    for path in scanned:
         for n, text in enumerate(scannable(path).splitlines(), 1):
             if pattern.search(text):
                 hits.append(f"{path.relative_to(REPO)}:{n}: {text.strip()[:90]}")
@@ -577,12 +645,19 @@ def test_the_concept_declares_what_it_is_in_two_claims_that_stay_on_screen() -> 
         assert phrase in flat, f"the footer disclosure lost {phrase!r}"
 
 
-def test_the_concept_makes_no_network_call_of_any_kind() -> None:
-    """No API, no model, no telemetry, no font from a third party.
+def test_the_deterministic_concept_makes_no_network_call() -> None:
+    """Everything except one button works with no network and no key.
 
-    The brief's strongest constraint and the easiest to violate by habit. A
-    prototype that quietly called something would be a prototype that cannot be
-    shown on a laptop with no network, which is where prototypes get shown.
+    THIS TEST USED TO COVER THE WHOLE CONCEPT AND SAID SO, and that stopped
+    being true the day the FairSlip Brief was added. Weakening the assertion to
+    cover the new files would have quietly retired the strongest constraint on
+    this prototype; deleting it would have retired it loudly. So it is scoped
+    instead: the deterministic product - every count, every rule figure, every
+    screen, the whole workforce map - still reaches nothing, and the three files
+    that do are named in BRIEF_FILES and held to their own test below.
+
+    A prototype that cannot be shown on a laptop with no network is a prototype
+    that cannot be shown, and that is still true of everything this covers.
     """
     banned = (
         "fetch(",
@@ -595,13 +670,115 @@ def test_the_concept_makes_no_network_call_of_any_kind() -> None:
         "localStorage",
         "sessionStorage",
     )
+    scanned = deterministic_sources()
+    assert len(scanned) >= 10, "the scan is not reaching the concept"
     hits = []
-    for path in concept_sources():
+    for path in scanned:
         for n, text in enumerate(scannable(path).splitlines(), 1):
             for token in banned:
                 if token in text:
                     hits.append(f"{path.relative_to(REPO)}:{n}: {token}")
     assert not hits, f"the concept reaches outside the page: {hits}"
+
+
+def test_only_the_brief_reaches_the_network_and_nothing_else_does() -> None:
+    """The three files that may call out, and the two places they may call to.
+
+    BROWSER SIDE, one same-origin path on this app. SERVER SIDE, one provider
+    endpoint. Nothing else, from anywhere - no telemetry, no third-party font,
+    no analytics, and no second provider quietly added later.
+    """
+    for name in BRIEF_FILES:
+        assert (FRONTEND / name).exists(), f"{name} is named as a Brief file and is not there"
+
+    allowed = {
+        "/api/concept/preflight/copilot",  # this app, same origin
+        "https://api.anthropic.com/v1/messages",  # the provider
+    }
+    found = set()
+    for name in BRIEF_FILES:
+        src = scannable(FRONTEND / name)
+        for url in re.findall(r'"(https?://[^"]+|/api/[^"]+)"', src):
+            found.add(url)
+    assert found <= allowed, f"the Brief reaches somewhere new: {sorted(found - allowed)}"
+    assert found == allowed, f"a destination went missing: {sorted(allowed - found)}"
+
+    # The suites stay offline. They are excluded from the deterministic scan so
+    # that the Brief's own tests can set an environment variable; that exemption
+    # is not a licence to call anything.
+    for path in concept_sources():
+        if not path.name.endswith(".test.ts"):
+            continue
+        src = scannable(path)
+        for token in ("fetch(", "XMLHttpRequest", "axios", "navigator.sendBeacon"):
+            assert token not in src, f"{path.relative_to(REPO)} calls {token} in a test"
+
+    # And no browser storage anywhere in the concept, Brief included: nothing
+    # here is allowed to remember a reader between visits.
+    for path in concept_sources():
+        src = scannable(path)
+        for token in ("localStorage", "sessionStorage", "document.cookie"):
+            assert token not in src, f"{path.relative_to(REPO)} uses {token}"
+
+
+def test_no_credential_can_reach_the_browser() -> None:
+    """The key is read on the server, and the browser learns one boolean.
+
+    THREE SEPARATE WAYS THIS COULD GO WRONG, all checked. A NEXT_PUBLIC_ name
+    would ship the value into the bundle. Reading process.env inside a "use
+    client" file would do the same. And logging it would put it in a place
+    nobody is watching.
+    """
+    for path in concept_sources():
+        src = scannable(path)
+        rel = path.relative_to(REPO)
+        assert "NEXT_PUBLIC" not in src, f"{rel} declares a public environment name"
+
+        if 'process.env' in src:
+            assert '"use client"' not in src, f"{rel} reads the environment in a client component"
+
+        # The value, never the name: `process.env.ANTHROPIC_API_KEY` beside a
+        # console call is the one line that turns a secret into a log.
+        for n, text in enumerate(src.splitlines(), 1):
+            if "ANTHROPIC_API_KEY" in text:
+                assert "console." not in text, f"{rel}:{n} logs the credential"
+
+    # The server reads it in exactly one module, so there is one place to audit.
+    readers = [
+        p.relative_to(FRONTEND).as_posix()
+        for p in concept_sources()
+        if "ANTHROPIC_API_KEY" in scannable(p) and not p.name.endswith(".test.ts")
+    ]
+    assert readers == ["lib/concept-preflight/copilotServer.ts"], readers
+
+
+def test_the_briefs_guard_still_names_the_words_it_refuses() -> None:
+    """The carve-out in strip_guard_table() is safe only while this passes.
+
+    The copy scan skips the FORBIDDEN_WORDS array so that the guard can name
+    what it forbids. That carve-out would also hide a guard somebody had
+    emptied, so the table is asserted here instead: it exists, and it still
+    covers every word about pay that this product refuses to say.
+    """
+    src = (LIB / "copilot.ts").read_text(encoding="utf-8")
+    table = re.search(r"export const FORBIDDEN_WORDS = \[(.*?)\] as const;", src, re.DOTALL)
+    assert table, "the Brief's output guard has no word list"
+    listed = set(re.findall(r'"([^"]+)"', table.group(1)))
+
+    # The words about somebody's pay. The backend list also carries words about
+    # the SYSTEM - "autonomous", "orchestration" - which a model answering about
+    # a payroll month has no occasion to use and which the copy scan already
+    # holds every file to, this one included.
+    about_pay = {
+        "underpaid", "owed", "breach", "illegal", "entitled to", "must pay",
+        "fraud", "compliant", "certified", "guaranteed",
+    }
+    assert about_pay <= listed, f"the guard no longer refuses {sorted(about_pay - listed)}"
+
+    # And it refuses the two this concept adds for itself: a claim the
+    # arithmetic has not closed, and a saving nobody measured.
+    assert "resolved" in listed
+    assert "saved money" in listed
 
 
 def test_the_concept_reads_no_clock() -> None:

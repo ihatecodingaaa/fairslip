@@ -155,3 +155,22 @@ export function signOf(m: Money): -1 | 0 | 1 {
 export function sameToTheCent(a: Money, b: Money): boolean {
   return toCents(parse(a.exact)) === toCents(parse(b.exact));
 }
+
+/**
+ * Which of two amounts is larger, exactly. -1, 0 or 1, in Array.sort's own
+ * vocabulary.
+ *
+ * ORDERING IS NOT A FIGURE. This decides which row of a list comes first; it
+ * never reaches a text position, and nothing it returns is rendered. That is
+ * the same line decimal.ts already draws for aggregation, and the same one
+ * WhatChanged.tsx draws when it turns a delta into a bar length.
+ *
+ * IT IS EXACT, AND THAT MATTERS HERE. The two rest-day differences in this
+ * fixture agree to seven decimal places before they part. Comparing them as
+ * doubles would order them on a tail a double does not hold, which is a
+ * different list on a different machine.
+ */
+export function compare(a: Money, b: Money): -1 | 0 | 1 {
+  const [x, y] = align(parse(a.exact), parse(b.exact));
+  return x < y ? -1 : x > y ? 1 : 0;
+}

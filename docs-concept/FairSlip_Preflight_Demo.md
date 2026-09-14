@@ -1,6 +1,6 @@
 # FairSlip Preflight: the talk track
 
-Two to three minutes. Route: `/concept/preflight`.
+Three minutes. Route: `/concept/preflight`.
 
 **Before you start.** Open the demo panel, bottom right, and check the scenario is
 **Needs review**. Everything below is reachable from the **Show** buttons in that panel, so you
@@ -10,33 +10,40 @@ Say, once, at the top: *this is a concept and the company is invented.* The ambe
 too and stays on screen, but say it anyway. Nothing in the next three minutes is worth the
 misunderstanding.
 
+**One thing to check before the room.** Press **Brief me** on the overview. If it answers, the
+provider key is configured where you are showing from and Part 4 works. If it says the Brief is
+unavailable, skip Part 4 and say so in one sentence: the Copilot is not wired up in this preview.
+Do not describe what it would have said. That is the whole discipline of this product applied to
+the demo of it.
+
 ---
 
-## 1. What it is not (15 seconds)
+## Part 1: where this came from (20 seconds)
 
-> "This is not another HR system, and it is not a payroll system. It does not record anything and
-> it does not pay anyone."
+> "FairSlip started by helping one worker understand whether their pay added up. They photograph
+> a payslip, we reconstruct what MOM's published rules give for their month, and every dollar on
+> the screen says where it came from."
 
-Do not open with the product. Open with what it is not, because the first thing a payroll person
-does with a new tool is work out which of their existing tools it is trying to replace, and the
-answer here is none of them.
+That is the product on `/check`, and it is the half that already exists.
 
-## 2. The gap (20 seconds)
+## Part 2: what we are not trying to do (20 seconds)
 
-> "Your HR system already knows that someone took leave, worked a rest day, joined on the 22nd or
-> turned 55 last month. Your payroll system already calculates what gets paid. The question nobody
-> owns is whether each of those events became the right outcome in payroll."
+> "But companies already have HR systems and they already have payroll systems. We are not trying
+> to replace either of them, and if that is what you hear in the next two minutes, stop me."
 
-**Show: Overview.** Point at the workforce-changes strip.
+Open with what it is not. The first thing a payroll person does with a new tool is work out which
+of their existing tools it is trying to replace, and the answer here is none of them.
 
-> "One hundred and sixty-five recorded changes in September, in three systems the company already
-> runs. That is not news to anyone here. What happens to them is."
+## Part 3: the gap (25 seconds)
 
-## 3. The preflight (30 seconds)
+> "Your HR system knows someone worked a rest day, took unpaid leave, joined on the 22nd or turned
+> 55 last month. Your payroll system calculates what gets paid. The question nobody owns is the
+> handoff between them."
 
-Still on the overview.
+**Show: Overview.**
 
-> "Two hundred and eighty-two ready. Eleven need review. Seven were not checked."
+> "This is the day before payroll closes. Two hundred and eighty-two of three hundred are ready.
+> Eleven need a person. Seven were not checked."
 
 Then stop on the third number, because it is the one nobody else shows:
 
@@ -45,74 +52,79 @@ Then stop on the third number, because it is the one nobody else shows:
 > are not in the two hundred and eighty-two. If we folded them into 'ready' the headline would be
 > bigger and it would be a claim about rows nobody looked at."
 
-And the money, if they ask:
+Point at the money, which is two figures and never one:
 
-> "A hundred and fifty-five dollars fifty below the published rules, six hundred and forty-four
-> above them. Two directions, never netted. And seven of the eleven findings carry no amount at
-> all, because no rule pack covers the figure. Those are real findings and they are not worth zero
-> dollars."
+> "A hundred and fifty-five fifty below the published rules, six hundred and forty-four above
+> them. Two directions, never netted. And seven of the eleven findings carry no amount at all,
+> because no rule pack covers the figure. Those are real findings and they are not worth zero."
 
-## 4. One person (45 seconds)
+## Part 4: the Brief (25 seconds)
 
-**Show: Rest-day case.**
+Press **Brief me**.
 
-> "Mei Ling Tan, service crew. Eight recorded changes in September. On the left, what the company's
-> systems recorded. On the right, what payroll did with each one."
+> "FairSlip's engine has already done the checking and has already decided the order to work
+> these in - that is code, and it is tested. What the Copilot does is read that result and tell a
+> payroll team why the top three are the top three."
 
-Run your finger down the right-hand column: matched, matched, not checked, matched, **needs
-review**.
+Let it answer, then point at a card:
 
-> "Fourteenth of September, she worked eight hours on a scheduled rest day. It reached the
-> register. MOM's rest-day table gives two days' salary when more than half the normal daily hours
-> are worked at the employer's request. The register states one."
+> "The sentence came from a model. The name, the status and the figure beside it did not - those
+> are drawn from the finding. The model is never given an amount, and if it writes one the answer
+> is thrown away rather than shown to you."
 
-Open **How this was worked out** in the inspector.
+If anyone asks whether it can change anything:
 
-> "That is the engine, its formula, every fact it used and where each one was read, and MOM's own
-> sentence with the date we last read the page. Not a confidence score. There isn't one."
+> "It has seven tools and all seven are reads. There is no write tool to disable."
 
-If you have a moment, point at the medical certificate row:
+## Part 5: one person (40 seconds)
 
-> "This one we did not check, and it says so. Sick-leave pay is not in our rule packs. We do not
-> assume it is right."
+**Show: Rest-day case**, or press **Review** on Mei Ling.
 
-## 5. Why the pay moved (30 seconds)
+> "Mei Ling Tan, service crew, Harbour Point. Fourteenth of September, she worked eight hours on a
+> scheduled rest day."
 
-**Lens: What changed.**
+Run a finger across the four boxes:
 
-> "August, seventeen ninety-two. September, seventeen oh four. Down eighty-seven fifty."
+> "What happened. What payroll says: eighty seventy-seven. What MOM's rest-day table gives: a
+> hundred and sixty-one fifty-four. The difference."
 
-> "Six lines, and they add up to that exactly. Overtime agrees with MOM's rate. The rest-day
-> premium differs from it. The no-pay-leave line and the allowance have no published rule behind
-> them, so we do not tell you they are right."
+> "MOM's table gives two days' salary when more than half the normal daily hours are worked at the
+> employer's request. The register states one."
 
-This is the screen that works for both audiences. Say so:
+## Part 6: the evidence, briefly (20 seconds)
 
-> "That is the screen a payroll officer uses to explain a month, and it is the screen you would
-> show the employee who asks why their pay is different. Same six rows."
+Open **Calculation**, then **Published rule**.
 
-## 6. The boundary (20 seconds)
+> "The engine, its formula, every fact it used, and MOM's own sentence with the date we last read
+> the page. Not a confidence score. There isn't one."
 
-**Lens: Findings.** Press **Prepare correction**.
+Close them again.
+
+> "That is four clicks away rather than in your face, and that is the only thing that changed
+> about it. Every figure still has a source."
+
+## Part 7: the boundary (25 seconds)
+
+Press **Prepare correction**.
 
 > "Eighty seventy-seven becomes a hundred and sixty-one fifty-four."
 
 Then read the line under it, out loud, because it is the product:
 
-> "FairSlip will not change payroll. You review it in your system, you make the change there, then
-> you recheck it here."
+> "FairSlip will not change payroll. You make the correction in your system, then you recheck it
+> here."
 
-Point at the disabled button.
+Point at the four steps, and then at the disabled button.
 
 > "That one does nothing. There is no integration and we are not going to draw one that does not
 > exist."
 
-## 7. The recheck (30 seconds)
+## Part 8: the recheck (35 seconds)
 
 **Show: Recheck.**
 
-> "They fixed nine. Two still stand. Seven still could not be checked. And one row that matched the
-> first time does not any more."
+> "Eleven needed review. Three remain. They fixed nine, two still stand, seven still could not be
+> checked - and one row that matched the first time does not any more."
 
 Let that land, then explain it:
 
@@ -122,22 +134,34 @@ Let that land, then explain it:
 
 Do not say the word "saved". We did not measure that.
 
-## 8. The close (10 seconds)
+## Part 9: the close (15 seconds)
 
-> "FairSlip does not run payroll. It independently checks the handoff into payroll."
+> "We are not building another HR system and we are not building payroll. We are exploring
+> FairSlip as the independent control between what happened at work and what got paid."
+
+Then hand it over:
+
+> "Which part of this does not match how companies actually work?"
 
 ---
 
-## What to have ready if they push
+## If they push
 
 - **"Where does the data come from?"** Exports. Six CSVs, from systems they already have. No API
   in this concept and no API in a first pilot either.
-- **"Is this AI?"** No. Not in this concept. Code applies published rules, a person approves, the
-  payroll system executes, FairSlip rechecks. The reading of messy documents is the other half of
-  the product, on `/check`, and it is not what this screen is about.
+- **"Is this AI?"** The checking is not. Code applies published rules, a person approves, the
+  payroll system executes, FairSlip rechecks. The Brief is a model, it runs after all of that, it
+  reads findings the engines established, and it cannot state a figure or change an order. The
+  reading of messy documents is the other half of the product, on `/check`.
+- **"So what happens if the model is wrong?"** You get a worse sentence. You do not get a worse
+  number, because it was never given the numbers and the screen draws them itself. Turn the Brief
+  off and every count on the page is unchanged.
 - **"How do I know the numbers are right?"** They come from the same engines as the live product,
   and the test suite recomputes every one of them from the engines on every run. If someone
   hand-edits a digit the build goes red.
+- **"Who decides what I look at first?"** A function in the code, and you can read it. Largest
+  computed difference first, then the employment-record findings, then the findings no amount was
+  computed for, then the rows nothing was computed for at all. Tests assert that order.
 - **"What about my case?"** Almost certainly not covered. Say so. The seven not-checked rows are
   the honest answer to this question and they are already on the screen.
 
@@ -145,31 +169,55 @@ Do not say the word "saved". We did not measure that.
 
 ## Questions to ask Haojun after showing it
 
-The point of the meeting is these, not the demo. Ask them in roughly this order and write down the
-answers verbatim.
+The point of the meeting is these, not the demo. Ask them in roughly this order and write down
+the answers verbatim.
 
-1. **Which part of this is unrealistic?** Open-ended, first, before he has calibrated to what you
-   want to hear.
-2. **Where would the data actually come from, in a company this size?** Which system, who exports
-   it, how often, and what state is it in when it arrives.
-3. **Who owns this problem today?** A person, a team, or nobody. If nobody, is that because it
-   does not hurt or because nobody has been given it.
-4. **Which of these findings happens most in a real month?** The rest-day rate, the missing
-   overtime hours, the leaver still in the CPF file, the missed age band, the ceiling.
-5. **Which of them almost never happens?** Equally important, and he will answer it faster.
-6. **What does a payroll team do today when they find one of these?** Before payday and after.
-7. **Would a report like this be useful or annoying the day before payroll closes?** Push on
-   annoying: what would make it annoying.
-8. **Who would care enough to pay for it, and out of whose budget?** Payroll, HR, finance,
-   internal audit, or the outsourced payroll provider.
-9. **What would you never let a tool like this do automatically?** He will draw the control
+**About the workflow**
+
+1. **Which part of this workflow is unrealistic?** Open-ended, first, before he has calibrated to
+   what you want to hear.
+2. **Where would these exports actually come from** in companies you have worked with? Which
+   system, who exports them, how often, and what state are they in when they arrive.
+3. **Who owns the final pre-payday check today?** A person, a team, or nobody. If nobody, is that
+   because it does not hurt or because nobody has been given it.
+
+**About the findings**
+
+4. **Which of these findings happens often?** The rest-day rate, the missing overtime hours, the
+   leaver still in the CPF file, the missed age band, the ceiling.
+5. **Which almost never happens?** Equally important, and he will answer it faster.
+6. **Would this feel useful, or like another annoying checker?** Push on annoying: what exactly
+   would make it annoying the day before payroll closes.
+
+**About who it is for**
+
+7. **Who would actually use it?** Payroll officer, HR, finance, internal audit, the outsourced
+   bureau.
+8. **Who might pay for it, and out of whose budget?**
+9. **What would you never allow this system to do automatically?** He will draw the control
    boundary himself. Compare it with the one on the screen.
-10. **What would make you trust a number on this screen?** Then ask what would make him distrust
-    one, which is usually the more useful answer.
+
+**About the two new things**
+
+10. **Does the FairSlip Brief help, or would payroll operators rather work straight from the
+    findings list?** This is the one we are least sure about. A wrong answer here costs us a
+    feature, not a product.
+11. **Is grouping people by location useful, or do payroll teams think in department, cost centre
+    or legal entity?** The map groups by site today and can group by either.
+12. **Would a payroll bureau find this more useful than an employer?** A bureau runs many
+    companies' payroll and carries the risk of getting it wrong for all of them.
+
+**About trust**
+
+13. **What would make you trust one of FairSlip's findings?**
+14. **What would immediately make you distrust it?** Usually the more useful answer.
+15. **If this existed, what manual task would you hope to stop doing?** If the answer is
+    "nothing", the product is a vitamin.
 
 Two more if the conversation is going well:
 
 - **Does "not checked" help or hurt?** It is the thing we are least sure about commercially and
   most sure about ethically.
-- **If this existed and worked, what would you stop doing?** If the answer is "nothing", the
-  product is a vitamin.
+- **What would you want it to do the moment it finds something, if anything?** The agent ladder in
+  the worker-facing product goes draft, send on a tap, track, verify, prepare escalation. None of
+  that exists on the employer side and we have not decided that it should.

@@ -27,14 +27,26 @@ hands the differences to a person. It never writes to a payroll system.
 - **Nothing is connected.** There is no HR integration, no payroll integration, no CPF
   connection, no bank, no database, no authentication and no server-side state. The route is a
   static page with a deterministic fixture compiled into it.
-- **No model is called.** No Claude, no GPT, no vision reader, no inference of any kind. This
-  concept needs none, and that is deliberate: what it demonstrates is a control boundary, and a
-  control boundary is not more convincing for having a model inside it.
-- **Nothing is written anywhere.** No API call, no fetch, no local storage written by the
-  concept, no telemetry. The "Prepare correction" action opens a panel describing a change and
-  changes nothing. The "Open payroll system" button is disabled and says why.
+- **A model is called by one button, and by nothing else.** This paragraph used to say "no
+  model is called", and that stopped being true when the FairSlip Brief was added. What is true
+  now is narrower and is the part that matters: every number, status, count and order on these
+  screens is produced by code before any model is asked anything, and the Brief runs afterwards
+  over the result. It supplies sentences and finding identifiers. It supplies no figure - the
+  tools hand it directions and ranks rather than amounts, and an answer that states an amount is
+  refused and never drawn. Turn it off and the product loses no claim it makes. Nothing calls a
+  model on page load; a person presses "Brief me".
+- **Nothing is written anywhere.** No database, no local storage, no telemetry, no state on any
+  server. The concept makes exactly two network calls and only when asked: the browser to this
+  app's own `/api/concept/preflight/copilot`, and that route to the provider. A test names those
+  two destinations and fails on a third. The "Prepare correction" action opens a panel describing
+  a change and changes nothing; the payroll-system button is disabled and says why.
 - **Production is untouched.** `/`, `/check`, `/employer` and `/scale` are unchanged, and none of
   them links here. A test asserts that.
+- **The model cannot decide anything.** It has seven read-only tools and no write tool of any
+  kind. It cannot change a status, an amount, a count, a rule reference or the order the findings
+  are worked in - that order is `lib/concept-preflight/priority.ts`, which is code and is tested.
+  Every identifier it returns is checked against the fixture before a screen draws it, and an
+  answer naming a finding that does not exist is refused whole rather than rendered with a gap.
 
 ## What the numbers are
 

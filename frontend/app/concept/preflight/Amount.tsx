@@ -20,7 +20,7 @@
 
 import { useId, useState } from "react";
 import { money } from "@/lib/api";
-import type { ConceptAmount } from "@/lib/concept-preflight/types";
+import type { ConceptAmount, RuleReference } from "@/lib/concept-preflight/types";
 
 const SIZE = {
   meta: "text-meta",
@@ -168,6 +168,68 @@ export function Workings({ amount }: { amount: ConceptAmount }) {
           {engine.rule.url}
         </a>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The engine's own working, as a block rather than as a fold.
+ *
+ * SPLIT OUT OF <Workings /> SO TWO SURFACES CAN DISCLOSE IT DIFFERENTLY. The
+ * inspector shows the calculation and the authority's sentence behind one
+ * toggle, which is right for a panel read one event at a time. A finding page
+ * wants them apart: "how was this worked out" and "what does MOM actually say"
+ * are two different questions and a reader usually has only one of them.
+ */
+export function EngineDetail({ amount }: { amount: ConceptAmount }) {
+  const engine = amount.engine;
+  if (!engine) return null;
+  return (
+    <div className="border-l-2 border-line-strong pl-4">
+      <p className="text-meta text-ink-3">Engine</p>
+      <p className="break-all font-mono text-meta text-ink-2">{engine.call}</p>
+
+      <p className="mt-3 text-meta text-ink-3">Formula</p>
+      <p className="break-words rounded-sm bg-muted px-3 py-2 font-mono text-meta text-ink-2">
+        {engine.formula}
+      </p>
+
+      <p className="mt-3 text-meta text-ink-3">Facts it used</p>
+      <ul className="mt-1 space-y-1">
+        {engine.inputs.map((input) => (
+          <li key={input} className="text-meta text-ink-2">
+            {input}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * What the authority says, in the authority's own words.
+ *
+ * FOLDED, NEVER PARAPHRASED, AND NEVER DROPPED. The quote is the evidence
+ * behind the figure; the summary line outside the fold names the rule and the
+ * date this project last read the page, which is what a reader needs to decide
+ * whether to open it.
+ */
+export function RuleDetail({ rule }: { rule: RuleReference }) {
+  return (
+    <div className="border-l-2 border-brand-line pl-4">
+      <p className="text-meta text-ink-3">{rule.authority}, in their words</p>
+      <blockquote className="mt-1 text-body text-ink-2">{rule.quote}</blockquote>
+      <p className="mt-2 text-meta text-ink-3">
+        {rule.page}. Read for this project on {rule.verified}.
+      </p>
+      <a
+        href={rule.url}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 inline-block break-all text-meta text-brand-fg underline underline-offset-2"
+      >
+        {rule.url}
+      </a>
     </div>
   );
 }

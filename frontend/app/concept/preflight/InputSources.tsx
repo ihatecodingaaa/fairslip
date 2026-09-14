@@ -23,18 +23,10 @@ import type { InputFile } from "@/lib/concept-preflight/types";
 
 export function InputSources({ inputs }: { inputs: InputFile[] }) {
   return (
-    <section aria-labelledby="concept-inputs" className="mt-12">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-line-strong pb-2">
-        <h2
-          id="concept-inputs"
-          className="text-meta font-semibold uppercase tracking-wide text-ink-3"
-        >
-          Inputs
-        </h2>
-        <p className="text-meta text-ink-3">
-          Six files. Nothing is connected to a live system in this concept.
-        </p>
-      </div>
+    <section aria-label="What was loaded">
+      <p className="max-w-measure text-meta text-ink-3">
+        Files somebody exported and dropped in. Nothing here is connected to a live system.
+      </p>
 
       <ul className="mt-4 grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
         {inputs.map((file) => (

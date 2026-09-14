@@ -32,6 +32,8 @@ import {
 } from "@/lib/concept-preflight/selectors";
 import { OutcomeMark } from "../../employer/outcomeMark";
 import { ExceptionReview } from "./ExceptionReview";
+import { ExplainRecheck } from "./FairSlipBrief";
+import type { ScenarioId } from "@/lib/concept-preflight/types";
 
 /** What each transition looked like on each side of the correction. The shapes
  * are the product's own; this only says which one a row wore before and after. */
@@ -46,9 +48,11 @@ const TRANSITION: Record<RecheckRowState, { before: "OK" | "EXCEPTION" | "REFUSE
 export function RecheckConcept({
   recheck,
   employees,
+  scenario,
 }: {
   recheck: RecheckData;
   employees: ConceptEmployee[];
+  scenario: ScenarioId;
 }) {
   const before = statusCounts(employees);
   const counts = recheckCounts(recheck);
@@ -64,27 +68,17 @@ export function RecheckConcept({
       >
         {recheck.headline}
       </h2>
-      <p className="max-w-measure mt-3 text-lead text-ink-2">
-        The same rule packs and the same exports, run a second time.
+      <p className="max-w-measure mt-2 text-body text-ink-2">
+        The same rule packs and the same exports, run a second time over the corrected file.
       </p>
-      <dl className="mt-4 flex flex-wrap gap-x-10 gap-y-3">
-        <div className="flex flex-col">
-          <dt className="text-meta text-ink-3">First run</dt>
-          <dd className="text-body text-ink-2">{recheck.before_label}</dd>
-        </div>
-        <div className="flex flex-col">
-          <dt className="text-meta text-ink-3">Second run</dt>
-          <dd className="text-body text-ink-2">{recheck.after_label}</dd>
-        </div>
-      </dl>
 
       {/* ------------------------------------------------- before and after */}
       <div className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-6 rounded-lg border border-line bg-muted px-5 py-5">
-        <Side count={before.needsReview} label="needed review" />
+        <Side count={before.needsReview} label="needed review" caption="Before" />
         <span aria-hidden className="pb-2 text-page text-ink-3">
           &rarr;
         </span>
-        <Side count={counts.afterNeedsReview} label="remain" strong />
+        <Side count={counts.afterNeedsReview} label="remain" caption="After" strong />
         <dl className="flex flex-wrap gap-x-8 gap-y-4 border-l border-line-strong pl-8">
           <Tally value={counts.byState.RESOLVED} label={RECHECK_WORD.RESOLVED} />
           <Tally value={counts.byState.STILL_EXCEPTION} label={RECHECK_WORD.STILL_EXCEPTION} />
@@ -93,12 +87,13 @@ export function RecheckConcept({
         </dl>
       </div>
 
-      <p className="max-w-measure mt-4 text-meta text-ink-3">
+      <p className="max-w-measure mt-3 text-meta text-ink-3">
         The other <span className="font-mono tabular-nums">{counts.byState.STILL_MATCHED}</span>{" "}
-        rows matched in both runs and are counted here rather than drawn, because nothing about
-        them changed. They are the only rows on any of these screens that a summary stands in
-        for.
+        rows matched in both runs and are counted rather than drawn. They are the only rows on
+        any of these screens a summary stands in for.
       </p>
+
+      <ExplainRecheck key={scenario} scenario={scenario} />
 
       {/* ---------------------------------------------------------- the rows */}
       <ul className="mt-8 divide-y divide-line border-y border-line">
@@ -110,17 +105,30 @@ export function RecheckConcept({
   );
 }
 
-function Side({ count, label, strong }: { count: number; label: string; strong?: boolean }) {
+function Side({
+  count,
+  label,
+  caption,
+  strong,
+}: {
+  count: number;
+  label: string;
+  caption: string;
+  strong?: boolean;
+}) {
   return (
     <p className="flex flex-col">
+      <span className="order-1 text-meta font-semibold uppercase tracking-wide text-ink-3">
+        {caption}
+      </span>
       <span
-        className={`order-1 font-mono tabular-nums ${
+        className={`order-2 font-mono tabular-nums ${
           strong ? "text-hero font-semibold text-ink" : "text-hero font-medium text-ink-2"
         }`}
       >
         {count}
       </span>
-      <span className="order-2 text-body text-ink-2">{label}</span>
+      <span className="order-3 text-body text-ink-2">{label}</span>
     </p>
   );
 }

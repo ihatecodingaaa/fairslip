@@ -31,6 +31,7 @@ import { money } from "@/lib/api";
 import type { Bridge, BridgeLine } from "@/lib/concept-preflight/selectors";
 import type { ConceptEmployee } from "@/lib/concept-preflight/types";
 import type { RuleComparison } from "@/lib/concept-preflight/selectors";
+import { Disclosure } from "./Disclosure";
 import { StatusMark } from "./marks";
 
 /** The shape and the word for each outcome of comparing a register line with a
@@ -57,11 +58,9 @@ function magnitudeOf(line: BridgeLine): number {
 }
 
 export function WhatChanged({
-  employee,
   bridge,
   onSelectEvent,
 }: {
-  employee: ConceptEmployee;
   bridge: Bridge;
   onSelectEvent: (id: string) => void;
 }) {
@@ -69,15 +68,8 @@ export function WhatChanged({
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h3 className="text-title font-semibold tracking-tight text-ink">
-          What changed for {employee.name}
-        </h3>
-        <p className="font-mono text-meta text-ink-3">{employee.employee_id}</p>
-      </div>
-
       {/* The two ends, and the gap between them. */}
-      <div className="mt-5 flex flex-wrap items-baseline gap-x-8 gap-y-4 rounded-lg border border-line bg-muted px-5 py-4">
+      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-4 rounded-lg border border-line bg-muted px-5 py-4">
         <End label={bridge.previous.period} value={money(bridge.previous.net.money)} />
         <span aria-hidden className="text-lead text-ink-3">
           &rarr;
@@ -88,8 +80,8 @@ export function WhatChanged({
         </span>
         <End label="Change in net pay" value={money(bridge.difference)} strong />
         <p className="basis-full text-meta text-ink-3">
-          Both figures are the register&apos;s own bottom line. The lines below are its own
-          lines, and they add up to the change exactly.
+          The register&apos;s own bottom line, both months. The lines below are its own lines and
+          add up to the change exactly.
         </p>
       </div>
 
@@ -215,33 +207,42 @@ function Row({
         </span>
       </div>
 
-      {/* The evidence for the row, at reading size, across the full width. */}
+      {/* The evidence for the row, folded. SIX ROWS EACH CARRYING TWO LINES OF
+          small type is twelve lines of small type, and the row that matters is
+          the one nobody reaches. The fold says what is inside it, and the mark
+          and the words beside the figure already say which row it is. */}
       <div className="lg:col-span-3">
-        {line.ruleNote && line.ruleFigure && (
-          <p className="max-w-measure text-meta text-ink-2">
-            {line.ruleNote} It gives{" "}
-            <span className="font-mono tabular-nums">{money(line.ruleFigure.money)}</span>.
-          </p>
-        )}
-        {line.event_ids.length > 0 ? (
-          <p className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="text-meta text-ink-3">Recorded changes behind this line:</span>
-            {line.event_ids.map((id) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onSelectEvent(id)}
-                className="tap-sm rounded-sm border border-line-strong bg-surface px-2 py-1 font-mono text-meta text-ink-2 hover:border-ink hover:text-ink"
-              >
-                {id}
-              </button>
-            ))}
-          </p>
-        ) : (
-          <p className="mt-1 text-meta text-ink-3">
-            No recorded workforce change behind this line.
-          </p>
-        )}
+        <Disclosure
+          label="Where this line came from"
+          count={line.event_ids.length || undefined}
+          hint={line.event_ids.length === 0 ? "No recorded workforce change behind it" : undefined}
+        >
+          {line.ruleNote && line.ruleFigure && (
+            <p className="max-w-measure text-meta text-ink-2">
+              {line.ruleNote} It gives{" "}
+              <span className="font-mono tabular-nums">{money(line.ruleFigure.money)}</span>.
+            </p>
+          )}
+          {line.event_ids.length > 0 ? (
+            <p className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="text-meta text-ink-3">Recorded changes behind this line:</span>
+              {line.event_ids.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onSelectEvent(id)}
+                  className="tap-sm rounded-sm border border-line-strong bg-surface px-2 py-1 font-mono text-meta text-ink-2 hover:border-ink hover:text-ink"
+                >
+                  {id}
+                </button>
+              ))}
+            </p>
+          ) : (
+            <p className="mt-1 max-w-measure text-meta text-ink-3">
+              A basic-salary line answers to no recorded change, which is normal.
+            </p>
+          )}
+        </Disclosure>
       </div>
     </li>
   );

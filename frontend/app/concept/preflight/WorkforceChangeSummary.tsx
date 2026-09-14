@@ -29,21 +29,14 @@ export function WorkforceChangeSummary({
   total: number;
 }) {
   return (
-    <section aria-labelledby="concept-changes" className="mt-12">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-line-strong pb-2">
-        <h2
-          id="concept-changes"
-          className="text-meta font-semibold uppercase tracking-wide text-ink-3"
-        >
-          Workforce changes this month
-        </h2>
-        <p className="text-meta text-ink-3">
-          <span className="font-mono tabular-nums">{total}</span> records, already in the
-          company&apos;s own systems
-        </p>
-      </div>
+    <section aria-label="Workforce changes this month">
+      <p className="max-w-measure text-meta text-ink-3">
+        <span className="font-mono tabular-nums">{total}</span> records, already in the
+        company&apos;s own systems. What FairSlip asks is whether each became the right payroll
+        outcome.
+      </p>
 
-      <div className="mt-5 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-4 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
         {groups.map((group) => (
           <div key={group.system} className="min-w-0">
             <p className="flex items-baseline gap-3">
